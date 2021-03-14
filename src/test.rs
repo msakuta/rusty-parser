@@ -129,7 +129,7 @@ fn parens_test() {
 }
 
 fn eval0(s: &Expression) -> f64 {
-    eval(s, &HashMap::new())
+    eval(s, &mut HashMap::new())
 }
 
 #[test]
@@ -157,5 +157,19 @@ fn var_ident_test() {
 fn var_test() {
     let mut vars = HashMap::new();
     vars.insert("x", 42.);
-    assert_eq!(eval(&expr(" x +  2 ").unwrap().1, &vars), 44.);
+    assert_eq!(eval(&expr(" x +  2 ").unwrap().1, &mut vars), 44.);
+}
+
+#[test]
+fn var_assign_test() {
+    let mut vars = HashMap::new();
+    vars.insert("x", 42.);
+    assert_eq!(
+        var_assign("x=12"),
+        Ok((
+            "",
+            Expression::VarAssign("x", Box::new(Expression::NumLiteral(12.)))
+        ))
+    );
+    assert_eq!(eval(&var_assign("x=12").unwrap().1, &mut vars), 12.);
 }

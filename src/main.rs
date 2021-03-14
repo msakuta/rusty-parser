@@ -5,7 +5,7 @@ use nom::{
     combinator::recognize,
     multi::{fold_many0, many0},
     number::complete::double,
-    sequence::{delimited, pair},
+    sequence::{delimited, pair, tuple},
     IResult,
 };
 use std::{collections::HashMap, env};
@@ -21,6 +21,7 @@ enum Statement<'a> {
 enum Expression<'a> {
     NumLiteral(f64),
     Variable(&'a str),
+    VarAssign(&'a str, Box<Expression<'a>>),
     Add(Box<Expression<'a>>, Box<Expression<'a>>),
     Sub(Box<Expression<'a>>, Box<Expression<'a>>),
     Mult(Box<Expression<'a>>, Box<Expression<'a>>),
@@ -39,9 +40,13 @@ pub fn identifier(input: &str) -> IResult<&str, &str> {
     ))(input)
 }
 
+fn ident_space(input: &str) -> IResult<&str, &str> {
+    delimited(multispace0, identifier, multispace0)(input)
+}
+
 fn var_ref(input: &str) -> IResult<&str, Expression> {
-    let (r, res) = identifier(multispace0(input)?.0)?;
-    Ok((multispace0(r)?.0, Expression::Variable(res)))
+    let (r, res) = ident_space(input)?;
+    Ok((r, Expression::Variable(res)))
 }
 
 fn var_decl(input: &str) -> IResult<&str, Statement> {
@@ -106,8 +111,13 @@ fn expr(i: &str) -> IResult<&str, Expression> {
     )(i)
 }
 
+fn var_assign(input: &str) -> IResult<&str, Expression> {
+    let (r, res) = tuple((ident_space, char('='), expr))(input)?;
+    Ok((r, Expression::VarAssign(res.0, Box::new(res.2))))
+}
+
 fn expression_statement(input: &str) -> IResult<&str, Statement> {
-    let (r, val) = expr(input)?;
+    let (r, val) = alt((var_assign, expr))(input)?;
     Ok((char(';')(r)?.0, Statement::Expression(val)))
 }
 
@@ -115,14 +125,36 @@ fn source(input: &str) -> IResult<&str, Vec<Statement>> {
     many0(alt((var_decl, expression_statement, comment)))(input)
 }
 
-fn eval(e: &Expression, ctx: &HashMap<&str, f64>) -> f64 {
+fn eval<'a>(e: &Expression<'a>, ctx: &mut HashMap<&'a str, f64>) -> f64 {
     match e {
         Expression::NumLiteral(val) => *val,
         Expression::Variable(str) => *ctx.get(str).unwrap(),
+        Expression::VarAssign(str, rhs) => {
+            let value = eval(rhs, ctx);
+            if let None = ctx.insert(str, value) {
+                panic!("Variable was not declared!");
+            }
+            value
+        }
         Expression::Add(lhs, rhs) => eval(lhs, ctx) + eval(rhs, ctx),
         Expression::Sub(lhs, rhs) => eval(lhs, ctx) - eval(rhs, ctx),
         Expression::Mult(lhs, rhs) => eval(lhs, ctx) * eval(rhs, ctx),
         Expression::Div(lhs, rhs) => eval(lhs, ctx) / eval(rhs, ctx),
+    }
+}
+
+fn run(stmts: &Vec<Statement>) {
+    let mut variables = HashMap::new();
+    for stmt in stmts {
+        match stmt {
+            Statement::VarDecl(var) => {
+                variables.insert(*var, 0.);
+            }
+            Statement::Expression(e) => {
+                println!("Expression evaluates to: {}", eval(&e, &mut variables));
+            }
+            _ => {}
+        }
     }
 }
 
@@ -140,18 +172,7 @@ fn main() {
     };
     if let Ok(result) = source(code) {
         println!("Match: {:?}", result.1);
-        let mut variables = HashMap::new();
-        for stmt in result.1 {
-            match stmt {
-                Statement::VarDecl(var) => {
-                    variables.insert(var, 0.);
-                }
-                Statement::Expression(e) => {
-                    println!("Expression evaluates to: {}", eval(&e, &variables))
-                }
-                _ => {}
-            }
-        }
+        run(&result.1);
     } else {
         println!("failed");
     }
