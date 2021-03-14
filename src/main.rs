@@ -27,12 +27,9 @@ pub fn identifier(input: &str) -> IResult<&str, &str> {
 }
 
 fn var_decl(input: &str) -> IResult<&str, Statement> {
-    let (r, _) = multispace0(input)?;
-    let (r, _) = tag("var")(r)?;
-    let (r, _) = multispace1(r)?;
+    let (r, _) = multispace1(tag("var")(multispace0(input)?.0)?.0)?;
     let (r, ident) = identifier(r)?;
-    let (r, _) = multispace0(r)?;
-    let (r, _) = char(';')(r)?;
+    let (r, _) = char(';')(multispace0(r)?.0)?;
     Ok((r, Statement::VarDecl(ident)))
 }
 
