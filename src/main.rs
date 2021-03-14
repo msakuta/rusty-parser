@@ -207,3 +207,40 @@ fn expr_test() {
         ))
     );
 }
+
+#[test]
+fn parens_test() {
+    assert_eq!(expr(" (  2 )"), Ok(("", Expression::NumLiteral(2.))));
+    assert_eq!(
+        expr(" 2* (  3 + 4 ) "),
+        Ok((
+            "",
+            Expression::Mult(
+                Box::new(Expression::NumLiteral(2.)),
+                Box::new(Expression::Add(
+                    Box::new(Expression::NumLiteral(3.)),
+                    Box::new(Expression::NumLiteral(4.)),
+                ))
+            )
+        ))
+    );
+    assert_eq!(
+        expr("  2*2 / ( 5 - 1) + 3"),
+        Ok((
+            "",
+            Expression::Add(
+                Box::new(Expression::Div(
+                    Box::new(Expression::Mult(
+                        Box::new(Expression::NumLiteral(2.)),
+                        Box::new(Expression::NumLiteral(2.)),
+                    )),
+                    Box::new(Expression::Sub(
+                        Box::new(Expression::NumLiteral(5.)),
+                        Box::new(Expression::NumLiteral(1.)),
+                    )),
+                )),
+                Box::new(Expression::NumLiteral(3.)),
+            )
+        ))
+    );
+}
