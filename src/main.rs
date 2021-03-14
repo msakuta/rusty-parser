@@ -109,6 +109,16 @@ fn source(input: &str) -> IResult<&str, Vec<Statement>> {
     many0(alt((var_decl, expression_statement, comment)))(input)
 }
 
+fn eval(e: &Expression) -> f64 {
+    match e {
+        Expression::NumLiteral(val) => *val,
+        Expression::Add(lhs, rhs) => eval(lhs) + eval(rhs),
+        Expression::Sub(lhs, rhs) => eval(lhs) - eval(rhs),
+        Expression::Mult(lhs, rhs) => eval(lhs) * eval(rhs),
+        Expression::Div(lhs, rhs) => eval(lhs) / eval(rhs),
+    }
+}
+
 fn main() {
     let code = r"var x;
   /* This is a block comment. */
@@ -243,4 +253,18 @@ fn parens_test() {
             )
         ))
     );
+}
+
+#[test]
+fn eval_test() {
+    assert_eq!(eval(&expr(" 1 +  2 ").unwrap().1), 3.);
+    assert_eq!(eval(&expr(" 12 + 6 - 4+  3").unwrap().1), 17.);
+    assert_eq!(eval(&expr(" 1 + 2*3 + 4").unwrap().1), 11.);
+}
+
+#[test]
+fn parens_eval_test() {
+    assert_eq!(eval(&expr(" (  2 )").unwrap().1), 2.);
+    assert_eq!(eval(&expr(" 2* (  3 + 4 ) ").unwrap().1), 14.);
+    assert_eq!(eval(&expr("  2*2 / ( 5 - 1) + 3").unwrap().1), 4.);
 }
