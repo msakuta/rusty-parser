@@ -19,6 +19,7 @@ enum Statement<'a> {
 enum Expression<'a> {
     Empty,
     NumLiteral(&'a str),
+    Add(Box<Expression<'a>>, Box<Expression<'a>>),
 }
 
 fn comment(input: &str) -> IResult<&str, Statement> {
@@ -40,17 +41,28 @@ fn var_decl(input: &str) -> IResult<&str, Statement> {
     Ok((r, Statement::VarDecl(ident)))
 }
 
-fn expression(input: &str) -> IResult<&str, Expression> {
+fn numeric_literal_expression(input: &str) -> IResult<&str, Expression> {
     let (r, val) = digit1(multispace0(input)?.0)?;
     Ok((multispace0(r)?.0, Expression::NumLiteral(val)))
+}
+
+fn add_expression(input: &str) -> IResult<&str, Expression> {
+    let (r, lhs) = numeric_literal_expression(input)?;
+    let (r, _) = char('+')(r)?;
+    let (r, rhs) = expression(r)?;
+    Ok((r, Expression::Add(Box::new(lhs), Box::new(rhs))))
 }
 
 fn empty_expression(input: &str) -> IResult<&str, Expression> {
     Ok((multispace0(input)?.0, Expression::Empty))
 }
 
+fn expression(input: &str) -> IResult<&str, Expression> {
+    alt((add_expression, numeric_literal_expression, empty_expression))(input)
+}
+
 fn expression_statement(input: &str) -> IResult<&str, Statement> {
-    let (r, val) = alt((expression, empty_expression))(input)?;
+    let (r, val) = expression(input)?;
     Ok((char(';')(r)?.0, Statement::Expression(val)))
 }
 
@@ -62,8 +74,8 @@ fn main() {
     let code = r"var x;
   /* This is a block comment. */
   var y;
-  ;
   123;
+  123 + 456;
   ";
     if let Ok(result) = source(code) {
         println!("Match: {:?}", result.1);
@@ -77,5 +89,19 @@ fn test_comments() {
     assert_eq!(
         Ok(("", Statement::Comment(" x * y "))),
         comment("/* x * y */")
+    );
+}
+
+#[test]
+fn test_add() {
+    assert_eq!(
+        Ok((
+            "",
+            Statement::Expression(Expression::Add(
+                Box::new(Expression::NumLiteral("123")),
+                Box::new(Expression::NumLiteral("456"))
+            ))
+        )),
+        expression_statement("123 + 456;")
     );
 }
