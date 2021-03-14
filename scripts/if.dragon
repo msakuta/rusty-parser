@@ -1,0 +1,11 @@
+var x;
+var y;
+
+x = 1;
+y = 2;
+
+if x {
+    x
+} else {
+    y
+};

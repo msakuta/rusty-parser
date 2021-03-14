@@ -30,6 +30,11 @@ enum Expression<'a> {
     Sub(Box<Expression<'a>>, Box<Expression<'a>>),
     Mult(Box<Expression<'a>>, Box<Expression<'a>>),
     Div(Box<Expression<'a>>, Box<Expression<'a>>),
+    Conditional(
+        Box<Expression<'a>>,
+        Box<Expression<'a>>,
+        Option<Box<Expression<'a>>>,
+    ),
 }
 
 fn comment(input: &str) -> IResult<&str, Statement> {
@@ -69,7 +74,7 @@ fn numeric_literal_expression(input: &str) -> IResult<&str, Expression> {
 fn parens(i: &str) -> IResult<&str, Expression> {
     delimited(
         multispace0,
-        delimited(tag("("), assign_expr, tag(")")),
+        delimited(tag("("), conditional_expr, tag(")")),
         multispace0,
     )(i)
 }
@@ -134,6 +139,32 @@ fn expr(i: &str) -> IResult<&str, Expression> {
     )(i)
 }
 
+fn conditional(i: &str) -> IResult<&str, Expression> {
+    let (r, _) = delimited(multispace0, tag("if"), multispace0)(i)?;
+    let (r, cond) = expr(r)?;
+    let (r, true_branch) = delimited(
+        delimited(multispace0, tag("{"), multispace0),
+        expr,
+        delimited(multispace0, tag("}"), multispace0),
+    )(r)?;
+    let (r, false_branch) = opt(delimited(
+        pair(
+            delimited(multispace0, tag("else"), multispace0),
+            delimited(multispace0, tag("{"), multispace0),
+        ),
+        expr,
+        delimited(multispace0, tag("}"), multispace0),
+    ))(r)?;
+    Ok((
+        r,
+        Expression::Conditional(
+            Box::new(cond),
+            Box::new(true_branch),
+            false_branch.map(|e| Box::new(e)),
+        ),
+    ))
+}
+
 fn var_assign(input: &str) -> IResult<&str, Expression> {
     let (r, res) = tuple((ident_space, char('='), expr))(input)?;
     Ok((r, Expression::VarAssign(res.0, Box::new(res.2))))
@@ -143,8 +174,12 @@ fn assign_expr(i: &str) -> IResult<&str, Expression> {
     alt((var_assign, expr))(i)
 }
 
+fn conditional_expr(i: &str) -> IResult<&str, Expression> {
+    alt((conditional, assign_expr))(i)
+}
+
 fn expression_statement(input: &str) -> IResult<&str, Statement> {
-    let (r, val) = assign_expr(input)?;
+    let (r, val) = conditional_expr(input)?;
     Ok((char(';')(r)?.0, Statement::Expression(val)))
 }
 
@@ -203,6 +238,15 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b>) -> f64 {
         Expression::Sub(lhs, rhs) => eval(lhs, ctx) - eval(rhs, ctx),
         Expression::Mult(lhs, rhs) => eval(lhs, ctx) * eval(rhs, ctx),
         Expression::Div(lhs, rhs) => eval(lhs, ctx) / eval(rhs, ctx),
+        Expression::Conditional(cond, true_branch, false_branch) => {
+            if eval(cond, ctx) != 0. {
+                eval(true_branch, ctx)
+            } else if let Some(ast) = false_branch {
+                eval(ast, ctx)
+            } else {
+                0.
+            }
+        }
     }
 }
 

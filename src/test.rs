@@ -233,3 +233,36 @@ fn fn_invoke_test() {
         ))
     );
 }
+
+#[test]
+fn cond_test() {
+    assert_eq!(
+        conditional("if 0 { 1 }"),
+        Ok((
+            "",
+            Expression::Conditional(
+                Box::new(Expression::NumLiteral(0.)),
+                Box::new(Expression::NumLiteral(1.)),
+                None,
+            )
+        ))
+    );
+    assert_eq!(
+        conditional("if (1) { 2 } else { 3}"),
+        Ok((
+            "",
+            Expression::Conditional(
+                Box::new(Expression::NumLiteral(1.)),
+                Box::new(Expression::NumLiteral(2.)),
+                Some(Box::new(Expression::NumLiteral(3.))),
+            )
+        ))
+    );
+}
+
+#[test]
+fn cond_eval_test() {
+    assert_eq!(eval0(&conditional("if 0 { 1 }").unwrap().1), 0.);
+    assert_eq!(eval0(&conditional("if (1) { 2 } else { 3}").unwrap().1), 2.);
+    assert_eq!(eval0(&conditional("if (0) { 2 } else { 3}").unwrap().1), 3.);
+}
