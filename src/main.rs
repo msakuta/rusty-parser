@@ -2,20 +2,21 @@ use nom::{
     branch::alt,
     bytes::complete::{tag, take_until},
     character::complete::{alpha1, alphanumeric1, char, multispace0, multispace1},
-    combinator::recognize,
+    combinator::{opt, recognize},
     multi::{fold_many0, many0},
     number::complete::double,
     sequence::{delimited, pair, tuple},
     IResult,
 };
-use std::{collections::HashMap, env};
 use std::fs::File;
 use std::io::prelude::*;
+use std::{collections::HashMap, env};
 
 #[derive(Debug, PartialEq, Clone)]
 enum Statement<'a> {
     Comment(&'a str),
     VarDecl(&'a str),
+    FnDecl(&'a str, Vec<Statement<'a>>),
     Expression(Expression<'a>),
 }
 
@@ -24,6 +25,7 @@ enum Expression<'a> {
     NumLiteral(f64),
     Variable(&'a str),
     VarAssign(&'a str, Box<Expression<'a>>),
+    FnInvoke(&'a str, Vec<Expression<'a>>),
     Add(Box<Expression<'a>>, Box<Expression<'a>>),
     Sub(Box<Expression<'a>>, Box<Expression<'a>>),
     Mult(Box<Expression<'a>>, Box<Expression<'a>>),
@@ -72,10 +74,30 @@ fn parens(i: &str) -> IResult<&str, Expression> {
     )(i)
 }
 
+fn func_invoke(i: &str) -> IResult<&str, Expression> {
+    let (r, ident) = delimited(multispace0, identifier, multispace0)(i)?;
+    println!("func_invoke ident: {}", ident);
+    let (r, args) = delimited(
+        multispace0,
+        // pair(tag("("), tag(")")),
+        delimited(
+            tag("("),
+            many0(delimited(
+                multispace0,
+                expr,
+                delimited(multispace0, opt(tag(",")), multispace0),
+            )),
+            tag(")"),
+        ),
+        multispace0,
+    )(r)?;
+    Ok((r, Expression::FnInvoke(ident, args)))
+}
+
 // We transform an double string into a Expression::NumLiteral
 // on failure, we fallback to the parens parser defined above
 fn factor(i: &str) -> IResult<&str, Expression> {
-    alt((numeric_literal_expression, var_ref, parens))(i)
+    alt((numeric_literal_expression, func_invoke, var_ref, parens))(i)
 }
 
 // We read an initial factor and for each time we find
@@ -127,20 +149,35 @@ fn expression_statement(input: &str) -> IResult<&str, Statement> {
     Ok((char(';')(r)?.0, Statement::Expression(val)))
 }
 
-fn source(input: &str) -> IResult<&str, Vec<Statement>> {
-    many0(alt((var_decl, expression_statement, comment)))(input)
+fn func_decl(input: &str) -> IResult<&str, Statement> {
+    let (r, _) = multispace1(tag("fn")(multispace0(input)?.0)?.0)?;
+    let (r, ident) = identifier(r)?;
+    let (r, stmts) = delimited(
+        delimited(multispace0, tag("{"), multispace0),
+        source,
+        delimited(multispace0, tag("}"), multispace0),
+    )(r)?;
+    Ok((r, Statement::FnDecl(ident, stmts)))
 }
 
-fn eval<'a>(e: &Expression<'a>, ctx: &mut HashMap<&'a str, f64>) -> f64 {
+fn source(input: &str) -> IResult<&str, Vec<Statement>> {
+    many0(alt((var_decl, func_decl, expression_statement, comment)))(input)
+}
+
+fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b>) -> f64 {
     match e {
         Expression::NumLiteral(val) => *val,
-        Expression::Variable(str) => *ctx.get(str).unwrap(),
+        Expression::Variable(str) => *ctx.variables.get(str).unwrap(),
         Expression::VarAssign(str, rhs) => {
             let value = eval(rhs, ctx);
-            if let None = ctx.insert(str, value) {
+            if let None = ctx.variables.insert(str, value) {
                 panic!("Variable was not declared!");
             }
             value
+        }
+        Expression::FnInvoke(str, args) => {
+            let func = ctx.functions.get(str).unwrap();
+            run(func).unwrap()
         }
         Expression::Add(lhs, rhs) => eval(lhs, ctx) + eval(rhs, ctx),
         Expression::Sub(lhs, rhs) => eval(lhs, ctx) - eval(rhs, ctx),
@@ -149,19 +186,33 @@ fn eval<'a>(e: &Expression<'a>, ctx: &mut HashMap<&'a str, f64>) -> f64 {
     }
 }
 
-fn run(stmts: &Vec<Statement>) {
-    let mut variables = HashMap::new();
+struct EvalContext<'a, 'b> {
+    variables: HashMap<&'a str, f64>,
+    functions: HashMap<&'a str, &'b Vec<Statement<'a>>>,
+}
+
+fn run(stmts: &Vec<Statement>) -> Result<f64, ()> {
+    let mut ctx = EvalContext {
+        variables: HashMap::new(),
+        functions: HashMap::new(),
+    };
+    let mut res = 0.;
     for stmt in stmts {
         match stmt {
             Statement::VarDecl(var) => {
-                variables.insert(*var, 0.);
+                ctx.variables.insert(*var, 0.);
+            }
+            Statement::FnDecl(var, stmts) => {
+                ctx.functions.insert(var, stmts);
             }
             Statement::Expression(e) => {
-                println!("Expression evaluates to: {}", eval(&e, &mut variables));
+                res = eval(&e, &mut ctx);
+                println!("Expression evaluates to: {}", res);
             }
             _ => {}
         }
     }
+    Ok(res)
 }
 
 fn main() -> std::io::Result<()> {

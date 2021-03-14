@@ -129,7 +129,11 @@ fn parens_test() {
 }
 
 fn eval0(s: &Expression) -> f64 {
-    eval(s, &mut HashMap::new())
+    let mut ctx = EvalContext {
+        variables: HashMap::new(),
+        functions: HashMap::new(),
+    };
+    eval(s, &mut ctx)
 }
 
 #[test]
@@ -155,15 +159,21 @@ fn var_ident_test() {
 
 #[test]
 fn var_test() {
-    let mut vars = HashMap::new();
-    vars.insert("x", 42.);
-    assert_eq!(eval(&expr(" x +  2 ").unwrap().1, &mut vars), 44.);
+    let mut ctx = EvalContext {
+        variables: HashMap::new(),
+        functions: HashMap::new(),
+    };
+    ctx.variables.insert("x", 42.);
+    assert_eq!(eval(&expr(" x +  2 ").unwrap().1, &mut ctx), 44.);
 }
 
 #[test]
 fn var_assign_test() {
-    let mut vars = HashMap::new();
-    vars.insert("x", 42.);
+    let mut ctx = EvalContext {
+        variables: HashMap::new(),
+        functions: HashMap::new(),
+    };
+    ctx.variables.insert("x", 42.);
     assert_eq!(
         var_assign("x=12"),
         Ok((
@@ -171,5 +181,54 @@ fn var_assign_test() {
             Expression::VarAssign("x", Box::new(Expression::NumLiteral(12.)))
         ))
     );
-    assert_eq!(eval(&var_assign("x=12").unwrap().1, &mut vars), 12.);
+    assert_eq!(eval(&var_assign("x=12").unwrap().1, &mut ctx), 12.);
+}
+
+#[test]
+fn fn_decl_test() {
+    assert_eq!(
+        func_decl(
+            "fn a {
+        x = 123;
+        x * x;
+    }"
+        ),
+        Ok((
+            "",
+            Statement::FnDecl(
+                "a",
+                vec![
+                    Statement::Expression(Expression::VarAssign(
+                        "x",
+                        Box::new(Expression::NumLiteral(123.))
+                    )),
+                    Statement::Expression(Expression::Mult(
+                        Box::new(Expression::Variable("x")),
+                        Box::new(Expression::Variable("x"))
+                    ))
+                ]
+            )
+        ))
+    );
+}
+
+#[test]
+fn fn_invoke_test() {
+    assert_eq!(
+        source("f();"),
+        Ok((
+            "",
+            vec![Statement::Expression(Expression::FnInvoke("f", vec![]))]
+        ))
+    );
+    assert_eq!(
+        source("f(1);"),
+        Ok((
+            "",
+            vec![Statement::Expression(Expression::FnInvoke(
+                "f",
+                vec![Expression::NumLiteral(1.)]
+            ))]
+        ))
+    );
 }
