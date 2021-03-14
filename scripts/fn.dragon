@@ -1,7 +1,7 @@
+var x;
+x = 123;
 
 fn f(y) {
-    var x;
-    x = 123;
     x * y;
 }
 

@@ -2,7 +2,7 @@ use nom::{
     branch::alt,
     bytes::complete::{tag, take_until},
     character::complete::{alpha1, alphanumeric1, char, multispace0, multispace1},
-    combinator::{opt, recognize},
+    combinator::{map_res, opt, recognize},
     multi::{fold_many0, many0},
     number::complete::double,
     sequence::{delimited, pair, tuple},
@@ -30,6 +30,8 @@ enum Expression<'a> {
     Sub(Box<Expression<'a>>, Box<Expression<'a>>),
     Mult(Box<Expression<'a>>, Box<Expression<'a>>),
     Div(Box<Expression<'a>>, Box<Expression<'a>>),
+    LT(Box<Expression<'a>>, Box<Expression<'a>>),
+    GT(Box<Expression<'a>>, Box<Expression<'a>>),
     Conditional(
         Box<Expression<'a>>,
         Box<Expression<'a>>,
@@ -139,12 +141,26 @@ fn expr(i: &str) -> IResult<&str, Expression> {
     )(i)
 }
 
+fn cmp(i: &str) -> IResult<&str, Expression> {
+    let (i, lhs) = expr(i)?;
+
+    let (i, (op, val)) = pair(alt((char('<'), char('>'))), expr)(i)?;
+    Ok((
+        i,
+        if op == '<' {
+            Expression::LT(Box::new(lhs), Box::new(val))
+        } else {
+            Expression::GT(Box::new(lhs), Box::new(val))
+        },
+    ))
+}
+
 fn conditional(i: &str) -> IResult<&str, Expression> {
     let (r, _) = delimited(multispace0, tag("if"), multispace0)(i)?;
-    let (r, cond) = expr(r)?;
+    let (r, cond) = cmp_expr(r)?;
     let (r, true_branch) = delimited(
         delimited(multispace0, tag("{"), multispace0),
-        expr,
+        cmp_expr,
         delimited(multispace0, tag("}"), multispace0),
     )(r)?;
     let (r, false_branch) = opt(delimited(
@@ -152,7 +168,7 @@ fn conditional(i: &str) -> IResult<&str, Expression> {
             delimited(multispace0, tag("else"), multispace0),
             delimited(multispace0, tag("{"), multispace0),
         ),
-        expr,
+        cmp_expr,
         delimited(multispace0, tag("}"), multispace0),
     ))(r)?;
     Ok((
@@ -166,12 +182,16 @@ fn conditional(i: &str) -> IResult<&str, Expression> {
 }
 
 fn var_assign(input: &str) -> IResult<&str, Expression> {
-    let (r, res) = tuple((ident_space, char('='), expr))(input)?;
+    let (r, res) = tuple((ident_space, char('='), cmp_expr))(input)?;
     Ok((r, Expression::VarAssign(res.0, Box::new(res.2))))
 }
 
+fn cmp_expr(i: &str) -> IResult<&str, Expression> {
+    alt((cmp, expr))(i)
+}
+
 fn assign_expr(i: &str) -> IResult<&str, Expression> {
-    alt((var_assign, expr))(i)
+    alt((var_assign, cmp_expr))(i)
 }
 
 fn conditional_expr(i: &str) -> IResult<&str, Expression> {
@@ -238,6 +258,20 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b>) -> f64 {
         Expression::Sub(lhs, rhs) => eval(lhs, ctx) - eval(rhs, ctx),
         Expression::Mult(lhs, rhs) => eval(lhs, ctx) * eval(rhs, ctx),
         Expression::Div(lhs, rhs) => eval(lhs, ctx) / eval(rhs, ctx),
+        Expression::LT(lhs, rhs) => {
+            if eval(lhs, ctx) < eval(rhs, ctx) {
+                1.
+            } else {
+                0.
+            }
+        }
+        Expression::GT(lhs, rhs) => {
+            if eval(lhs, ctx) > eval(rhs, ctx) {
+                1.
+            } else {
+                0.
+            }
+        }
         Expression::Conditional(cond, true_branch, false_branch) => {
             if eval(cond, ctx) != 0. {
                 eval(true_branch, ctx)

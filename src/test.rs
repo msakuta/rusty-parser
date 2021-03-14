@@ -266,3 +266,35 @@ fn cond_eval_test() {
     assert_eq!(eval0(&conditional("if (1) { 2 } else { 3}").unwrap().1), 2.);
     assert_eq!(eval0(&conditional("if (0) { 2 } else { 3}").unwrap().1), 3.);
 }
+
+#[test]
+fn cmp_test() {
+    assert_eq!(
+        conditional_expr(" 1 <  2 "),
+        Ok((
+            "",
+            Expression::LT(
+                Box::new(Expression::NumLiteral(1.)),
+                Box::new(Expression::NumLiteral(2.))
+            )
+        ))
+    );
+    assert_eq!(
+        conditional_expr(" 1 > 2"),
+        Ok((
+            "",
+            Expression::GT(
+                Box::new(Expression::NumLiteral(1.)),
+                Box::new(Expression::NumLiteral(2.))
+            )
+        ))
+    );
+}
+
+#[test]
+fn cmp_eval_test() {
+    assert_eq!(eval0(&cmp_expr(" 1 <  2 ").unwrap().1), 1.);
+    assert_eq!(eval0(&cmp_expr(" 1 > 2").unwrap().1), 0.);
+    assert_eq!(eval0(&cmp_expr(" 2 < 1").unwrap().1), 0.);
+    assert_eq!(eval0(&cmp_expr(" 2 > 1").unwrap().1), 1.);
+}
