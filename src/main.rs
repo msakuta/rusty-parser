@@ -3,24 +3,27 @@ use nom::{
     bytes::complete::{tag, take_until},
     character::complete::{alpha1, alphanumeric1, char, multispace0, multispace1},
     combinator::recognize,
-    multi::many0,
+    multi::{fold_many0, many0},
     number::complete::double,
     sequence::{delimited, pair},
     IResult,
 };
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 enum Statement<'a> {
     Comment(&'a str),
     VarDecl(&'a str),
     Expression(Expression),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 enum Expression {
     Empty,
     NumLiteral(f64),
     Add(Box<Expression>, Box<Expression>),
+    Sub(Box<Expression>, Box<Expression>),
+    Mult(Box<Expression>, Box<Expression>),
+    Div(Box<Expression>, Box<Expression>),
 }
 
 fn comment(input: &str) -> IResult<&str, Statement> {
@@ -47,35 +50,58 @@ fn numeric_literal_expression(input: &str) -> IResult<&str, Expression> {
     Ok((multispace0(r)?.0, Expression::NumLiteral(val)))
 }
 
-fn add_expression(input: &str) -> IResult<&str, Expression> {
-    let (r, lhs) = numeric_literal_expression(input)?;
-    let (r, _) = char('+')(r)?;
-    let (r, rhs) = expression(r)?;
-    Ok((r, Expression::Add(Box::new(lhs), Box::new(rhs))))
+// We parse any expr surrounded by parens, ignoring all whitespaces around those
+fn parens(i: &str) -> IResult<&str, Expression> {
+    delimited(
+        multispace0,
+        delimited(tag("("), expr, tag(")")),
+        multispace0,
+    )(i)
 }
 
-fn parenthesis_expression(input: &str) -> IResult<&str, Expression> {
-    let (r, _) = tag("(")(multispace0(input)?.0)?;
-    let (r, result) = add_expression(r)?;
-    let (r, _) = tag(")")(r)?;
-    Ok((r, result))
+// We transform an double string into a Expression::NumLiteral
+// on failure, we fallback to the parens parser defined above
+fn factor(i: &str) -> IResult<&str, Expression> {
+    alt((numeric_literal_expression, parens))(i)
 }
 
-fn empty_expression(input: &str) -> IResult<&str, Expression> {
-    Ok((multispace0(input)?.0, Expression::Empty))
+// We read an initial factor and for each time we find
+// a * or / operator followed by another factor, we do
+// the math by folding everything
+fn term(i: &str) -> IResult<&str, Expression> {
+    let (i, init) = factor(i)?;
+
+    fold_many0(
+        pair(alt((char('*'), char('/'))), factor),
+        init,
+        |acc, (op, val): (char, Expression)| {
+            if op == '*' {
+                Expression::Mult(Box::new(acc), Box::new(val))
+            } else {
+                Expression::Div(Box::new(acc), Box::new(val))
+            }
+        },
+    )(i)
 }
 
-fn expression(input: &str) -> IResult<&str, Expression> {
-    alt((
-        add_expression,
-        parenthesis_expression,
-        numeric_literal_expression,
-        empty_expression,
-    ))(input)
+fn expr(i: &str) -> IResult<&str, Expression> {
+    let (i, init) = term(i)?;
+
+    fold_many0(
+        pair(alt((char('+'), char('-'))), term),
+        init,
+        |acc, (op, val): (char, Expression)| {
+            if op == '+' {
+                Expression::Add(Box::new(acc), Box::new(val))
+            } else {
+                Expression::Sub(Box::new(acc), Box::new(val))
+            }
+        },
+    )(i)
 }
 
 fn expression_statement(input: &str) -> IResult<&str, Statement> {
-    let (r, val) = expression(input)?;
+    let (r, val) = expr(input)?;
     Ok((char(';')(r)?.0, Statement::Expression(val)))
 }
 
@@ -133,5 +159,51 @@ fn test_add_paren() {
             ))
         )),
         expression_statement("123.4 + (456 + 789.5);")
+    );
+}
+
+#[test]
+fn expr_test() {
+    assert_eq!(
+        expr(" 1 +  2 "),
+        Ok((
+            "",
+            Expression::Add(
+                Box::new(Expression::NumLiteral(1.)),
+                Box::new(Expression::NumLiteral(2.))
+            )
+        ))
+    );
+    assert_eq!(
+        expr(" 12 + 6 - 4+  3"),
+        Ok((
+            "",
+            Expression::Add(
+                Box::new(Expression::Sub(
+                    Box::new(Expression::Add(
+                        Box::new(Expression::NumLiteral(12.)),
+                        Box::new(Expression::NumLiteral(6.)),
+                    )),
+                    Box::new(Expression::NumLiteral(4.)),
+                )),
+                Box::new(Expression::NumLiteral(3.))
+            )
+        ))
+    );
+    assert_eq!(
+        expr(" 1 + 2*3 + 4"),
+        Ok((
+            "",
+            Expression::Add(
+                Box::new(Expression::Add(
+                    Box::new(Expression::NumLiteral(1.)),
+                    Box::new(Expression::Mult(
+                        Box::new(Expression::NumLiteral(2.)),
+                        Box::new(Expression::NumLiteral(3.)),
+                    ))
+                )),
+                Box::new(Expression::NumLiteral(4.))
+            )
+        ))
     );
 }
