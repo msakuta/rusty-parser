@@ -9,6 +9,8 @@ use nom::{
     IResult,
 };
 use std::{collections::HashMap, env};
+use std::fs::File;
+use std::io::prelude::*;
 
 #[derive(Debug, PartialEq, Clone)]
 enum Statement<'a> {
@@ -65,7 +67,7 @@ fn numeric_literal_expression(input: &str) -> IResult<&str, Expression> {
 fn parens(i: &str) -> IResult<&str, Expression> {
     delimited(
         multispace0,
-        delimited(tag("("), expr, tag(")")),
+        delimited(tag("("), assign_expr, tag(")")),
         multispace0,
     )(i)
 }
@@ -116,8 +118,12 @@ fn var_assign(input: &str) -> IResult<&str, Expression> {
     Ok((r, Expression::VarAssign(res.0, Box::new(res.2))))
 }
 
+fn assign_expr(i: &str) -> IResult<&str, Expression> {
+    alt((var_assign, expr))(i)
+}
+
 fn expression_statement(input: &str) -> IResult<&str, Statement> {
-    let (r, val) = alt((var_assign, expr))(input)?;
+    let (r, val) = assign_expr(input)?;
     Ok((char(';')(r)?.0, Statement::Expression(val)))
 }
 
@@ -158,10 +164,16 @@ fn run(stmts: &Vec<Statement>) {
     }
 }
 
-fn main() {
+fn main() -> std::io::Result<()> {
     let args: Vec<String> = env::args().collect();
+    let mut contents = String::new();
     let code = if 1 < args.len() {
-        &args[1]
+        if let Ok(mut file) = File::open(&args[1]) {
+            file.read_to_string(&mut contents)?;
+            &contents
+        } else {
+            &args[1]
+        }
     } else {
         r"var x;
   /* This is a block comment. */
@@ -176,6 +188,7 @@ fn main() {
     } else {
         println!("failed");
     }
+    Ok(())
 }
 
 mod test;
