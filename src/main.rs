@@ -16,7 +16,7 @@ use std::{collections::HashMap, env};
 enum Statement<'a> {
     Comment(&'a str),
     VarDecl(&'a str),
-    FnDecl(&'a str, Vec<Statement<'a>>),
+    FnDecl(&'a str, Vec<&'a str>, Vec<Statement<'a>>),
     Expression(Expression<'a>),
 }
 
@@ -79,7 +79,6 @@ fn func_invoke(i: &str) -> IResult<&str, Expression> {
     println!("func_invoke ident: {}", ident);
     let (r, args) = delimited(
         multispace0,
-        // pair(tag("("), tag(")")),
         delimited(
             tag("("),
             many0(delimited(
@@ -152,12 +151,25 @@ fn expression_statement(input: &str) -> IResult<&str, Statement> {
 fn func_decl(input: &str) -> IResult<&str, Statement> {
     let (r, _) = multispace1(tag("fn")(multispace0(input)?.0)?.0)?;
     let (r, ident) = identifier(r)?;
+    let (r, args) = delimited(
+        multispace0,
+        delimited(
+            tag("("),
+            many0(delimited(
+                multispace0,
+                identifier,
+                delimited(multispace0, opt(tag(",")), multispace0),
+            )),
+            tag(")"),
+        ),
+        multispace0,
+    )(r)?;
     let (r, stmts) = delimited(
         delimited(multispace0, tag("{"), multispace0),
         source,
         delimited(multispace0, tag("}"), multispace0),
     )(r)?;
-    Ok((r, Statement::FnDecl(ident, stmts)))
+    Ok((r, Statement::FnDecl(ident, args, stmts)))
 }
 
 fn source(input: &str) -> IResult<&str, Vec<Statement>> {
@@ -167,7 +179,10 @@ fn source(input: &str) -> IResult<&str, Vec<Statement>> {
 fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b>) -> f64 {
     match e {
         Expression::NumLiteral(val) => *val,
-        Expression::Variable(str) => *ctx.variables.get(str).unwrap(),
+        Expression::Variable(str) => *ctx
+            .variables
+            .get(str)
+            .expect(&format!("Variable {} not found in scope", str)),
         Expression::VarAssign(str, rhs) => {
             let value = eval(rhs, ctx);
             if let None = ctx.variables.insert(str, value) {
@@ -176,8 +191,13 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b>) -> f64 {
             value
         }
         Expression::FnInvoke(str, args) => {
+            let args = args.iter().map(|v| eval(v, ctx)).collect::<Vec<_>>();
+            let mut subctx = ctx.clone();
             let func = ctx.functions.get(str).unwrap();
-            run(func).unwrap()
+            for (k, v) in func.args.iter().zip(args) {
+                subctx.variables.insert(k, v);
+            }
+            run(func.stmts, subctx).unwrap()
         }
         Expression::Add(lhs, rhs) => eval(lhs, ctx) + eval(rhs, ctx),
         Expression::Sub(lhs, rhs) => eval(lhs, ctx) - eval(rhs, ctx),
@@ -186,24 +206,43 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b>) -> f64 {
     }
 }
 
-struct EvalContext<'a, 'b> {
-    variables: HashMap<&'a str, f64>,
-    functions: HashMap<&'a str, &'b Vec<Statement<'a>>>,
+#[derive(Clone, Debug)]
+struct FuncDef<'src, 'ast> {
+    args: &'ast Vec<&'src str>,
+    stmts: &'ast Vec<Statement<'src>>,
 }
 
-fn run(stmts: &Vec<Statement>) -> Result<f64, ()> {
-    let mut ctx = EvalContext {
-        variables: HashMap::new(),
-        functions: HashMap::new(),
-    };
+/// A context stat for evaluating a script.
+///
+/// It has 2 lifetime arguments, one for the source code ('src) and the other for
+/// the AST ('ast), because usually AST is created after the source.
+#[derive(Clone, Debug)]
+struct EvalContext<'src, 'ast> {
+    variables: HashMap<&'src str, f64>,
+    functions: HashMap<&'src str, FuncDef<'src, 'ast>>,
+}
+
+impl<'a, 'b> EvalContext<'a, 'b> {
+    fn new() -> Self {
+        Self {
+            variables: HashMap::new(),
+            functions: HashMap::new(),
+        }
+    }
+}
+
+fn run<'src, 'ast>(
+    stmts: &'ast Vec<Statement<'src>>,
+    mut ctx: EvalContext<'src, 'ast>,
+) -> Result<f64, ()> {
     let mut res = 0.;
     for stmt in stmts {
         match stmt {
             Statement::VarDecl(var) => {
                 ctx.variables.insert(*var, 0.);
             }
-            Statement::FnDecl(var, stmts) => {
-                ctx.functions.insert(var, stmts);
+            Statement::FnDecl(var, args, stmts) => {
+                ctx.functions.insert(var, FuncDef { args, stmts });
             }
             Statement::Expression(e) => {
                 res = eval(&e, &mut ctx);
@@ -235,7 +274,7 @@ fn main() -> std::io::Result<()> {
     };
     if let Ok(result) = source(code) {
         println!("Match: {:?}", result.1);
-        run(&result.1);
+        run(&result.1, EvalContext::new()).expect("Error in run()");
     } else {
         println!("failed");
     }

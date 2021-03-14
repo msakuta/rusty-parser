@@ -188,15 +188,16 @@ fn var_assign_test() {
 fn fn_decl_test() {
     assert_eq!(
         func_decl(
-            "fn a {
+            "fn f(a) {
         x = 123;
-        x * x;
+        x * a;
     }"
         ),
         Ok((
             "",
             Statement::FnDecl(
-                "a",
+                "f",
+                vec!["a"],
                 vec![
                     Statement::Expression(Expression::VarAssign(
                         "x",
@@ -204,7 +205,7 @@ fn fn_decl_test() {
                     )),
                     Statement::Expression(Expression::Mult(
                         Box::new(Expression::Variable("x")),
-                        Box::new(Expression::Variable("x"))
+                        Box::new(Expression::Variable("a"))
                     ))
                 ]
             )
