@@ -160,7 +160,7 @@ fn conditional(i: &str) -> IResult<&str, Expression> {
     let (r, cond) = cmp_expr(r)?;
     let (r, true_branch) = delimited(
         delimited(multispace0, tag("{"), multispace0),
-        cmp_expr,
+        conditional_expr,
         delimited(multispace0, tag("}"), multispace0),
     )(r)?;
     let (r, false_branch) = opt(delimited(
@@ -168,7 +168,7 @@ fn conditional(i: &str) -> IResult<&str, Expression> {
             delimited(multispace0, tag("else"), multispace0),
             delimited(multispace0, tag("{"), multispace0),
         ),
-        cmp_expr,
+        conditional_expr,
         delimited(multispace0, tag("}"), multispace0),
     ))(r)?;
     Ok((
