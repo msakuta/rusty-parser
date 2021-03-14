@@ -10,6 +10,11 @@ fn test_comments() {
 }
 
 #[test]
+fn test_ident() {
+    assert_eq!(identifier("x123"), Ok(("", "x123")));
+}
+
+#[test]
 fn test_add() {
     assert_eq!(
         Ok((
@@ -123,16 +128,34 @@ fn parens_test() {
     );
 }
 
+fn eval0(s: &Expression) -> f64 {
+    eval(s, &HashMap::new())
+}
+
 #[test]
 fn eval_test() {
-    assert_eq!(eval(&expr(" 1 +  2 ").unwrap().1), 3.);
-    assert_eq!(eval(&expr(" 12 + 6 - 4+  3").unwrap().1), 17.);
-    assert_eq!(eval(&expr(" 1 + 2*3 + 4").unwrap().1), 11.);
+    assert_eq!(eval0(&expr(" 1 +  2 ").unwrap().1), 3.);
+    assert_eq!(eval0(&expr(" 12 + 6 - 4+  3").unwrap().1), 17.);
+    assert_eq!(eval0(&expr(" 1 + 2*3 + 4").unwrap().1), 11.);
 }
 
 #[test]
 fn parens_eval_test() {
-    assert_eq!(eval(&expr(" (  2 )").unwrap().1), 2.);
-    assert_eq!(eval(&expr(" 2* (  3 + 4 ) ").unwrap().1), 14.);
-    assert_eq!(eval(&expr("  2*2 / ( 5 - 1) + 3").unwrap().1), 4.);
+    assert_eq!(eval0(&expr(" (  2 )").unwrap().1), 2.);
+    assert_eq!(eval0(&expr(" 2* (  3 + 4 ) ").unwrap().1), 14.);
+    assert_eq!(eval0(&expr("  2*2 / ( 5 - 1) + 3").unwrap().1), 4.);
+}
+
+#[test]
+fn var_ident_test() {
+    let mut vars = HashMap::new();
+    vars.insert("x", 42.);
+    assert_eq!(var_ref(" x123 "), Ok(("", Expression::Variable("x123"))));
+}
+
+#[test]
+fn var_test() {
+    let mut vars = HashMap::new();
+    vars.insert("x", 42.);
+    assert_eq!(eval(&expr(" x +  2 ").unwrap().1, &vars), 44.);
 }

@@ -8,22 +8,23 @@ use nom::{
     sequence::{delimited, pair},
     IResult,
 };
-use std::env;
+use std::{collections::HashMap, env};
 
 #[derive(Debug, PartialEq, Clone)]
 enum Statement<'a> {
     Comment(&'a str),
     VarDecl(&'a str),
-    Expression(Expression),
+    Expression(Expression<'a>),
 }
 
 #[derive(Debug, PartialEq, Clone)]
-enum Expression {
+enum Expression<'a> {
     NumLiteral(f64),
-    Add(Box<Expression>, Box<Expression>),
-    Sub(Box<Expression>, Box<Expression>),
-    Mult(Box<Expression>, Box<Expression>),
-    Div(Box<Expression>, Box<Expression>),
+    Variable(&'a str),
+    Add(Box<Expression<'a>>, Box<Expression<'a>>),
+    Sub(Box<Expression<'a>>, Box<Expression<'a>>),
+    Mult(Box<Expression<'a>>, Box<Expression<'a>>),
+    Div(Box<Expression<'a>>, Box<Expression<'a>>),
 }
 
 fn comment(input: &str) -> IResult<&str, Statement> {
@@ -36,6 +37,11 @@ pub fn identifier(input: &str) -> IResult<&str, &str> {
         alt((alpha1, tag("_"))),
         many0(alt((alphanumeric1, tag("_")))),
     ))(input)
+}
+
+fn var_ref(input: &str) -> IResult<&str, Expression> {
+    let (r, res) = identifier(multispace0(input)?.0)?;
+    Ok((multispace0(r)?.0, Expression::Variable(res)))
 }
 
 fn var_decl(input: &str) -> IResult<&str, Statement> {
@@ -62,7 +68,7 @@ fn parens(i: &str) -> IResult<&str, Expression> {
 // We transform an double string into a Expression::NumLiteral
 // on failure, we fallback to the parens parser defined above
 fn factor(i: &str) -> IResult<&str, Expression> {
-    alt((numeric_literal_expression, parens))(i)
+    alt((numeric_literal_expression, var_ref, parens))(i)
 }
 
 // We read an initial factor and for each time we find
@@ -109,13 +115,14 @@ fn source(input: &str) -> IResult<&str, Vec<Statement>> {
     many0(alt((var_decl, expression_statement, comment)))(input)
 }
 
-fn eval(e: &Expression) -> f64 {
+fn eval(e: &Expression, ctx: &HashMap<&str, f64>) -> f64 {
     match e {
         Expression::NumLiteral(val) => *val,
-        Expression::Add(lhs, rhs) => eval(lhs) + eval(rhs),
-        Expression::Sub(lhs, rhs) => eval(lhs) - eval(rhs),
-        Expression::Mult(lhs, rhs) => eval(lhs) * eval(rhs),
-        Expression::Div(lhs, rhs) => eval(lhs) / eval(rhs),
+        Expression::Variable(str) => *ctx.get(str).unwrap(),
+        Expression::Add(lhs, rhs) => eval(lhs, ctx) + eval(rhs, ctx),
+        Expression::Sub(lhs, rhs) => eval(lhs, ctx) - eval(rhs, ctx),
+        Expression::Mult(lhs, rhs) => eval(lhs, ctx) * eval(rhs, ctx),
+        Expression::Div(lhs, rhs) => eval(lhs, ctx) / eval(rhs, ctx),
     }
 }
 
@@ -133,10 +140,15 @@ fn main() {
     };
     if let Ok(result) = source(code) {
         println!("Match: {:?}", result.1);
+        let mut variables = HashMap::new();
         for stmt in result.1 {
             match stmt {
-                Statement::VarDecl(_) => println!("Variable declaration is not implemented yet!"),
-                Statement::Expression(e) => println!("Expression evaluates to: {}", eval(&e)),
+                Statement::VarDecl(var) => {
+                    variables.insert(var, 0.);
+                }
+                Statement::Expression(e) => {
+                    println!("Expression evaluates to: {}", eval(&e, &variables))
+                }
                 _ => {}
             }
         }
@@ -146,4 +158,3 @@ fn main() {
 }
 
 mod test;
-
