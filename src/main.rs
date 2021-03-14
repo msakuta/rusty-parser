@@ -8,6 +8,7 @@ use nom::{
     sequence::{delimited, pair},
     IResult,
 };
+use std::env;
 
 #[derive(Debug, PartialEq, Clone)]
 enum Statement<'a> {
@@ -18,7 +19,6 @@ enum Statement<'a> {
 
 #[derive(Debug, PartialEq, Clone)]
 enum Expression {
-    Empty,
     NumLiteral(f64),
     Add(Box<Expression>, Box<Expression>),
     Sub(Box<Expression>, Box<Expression>),
@@ -120,14 +120,26 @@ fn eval(e: &Expression) -> f64 {
 }
 
 fn main() {
-    let code = r"var x;
+    let args: Vec<String> = env::args().collect();
+    let code = if 1 < args.len() {
+        &args[1]
+    } else {
+        r"var x;
   /* This is a block comment. */
   var y;
   123;
   123 + 456;
-  ";
+  "
+    };
     if let Ok(result) = source(code) {
         println!("Match: {:?}", result.1);
+        for stmt in result.1 {
+            match stmt {
+                Statement::VarDecl(_) => println!("Variable declaration is not implemented yet!"),
+                Statement::Expression(e) => println!("Expression evaluates to: {}", eval(&e)),
+                _ => {}
+            }
+        }
     } else {
         println!("failed");
     }
