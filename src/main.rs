@@ -1,9 +1,10 @@
 use nom::{
     branch::alt,
     bytes::complete::{tag, take_until},
-    character::complete::{alpha1, alphanumeric1, char, digit1, multispace0, multispace1},
+    character::complete::{alpha1, alphanumeric1, char, multispace0, multispace1},
     combinator::recognize,
     multi::many0,
+    number::complete::double,
     sequence::{delimited, pair},
     IResult,
 };
@@ -12,14 +13,14 @@ use nom::{
 enum Statement<'a> {
     Comment(&'a str),
     VarDecl(&'a str),
-    Expression(Expression<'a>),
+    Expression(Expression),
 }
 
 #[derive(Debug, PartialEq)]
-enum Expression<'a> {
+enum Expression {
     Empty,
-    NumLiteral(&'a str),
-    Add(Box<Expression<'a>>, Box<Expression<'a>>),
+    NumLiteral(f64),
+    Add(Box<Expression>, Box<Expression>),
 }
 
 fn comment(input: &str) -> IResult<&str, Statement> {
@@ -42,7 +43,7 @@ fn var_decl(input: &str) -> IResult<&str, Statement> {
 }
 
 fn numeric_literal_expression(input: &str) -> IResult<&str, Expression> {
-    let (r, val) = digit1(multispace0(input)?.0)?;
+    let (r, val) = double(multispace0(input)?.0)?;
     Ok((multispace0(r)?.0, Expression::NumLiteral(val)))
 }
 
@@ -98,10 +99,10 @@ fn test_add() {
         Ok((
             "",
             Statement::Expression(Expression::Add(
-                Box::new(Expression::NumLiteral("123")),
-                Box::new(Expression::NumLiteral("456"))
+                Box::new(Expression::NumLiteral(123.4)),
+                Box::new(Expression::NumLiteral(456.0))
             ))
         )),
-        expression_statement("123 + 456;")
+        expression_statement("123.4 + 456;")
     );
 }
