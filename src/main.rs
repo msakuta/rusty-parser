@@ -54,12 +54,24 @@ fn add_expression(input: &str) -> IResult<&str, Expression> {
     Ok((r, Expression::Add(Box::new(lhs), Box::new(rhs))))
 }
 
+fn parenthesis_expression(input: &str) -> IResult<&str, Expression> {
+    let (r, _) = tag("(")(multispace0(input)?.0)?;
+    let (r, result) = add_expression(r)?;
+    let (r, _) = tag(")")(r)?;
+    Ok((r, result))
+}
+
 fn empty_expression(input: &str) -> IResult<&str, Expression> {
     Ok((multispace0(input)?.0, Expression::Empty))
 }
 
 fn expression(input: &str) -> IResult<&str, Expression> {
-    alt((add_expression, numeric_literal_expression, empty_expression))(input)
+    alt((
+        add_expression,
+        parenthesis_expression,
+        numeric_literal_expression,
+        empty_expression,
+    ))(input)
 }
 
 fn expression_statement(input: &str) -> IResult<&str, Statement> {
@@ -104,5 +116,22 @@ fn test_add() {
             ))
         )),
         expression_statement("123.4 + 456;")
+    );
+}
+
+#[test]
+fn test_add_paren() {
+    assert_eq!(
+        Ok((
+            "",
+            Statement::Expression(Expression::Add(
+                Box::new(Expression::NumLiteral(123.4)),
+                Box::new(Expression::Add(
+                    Box::new(Expression::NumLiteral(456.0)),
+                    Box::new(Expression::NumLiteral(789.5)),
+                ))
+            ))
+        )),
+        expression_statement("123.4 + (456 + 789.5);")
     );
 }
