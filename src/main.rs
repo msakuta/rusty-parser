@@ -83,7 +83,7 @@ fn parens(i: &str) -> IResult<&str, Expression> {
 
 fn func_invoke(i: &str) -> IResult<&str, Expression> {
     let (r, ident) = delimited(multispace0, identifier, multispace0)(i)?;
-    println!("func_invoke ident: {}", ident);
+    // println!("func_invoke ident: {}", ident);
     let (r, args) = delimited(
         multispace0,
         delimited(
@@ -234,7 +234,7 @@ fn source(input: &str) -> IResult<&str, Vec<Statement>> {
     many0(alt((var_decl, func_decl, expression_statement, comment)))(input)
 }
 
-fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b>) -> f64 {
+fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_>) -> f64 {
     match e {
         Expression::NumLiteral(val) => *val,
         Expression::Variable(str) => *ctx
@@ -251,11 +251,19 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b>) -> f64 {
         Expression::FnInvoke(str, args) => {
             let args = args.iter().map(|v| eval(v, ctx)).collect::<Vec<_>>();
             let mut subctx = ctx.clone();
-            let func = ctx.functions.get(str).unwrap();
-            for (k, v) in func.args.iter().zip(args) {
-                subctx.variables.insert(k, v);
+            let func = ctx
+                .functions
+                .get(*str)
+                .expect(&format!("function {} is not defined.", str));
+            match func {
+                FuncDef::Code(func) => {
+                    for (k, v) in func.args.iter().zip(&args) {
+                        subctx.variables.insert(k, *v);
+                    }
+                    run(func.stmts, subctx).unwrap()
+                }
+                FuncDef::Native(native) => native(&args),
             }
-            run(func.stmts, subctx).unwrap()
         }
         Expression::Add(lhs, rhs) => eval(lhs, ctx) + eval(rhs, ctx),
         Expression::Sub(lhs, rhs) => eval(lhs, ctx) - eval(rhs, ctx),
@@ -287,34 +295,50 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b>) -> f64 {
     }
 }
 
-#[derive(Clone, Debug)]
-struct FuncDef<'src, 'ast> {
+fn s_print(vals: &[f64]) -> f64 {
+    if let [val, ..] = vals {
+        println!("print: {}", val);
+    }
+    0.
+}
+
+#[derive(Clone)]
+struct FuncCode<'src, 'ast> {
     args: &'ast Vec<&'src str>,
     stmts: &'ast Vec<Statement<'src>>,
+}
+
+#[derive(Clone)]
+enum FuncDef<'src, 'ast, 'native> {
+    Code(FuncCode<'src, 'ast>),
+    Native(&'native dyn Fn(&[f64]) -> f64),
 }
 
 /// A context stat for evaluating a script.
 ///
 /// It has 2 lifetime arguments, one for the source code ('src) and the other for
 /// the AST ('ast), because usually AST is created after the source.
-#[derive(Clone, Debug)]
-struct EvalContext<'src, 'ast> {
+#[derive(Clone)]
+struct EvalContext<'src, 'ast, 'native> {
     variables: HashMap<&'src str, f64>,
-    functions: HashMap<&'src str, FuncDef<'src, 'ast>>,
+    /// Function names are owned strings because it can be either from source or native.
+    functions: HashMap<String, FuncDef<'src, 'ast, 'native>>,
 }
 
-impl<'a, 'b> EvalContext<'a, 'b> {
+impl<'a, 'b> EvalContext<'a, 'b, '_> {
     fn new() -> Self {
+        let mut functions = HashMap::new();
+        functions.insert("print".to_string(), FuncDef::Native(&s_print));
         Self {
             variables: HashMap::new(),
-            functions: HashMap::new(),
+            functions,
         }
     }
 }
 
 fn run<'src, 'ast>(
     stmts: &'ast Vec<Statement<'src>>,
-    mut ctx: EvalContext<'src, 'ast>,
+    mut ctx: EvalContext<'src, 'ast, '_>,
 ) -> Result<f64, ()> {
     let mut res = 0.;
     for stmt in stmts {
@@ -323,11 +347,12 @@ fn run<'src, 'ast>(
                 ctx.variables.insert(*var, 0.);
             }
             Statement::FnDecl(var, args, stmts) => {
-                ctx.functions.insert(var, FuncDef { args, stmts });
+                ctx.functions
+                    .insert(var.to_string(), FuncDef::Code(FuncCode { args, stmts }));
             }
             Statement::Expression(e) => {
                 res = eval(&e, &mut ctx);
-                println!("Expression evaluates to: {}", res);
+                // println!("Expression evaluates to: {}", res);
             }
             _ => {}
         }
