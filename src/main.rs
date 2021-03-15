@@ -5,7 +5,7 @@ use nom::{
     combinator::{opt, recognize},
     multi::{fold_many0, many0},
     number::complete::double,
-    sequence::{delimited, pair, tuple},
+    sequence::{delimited, pair, preceded, tuple},
     IResult,
 };
 use std::fs::File;
@@ -163,13 +163,16 @@ fn conditional(i: &str) -> IResult<&str, Expression> {
         conditional_expr,
         delimited(multispace0, tag("}"), multispace0),
     )(r)?;
-    let (r, false_branch) = opt(delimited(
-        pair(
-            delimited(multispace0, tag("else"), multispace0),
-            delimited(multispace0, tag("{"), multispace0),
-        ),
-        conditional_expr,
-        delimited(multispace0, tag("}"), multispace0),
+    let (r, false_branch) = opt(preceded(
+        delimited(multispace0, tag("else"), multispace0),
+        alt((
+            delimited(
+                delimited(multispace0, tag("{"), multispace0),
+                conditional_expr,
+                delimited(multispace0, tag("}"), multispace0),
+            ),
+            conditional,
+        )),
     ))(r)?;
     Ok((
         r,
