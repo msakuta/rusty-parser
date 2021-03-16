@@ -298,3 +298,27 @@ fn cmp_eval_test() {
     assert_eq!(eval0(&cmp_expr(" 2 < 1").unwrap().1), 0.);
     assert_eq!(eval0(&cmp_expr(" 2 > 1").unwrap().1), 1.);
 }
+
+#[test]
+fn loop_test() {
+    assert_eq!(
+        source(" var i; i = 0; loop { i = i + 1; }"),
+        Ok((
+            "",
+            vec![
+                Statement::VarDecl("i"),
+                Statement::Expression(Expression::VarAssign(
+                    "i",
+                    Box::new(Expression::NumLiteral(0.))
+                )),
+                Statement::Loop(vec![Statement::Expression(Expression::VarAssign(
+                    "i",
+                    Box::new(Expression::Add(
+                        Box::new(Expression::Variable("i")),
+                        Box::new(Expression::NumLiteral(1.)),
+                    ))
+                )),])
+            ]
+        ))
+    );
+}

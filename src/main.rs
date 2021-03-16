@@ -18,6 +18,8 @@ enum Statement<'a> {
     VarDecl(&'a str),
     FnDecl(&'a str, Vec<&'a str>, Vec<Statement<'a>>),
     Expression(Expression<'a>),
+    Loop(Vec<Statement<'a>>),
+    Break(),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -230,8 +232,24 @@ fn func_decl(input: &str) -> IResult<&str, Statement> {
     Ok((r, Statement::FnDecl(ident, args, stmts)))
 }
 
+fn loop_stmt(input: &str) -> IResult<&str, Statement> {
+    let (r, _) = multispace0(tag("loop")(multispace0(input)?.0)?.0)?;
+    let (r, stmts) = delimited(
+        delimited(multispace0, tag("{"), multispace0),
+        source,
+        delimited(multispace0, tag("}"), multispace0),
+    )(r)?;
+    Ok((r, Statement::Loop(stmts)))
+}
+
 fn source(input: &str) -> IResult<&str, Vec<Statement>> {
-    many0(alt((var_decl, func_decl, expression_statement, comment)))(input)
+    many0(alt((
+        var_decl,
+        func_decl,
+        loop_stmt,
+        expression_statement,
+        comment,
+    )))(input)
 }
 
 fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_>) -> f64 {
