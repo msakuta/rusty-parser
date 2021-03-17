@@ -20,3 +20,16 @@ fn fibo(n) {
 }
 
 print(fibo(10));
+
+fn sum(n) {
+    fn sum_int(n, acc) {
+        if n < 1 {
+            acc
+        } else {
+            sum_int(n - 1, acc) + n
+        };
+    }
+    sum_int(n, 0);
+}
+
+print(sum(10));
