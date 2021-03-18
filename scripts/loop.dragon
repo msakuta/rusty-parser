@@ -1,10 +1,15 @@
 
 var i;
+var accum;
 i = 1;
+accum = 0;
 
 loop {
     i = i + 1;
+    accum = accum + i;
     if 10 < i {
-        break
-    };
+        break;
+    }
 }
+
+print(accum);

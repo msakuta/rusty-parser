@@ -2,7 +2,7 @@ use nom::{
     branch::alt,
     bytes::complete::{tag, take_until},
     character::complete::{alpha1, alphanumeric1, char, multispace0, multispace1},
-    combinator::{opt, recognize, map_res},
+    combinator::{map_res, opt, recognize},
     multi::{fold_many0, many0},
     number::complete::double,
     sequence::{delimited, pair, preceded, terminated, tuple},
@@ -173,18 +173,17 @@ fn conditional(i: &str) -> IResult<&str, Expression> {
                 source,
                 delimited(multispace0, tag("}"), multispace0),
             ),
-            map_res(conditional, |v| -> Result<Vec<Statement>, nom::error::Error<&str>> {
-                Ok(vec![Statement::Expression(v)])
-            })),
+            map_res(
+                conditional,
+                |v| -> Result<Vec<Statement>, nom::error::Error<&str>> {
+                    Ok(vec![Statement::Expression(v)])
+                },
+            ),
         )),
-    )(r)?;
+    ))(r)?;
     Ok((
         r,
-        Expression::Conditional(
-            Box::new(cond),
-            true_branch,
-            false_branch,
-        ),
+        Expression::Conditional(Box::new(cond), true_branch, false_branch),
     ))
 }
 
@@ -261,8 +260,8 @@ fn last_statement(input: &str) -> IResult<&str, Statement> {
         var_decl,
         func_decl,
         loop_stmt,
-        terminated(break_stmt, opt(tag(";"))),
-        terminated(expression_statement, opt(tag(";"))),
+        terminated(break_stmt, opt(pair(tag(";"), multispace0))),
+        terminated(expression_statement, opt(pair(tag(";"), multispace0))),
         comment,
     ))(input)
 }
@@ -272,16 +271,19 @@ fn statement(input: &str) -> IResult<&str, Statement> {
         var_decl,
         func_decl,
         loop_stmt,
-        terminated(break_stmt, tag(";")),
-        terminated(expression_statement, tag(";")),
+        terminated(break_stmt, pair(tag(";"), multispace0)),
+        terminated(expression_statement, pair(tag(";"), multispace0)),
         comment,
     ))(input)
 }
 
 fn source(input: &str) -> IResult<&str, Vec<Statement>> {
-    let (r, mut v) = pair(many0(statement), last_statement)(input)?;
-    v.0.push(v.1);
-    Ok((r, v.0))
+    let (r, mut v) = many0(statement)(input)?;
+    let (r, last) = opt(last_statement)(r)?;
+    if let Some(last) = last {
+        v.push(last);
+    }
+    Ok((r, v))
 }
 
 fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_>) -> f64 {
