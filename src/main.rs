@@ -2,10 +2,10 @@ use nom::{
     branch::alt,
     bytes::complete::{tag, take_until},
     character::complete::{alpha1, alphanumeric1, char, multispace0, multispace1},
-    combinator::{opt, recognize},
+    combinator::{opt, recognize, map_res},
     multi::{fold_many0, many0},
     number::complete::double,
-    sequence::{delimited, pair, preceded, tuple},
+    sequence::{delimited, pair, preceded, terminated, tuple},
     IResult,
 };
 use std::fs::File;
@@ -19,7 +19,7 @@ enum Statement<'a> {
     FnDecl(&'a str, Vec<&'a str>, Vec<Statement<'a>>),
     Expression(Expression<'a>),
     Loop(Vec<Statement<'a>>),
-    Break(),
+    Break,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -36,8 +36,8 @@ enum Expression<'a> {
     GT(Box<Expression<'a>>, Box<Expression<'a>>),
     Conditional(
         Box<Expression<'a>>,
-        Box<Expression<'a>>,
-        Option<Box<Expression<'a>>>,
+        Vec<Statement<'a>>,
+        Option<Vec<Statement<'a>>>,
     ),
 }
 
@@ -162,7 +162,7 @@ fn conditional(i: &str) -> IResult<&str, Expression> {
     let (r, cond) = cmp_expr(r)?;
     let (r, true_branch) = delimited(
         delimited(multispace0, tag("{"), multispace0),
-        conditional_expr,
+        source,
         delimited(multispace0, tag("}"), multispace0),
     )(r)?;
     let (r, false_branch) = opt(preceded(
@@ -170,18 +170,20 @@ fn conditional(i: &str) -> IResult<&str, Expression> {
         alt((
             delimited(
                 delimited(multispace0, tag("{"), multispace0),
-                conditional_expr,
+                source,
                 delimited(multispace0, tag("}"), multispace0),
             ),
-            conditional,
+            map_res(conditional, |v| -> Result<Vec<Statement>, nom::error::Error<&str>> {
+                Ok(vec![Statement::Expression(v)])
+            })),
         )),
-    ))(r)?;
+    )(r)?;
     Ok((
         r,
         Expression::Conditional(
             Box::new(cond),
-            Box::new(true_branch),
-            false_branch.map(|e| Box::new(e)),
+            true_branch,
+            false_branch,
         ),
     ))
 }
@@ -205,7 +207,7 @@ fn conditional_expr(i: &str) -> IResult<&str, Expression> {
 
 fn expression_statement(input: &str) -> IResult<&str, Statement> {
     let (r, val) = conditional_expr(input)?;
-    Ok((char(';')(r)?.0, Statement::Expression(val)))
+    Ok((r, Statement::Expression(val)))
 }
 
 fn func_decl(input: &str) -> IResult<&str, Statement> {
@@ -242,14 +244,44 @@ fn loop_stmt(input: &str) -> IResult<&str, Statement> {
     Ok((r, Statement::Loop(stmts)))
 }
 
-fn source(input: &str) -> IResult<&str, Vec<Statement>> {
-    many0(alt((
+fn break_stmt(input: &str) -> IResult<&str, Statement> {
+    let (r, _) = delimited(multispace0, tag("break"), multispace0)(input)?;
+    Ok((r, Statement::Break))
+}
+
+// fn first_statement(input: &str, f: impl FnMut(&str) -> IResult<&str, Statement>) -> IResult<&str, Statement> {
+// }
+
+// fn last_statement(input: &str, f: impl FnMut(&str) -> IResult<&str, Statement>) -> IResult<&str, Statement> {
+
+// }
+
+fn last_statement(input: &str) -> IResult<&str, Statement> {
+    alt((
         var_decl,
         func_decl,
         loop_stmt,
-        expression_statement,
+        terminated(break_stmt, opt(tag(";"))),
+        terminated(expression_statement, opt(tag(";"))),
         comment,
-    )))(input)
+    ))(input)
+}
+
+fn statement(input: &str) -> IResult<&str, Statement> {
+    alt((
+        var_decl,
+        func_decl,
+        loop_stmt,
+        terminated(break_stmt, tag(";")),
+        terminated(expression_statement, tag(";")),
+        comment,
+    ))(input)
+}
+
+fn source(input: &str) -> IResult<&str, Vec<Statement>> {
+    let (r, mut v) = pair(many0(statement), last_statement)(input)?;
+    v.0.push(v.1);
+    Ok((r, v.0))
 }
 
 fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_>) -> f64 {
@@ -278,7 +310,7 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_>) -> f64
                     for (k, v) in func.args.iter().zip(&args) {
                         subctx.variables.insert(k, *v);
                     }
-                    run(func.stmts, subctx).unwrap()
+                    run(func.stmts, &mut subctx).unwrap()
                 }
                 FuncDef::Native(native) => native(&args),
             }
@@ -303,9 +335,9 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_>) -> f64
         }
         Expression::Conditional(cond, true_branch, false_branch) => {
             if eval(cond, ctx) != 0. {
-                eval(true_branch, ctx)
+                run(true_branch, ctx).unwrap()
             } else if let Some(ast) = false_branch {
-                eval(ast, ctx)
+                run(ast, ctx).unwrap()
             } else {
                 0.
             }
@@ -356,7 +388,7 @@ impl<'a, 'b> EvalContext<'a, 'b, '_> {
 
 fn run<'src, 'ast>(
     stmts: &'ast Vec<Statement<'src>>,
-    mut ctx: EvalContext<'src, 'ast, '_>,
+    ctx: &mut EvalContext<'src, 'ast, '_>,
 ) -> Result<f64, ()> {
     let mut res = 0.;
     for stmt in stmts {
@@ -369,7 +401,7 @@ fn run<'src, 'ast>(
                     .insert(var.to_string(), FuncDef::Code(FuncCode { args, stmts }));
             }
             Statement::Expression(e) => {
-                res = eval(&e, &mut ctx);
+                res = eval(&e, ctx);
                 // println!("Expression evaluates to: {}", res);
             }
             _ => {}
@@ -398,7 +430,7 @@ fn main() -> std::io::Result<()> {
     };
     if let Ok(result) = source(code) {
         println!("Match: {:?}", result.1);
-        run(&result.1, EvalContext::new()).expect("Error in run()");
+        run(&result.1, &mut EvalContext::new()).expect("Error in run()");
     } else {
         println!("failed");
     }

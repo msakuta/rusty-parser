@@ -237,24 +237,24 @@ fn fn_invoke_test() {
 #[test]
 fn cond_test() {
     assert_eq!(
-        conditional("if 0 { 1 }"),
+        conditional("if 0 { 1; }"),
         Ok((
             "",
             Expression::Conditional(
                 Box::new(Expression::NumLiteral(0.)),
-                Box::new(Expression::NumLiteral(1.)),
+                vec![Statement::Expression(Expression::NumLiteral(1.))],
                 None,
             )
         ))
     );
     assert_eq!(
-        conditional("if (1) { 2 } else { 3}"),
+        conditional("if (1) { 2; } else { 3; }"),
         Ok((
             "",
             Expression::Conditional(
                 Box::new(Expression::NumLiteral(1.)),
-                Box::new(Expression::NumLiteral(2.)),
-                Some(Box::new(Expression::NumLiteral(3.))),
+                vec![Statement::Expression(Expression::NumLiteral(2.))],
+                Some(vec![Statement::Expression(Expression::NumLiteral(3.))]),
             )
         ))
     );
@@ -262,9 +262,9 @@ fn cond_test() {
 
 #[test]
 fn cond_eval_test() {
-    assert_eq!(eval0(&conditional("if 0 { 1 }").unwrap().1), 0.);
-    assert_eq!(eval0(&conditional("if (1) { 2 } else { 3}").unwrap().1), 2.);
-    assert_eq!(eval0(&conditional("if (0) { 2 } else { 3}").unwrap().1), 3.);
+    assert_eq!(eval0(&conditional("if 0 { 1; }").unwrap().1), 0.);
+    assert_eq!(eval0(&conditional("if (1) { 2; } else { 3;}").unwrap().1), 2.);
+    assert_eq!(eval0(&conditional("if (0) { 2; } else { 3;}").unwrap().1), 3.);
 }
 
 #[test]
@@ -318,6 +318,44 @@ fn loop_test() {
                         Box::new(Expression::NumLiteral(1.)),
                     ))
                 )),])
+            ]
+        ))
+    );
+    assert_eq!(
+        source("if i < 10 { break };"),
+        Ok((
+            "",
+            vec![Statement::Expression(Expression::Conditional(
+                    Box::new(Expression::LT(
+                        Box::new(Expression::Variable("i")),
+                        Box::new(Expression::NumLiteral(10.)),
+                    )),
+                    vec![Statement::Break],
+                    None,
+                ))
+            ]
+        ))
+    );
+    assert_eq!(
+        source(" var i; i = 0; loop { i = i + 1; if i < 10 { break }; }"),
+        Ok((
+            "",
+            vec![Statement::VarDecl("i"),
+                Statement::Expression(Expression::VarAssign("i", Box::new(Expression::NumLiteral(0.)))),
+                Statement::Loop(vec![
+                    Statement::Expression(Expression::VarAssign("i", Box::new(Expression::Add(
+                        Box::new(Expression::Variable("i")),
+                        Box::new(Expression::NumLiteral(1.)),
+                    )))),
+                    Statement::Expression(Expression::Conditional(
+                        Box::new(Expression::LT(
+                            Box::new(Expression::Variable("i")),
+                            Box::new(Expression::NumLiteral(10.)),
+                        )),
+                        vec![Statement::Break],
+                        None
+                    ))
+                ])
             ]
         ))
     );
