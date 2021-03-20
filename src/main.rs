@@ -286,19 +286,28 @@ fn source(input: &str) -> IResult<&str, Vec<Statement>> {
     Ok((r, v))
 }
 
-fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_>) -> f64 {
+macro_rules! unwrap_run {
+    ($e:expr) => {
+        match $e {
+            RunResult::Yield(v) => v,
+            RunResult::Break => return RunResult::Break,
+        }
+    };
+}
+
+fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_>) -> RunResult {
     match e {
-        Expression::NumLiteral(val) => *val,
-        Expression::Variable(str) => *ctx
+        Expression::NumLiteral(val) => RunResult::Yield(*val),
+        Expression::Variable(str) => RunResult::Yield(*ctx
             .variables
             .get(str)
-            .expect(&format!("Variable {} not found in scope", str)),
+            .expect(&format!("Variable {} not found in scope", str))),
         Expression::VarAssign(str, rhs) => {
-            let value = eval(rhs, ctx);
+            let value = unwrap_run!(eval(rhs, ctx));
             if let None = ctx.variables.insert(str, value) {
                 panic!("Variable was not declared!");
             }
-            value
+            RunResult::Yield(value)
         }
         Expression::FnInvoke(str, args) => {
             let args = args.iter().map(|v| eval(v, ctx)).collect::<Vec<_>>();
@@ -310,38 +319,47 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_>) -> f64
             match func {
                 FuncDef::Code(func) => {
                     for (k, v) in func.args.iter().zip(&args) {
-                        subctx.variables.insert(k, *v);
+                        subctx.variables.insert(k, unwrap_run!(*v));
                     }
-                    run(func.stmts, &mut subctx).unwrap()
+                    let run_result = run(func.stmts, &mut subctx).unwrap();
+                    match run_result {
+                        RunResult::Yield(v) => RunResult::Yield(v),
+                        RunResult::Break => panic!("break in function toplevel"),
+                    }
                 }
-                FuncDef::Native(native) => native(&args),
+                FuncDef::Native(native) => RunResult::Yield(native(&args.iter().map(|e| 
+                    if let RunResult::Yield(v) = e {
+                        *v
+                    } else {
+                        0.
+                    }).collect::<Vec<_>>())),
             }
         }
-        Expression::Add(lhs, rhs) => eval(lhs, ctx) + eval(rhs, ctx),
-        Expression::Sub(lhs, rhs) => eval(lhs, ctx) - eval(rhs, ctx),
-        Expression::Mult(lhs, rhs) => eval(lhs, ctx) * eval(rhs, ctx),
-        Expression::Div(lhs, rhs) => eval(lhs, ctx) / eval(rhs, ctx),
+        Expression::Add(lhs, rhs) => RunResult::Yield(unwrap_run!(eval(lhs, ctx)) + unwrap_run!(eval(rhs, ctx))),
+        Expression::Sub(lhs, rhs) => RunResult::Yield(unwrap_run!(eval(lhs, ctx)) - unwrap_run!(eval(rhs, ctx))),
+        Expression::Mult(lhs, rhs) => RunResult::Yield(unwrap_run!(eval(lhs, ctx)) * unwrap_run!(eval(rhs, ctx))),
+        Expression::Div(lhs, rhs) => RunResult::Yield(unwrap_run!(eval(lhs, ctx)) / unwrap_run!(eval(rhs, ctx))),
         Expression::LT(lhs, rhs) => {
-            if eval(lhs, ctx) < eval(rhs, ctx) {
-                1.
+            if unwrap_run!(eval(lhs, ctx)) < unwrap_run!(eval(rhs, ctx)) {
+                RunResult::Yield(1.)
             } else {
-                0.
+                RunResult::Yield(0.)
             }
         }
         Expression::GT(lhs, rhs) => {
-            if eval(lhs, ctx) > eval(rhs, ctx) {
-                1.
+            if unwrap_run!(eval(lhs, ctx)) > unwrap_run!(eval(rhs, ctx)) {
+                RunResult::Yield(1.)
             } else {
-                0.
+                RunResult::Yield(0.)
             }
         }
         Expression::Conditional(cond, true_branch, false_branch) => {
-            if eval(cond, ctx) != 0. {
+            if unwrap_run!(eval(cond, ctx)) != 0. {
                 run(true_branch, ctx).unwrap()
             } else if let Some(ast) = false_branch {
                 run(ast, ctx).unwrap()
             } else {
-                0.
+                RunResult::Yield(0.)
             }
         }
     }
@@ -388,11 +406,17 @@ impl<'a, 'b> EvalContext<'a, 'b, '_> {
     }
 }
 
+#[derive(Debug)]
+enum RunResult {
+    Yield(f64),
+    Break,
+}
+
 fn run<'src, 'ast>(
     stmts: &'ast Vec<Statement<'src>>,
     ctx: &mut EvalContext<'src, 'ast, '_>,
-) -> Result<f64, ()> {
-    let mut res = 0.;
+) -> Result<RunResult, ()> {
+    let mut res = RunResult::Yield(0.);
     for stmt in stmts {
         match stmt {
             Statement::VarDecl(var) => {
@@ -404,7 +428,24 @@ fn run<'src, 'ast>(
             }
             Statement::Expression(e) => {
                 res = eval(&e, ctx);
-                // println!("Expression evaluates to: {}", res);
+                if let RunResult::Break = res {
+                    return Ok(res);
+                }
+                // println!("Expression evaluates to: {:?}", res);
+            }
+            Statement::Loop(e) => {
+                loop {
+                    res = match run(e, ctx)? {
+                        RunResult::Yield(v) => {
+                            RunResult::Yield(v)},
+                        RunResult::Break => {
+                            break
+                        }
+                    };
+                }
+            }
+            Statement::Break => {
+                return Ok(RunResult::Break);
             }
             _ => {}
         }
