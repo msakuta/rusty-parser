@@ -347,12 +347,11 @@ macro_rules! unwrap_run {
     };
 }
 
-fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_>) -> RunResult {
+fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) -> RunResult {
     match e {
         Expression::NumLiteral(val) => RunResult::Yield(*val),
         Expression::Variable(str) => RunResult::Yield(
-            *ctx.variables
-                .get(str)
+            *ctx.get_var(str)
                 .expect(&format!("Variable {} not found in scope", str)),
         ),
         Expression::VarAssign(str, rhs) => {
@@ -364,10 +363,9 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_>) -> Run
         }
         Expression::FnInvoke(str, args) => {
             let args = args.iter().map(|v| eval(v, ctx)).collect::<Vec<_>>();
-            let mut subctx = ctx.clone();
+            let mut subctx = EvalContext::push_stack(ctx);
             let func = ctx
-                .functions
-                .get(*str)
+                .get_fn(*str)
                 .expect(&format!("function {} is not defined.", str));
             match func {
                 FuncDef::Code(func) => {
@@ -451,19 +449,49 @@ enum FuncDef<'src, 'ast, 'native> {
 /// It has 2 lifetime arguments, one for the source code ('src) and the other for
 /// the AST ('ast), because usually AST is created after the source.
 #[derive(Clone)]
-struct EvalContext<'src, 'ast, 'native> {
+struct EvalContext<'src, 'ast, 'native, 'ctx> {
     variables: HashMap<&'src str, f64>,
     /// Function names are owned strings because it can be either from source or native.
     functions: HashMap<String, FuncDef<'src, 'ast, 'native>>,
+    super_context: Option<&'ctx EvalContext<'src, 'ast, 'native, 'ctx>>,
 }
 
-impl<'a, 'b> EvalContext<'a, 'b, '_> {
+impl<'src, 'ast, 'native, 'ctx> EvalContext<'src, 'ast, 'native, 'ctx> {
     fn new() -> Self {
         let mut functions = HashMap::new();
         functions.insert("print".to_string(), FuncDef::Native(&s_print));
         Self {
             variables: HashMap::new(),
             functions,
+            super_context: None,
+        }
+    }
+
+    fn push_stack(super_ctx: &'ctx Self) -> Self {
+        Self {
+            variables: HashMap::new(),
+            functions: HashMap::new(),
+            super_context: Some(super_ctx),
+        }
+    }
+
+    fn get_var(&self, name: &str) -> Option<&f64> {
+        if let Some(val) = self.variables.get(name) {
+            Some(val)
+        } else if let Some(super_ctx) = self.super_context {
+            super_ctx.get_var(name)
+        } else {
+            None
+        }
+    }
+
+    fn get_fn(&self, name: &str) -> Option<&FuncDef<'src, 'ast, 'native>> {
+        if let Some(val) = self.functions.get(name) {
+            Some(val)
+        } else if let Some(super_ctx) = self.super_context {
+            super_ctx.get_fn(name)
+        } else {
+            None
         }
     }
 }
@@ -485,7 +513,7 @@ macro_rules! unwrap_break {
 
 fn run<'src, 'ast>(
     stmts: &'ast Vec<Statement<'src>>,
-    ctx: &mut EvalContext<'src, 'ast, '_>,
+    ctx: &mut EvalContext<'src, 'ast, '_, '_>,
 ) -> Result<RunResult, ()> {
     let mut res = RunResult::Yield(0.);
     for stmt in stmts {

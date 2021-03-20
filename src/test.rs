@@ -129,10 +129,7 @@ fn parens_test() {
 }
 
 fn eval0(s: &Expression) -> RunResult {
-    let mut ctx = EvalContext {
-        variables: HashMap::new(),
-        functions: HashMap::new(),
-    };
+    let mut ctx = EvalContext::new();
     eval(s, &mut ctx)
 }
 
@@ -171,10 +168,7 @@ fn var_ident_test() {
 
 #[test]
 fn var_test() {
-    let mut ctx = EvalContext {
-        variables: HashMap::new(),
-        functions: HashMap::new(),
-    };
+    let mut ctx = EvalContext::new();
     ctx.variables.insert("x", 42.);
     assert_eq!(
         eval(&expr(" x +  2 ").unwrap().1, &mut ctx),
@@ -184,10 +178,7 @@ fn var_test() {
 
 #[test]
 fn var_assign_test() {
-    let mut ctx = EvalContext {
-        variables: HashMap::new(),
-        functions: HashMap::new(),
-    };
+    let mut ctx = EvalContext::new();
     ctx.variables.insert("x", 42.);
     assert_eq!(
         var_assign("x=12"),
