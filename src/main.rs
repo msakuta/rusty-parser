@@ -41,6 +41,7 @@ enum Expression<'a> {
         Vec<Statement<'a>>,
         Option<Vec<Statement<'a>>>,
     ),
+    Brace(Vec<Statement<'a>>),
 }
 
 fn comment(input: &str) -> IResult<&str, Statement> {
@@ -107,7 +108,13 @@ fn func_invoke(i: &str) -> IResult<&str, Expression> {
 // We transform an double string into a Expression::NumLiteral
 // on failure, we fallback to the parens parser defined above
 fn factor(i: &str) -> IResult<&str, Expression> {
-    alt((numeric_literal_expression, func_invoke, var_ref, parens))(i)
+    alt((
+        numeric_literal_expression,
+        func_invoke,
+        var_ref,
+        parens,
+        brace_expr,
+    ))(i)
 }
 
 // We read an initial factor and for each time we find
@@ -206,8 +213,23 @@ fn conditional_expr(i: &str) -> IResult<&str, Expression> {
     alt((conditional, assign_expr))(i)
 }
 
+fn brace_expr(input: &str) -> IResult<&str, Expression> {
+    map_res(
+        delimited(
+            delimited(multispace0, tag("{"), multispace0),
+            source,
+            delimited(multispace0, tag("}"), multispace0),
+        ),
+        |res| -> Result<Expression, ()> { Ok(Expression::Brace(res)) },
+    )(input)
+}
+
+fn full_expression(input: &str) -> IResult<&str, Expression> {
+    conditional_expr(input)
+}
+
 fn expression_statement(input: &str) -> IResult<&str, Statement> {
-    let (r, val) = conditional_expr(input)?;
+    let (r, val) = full_expression(input)?;
     Ok((r, Statement::Expression(val)))
 }
 
@@ -275,13 +297,6 @@ fn break_stmt(input: &str) -> IResult<&str, Statement> {
     let (r, _) = delimited(multispace0, tag("break"), multispace0)(input)?;
     Ok((r, Statement::Break))
 }
-
-// fn first_statement(input: &str, f: impl FnMut(&str) -> IResult<&str, Statement>) -> IResult<&str, Statement> {
-// }
-
-// fn last_statement(input: &str, f: impl FnMut(&str) -> IResult<&str, Statement>) -> IResult<&str, Statement> {
-
-// }
 
 fn general_statement<'a>(last: bool) -> impl Fn(&'a str) -> IResult<&'a str, Statement> {
     let terminator = move |i| -> IResult<&str, ()> {
@@ -408,6 +423,7 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_>) -> Run
                 RunResult::Yield(0.)
             }
         }
+        Expression::Brace(stmts) => run(stmts, ctx).unwrap(),
     }
 }
 

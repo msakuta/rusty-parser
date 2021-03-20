@@ -330,6 +330,54 @@ fn cmp_eval_test() {
 }
 
 #[test]
+fn brace_expr_test() {
+    use Expression::NumLiteral as NL;
+    use Statement::Expression as Expr;
+    assert_eq!(
+        full_expression(" { 1; }"),
+        Ok(("", Expression::Brace(vec![Expr(NL(1.))])))
+    );
+    assert_eq!(
+        full_expression(" { 1; 2; }"),
+        Ok(("", Expression::Brace(vec![Expr(NL(1.)), Expr(NL(2.)),])))
+    );
+    assert_eq!(
+        full_expression(" { 1; 2 }"),
+        Ok(("", Expression::Brace(vec![Expr(NL(1.)), Expr(NL(2.)),])))
+    );
+    assert_eq!(
+        statement(" { x = 1; x }; "),
+        Ok((
+            "",
+            Expr(Expression::Brace(vec![
+                Expr(Expression::VarAssign("x", Box::new(NL(1.)))),
+                Expr(Expression::Variable("x")),
+            ]))
+        ))
+    );
+}
+
+#[test]
+fn brace_expr_eval_test() {
+    assert_eq!(
+        eval0(&full_expression(" { 1; } ").unwrap().1),
+        RunResult::Yield(1.)
+    );
+    assert_eq!(
+        eval0(&full_expression(" { 1; 2 }").unwrap().1),
+        RunResult::Yield(2.)
+    );
+    assert_eq!(
+        eval0(&full_expression(" {1; 2;} ").unwrap().1),
+        RunResult::Yield(2.)
+    );
+    assert_eq!(
+        eval0(&full_expression("  { var x; x = 1; x } ").unwrap().1),
+        RunResult::Yield(1.)
+    );
+}
+
+#[test]
 fn stmt_test() {
     assert_eq!(
         statement(" 1;"),
