@@ -421,7 +421,10 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
                 RunResult::Yield(0.)
             }
         }
-        Expression::Brace(stmts) => run(stmts, ctx).unwrap(),
+        Expression::Brace(stmts) => {
+            let mut subctx = EvalContext::push_stack(ctx);
+            run(stmts, &mut subctx).unwrap()
+        }
     }
 }
 
