@@ -16,7 +16,7 @@ AST and run it.
 In ascending order of difficulty.
 
 * [x] Functions, recursive calls
-* [ ] Loops
+* [x] Loops
 * [ ] Proper expression statements (brace expressions)
 * [ ] Definition initialization
 * [ ] Type declaration
