@@ -284,6 +284,7 @@ fn statement(input: &str) -> IResult<&str, Statement> {
         var_decl,
         func_decl,
         loop_stmt,
+        while_stmt,
         terminated(break_stmt, pair(tag(";"), multispace0)),
         terminated(expression_statement, pair(tag(";"), multispace0)),
         comment,
@@ -456,6 +457,18 @@ fn run<'src, 'ast>(
                 // println!("Expression evaluates to: {:?}", res);
             }
             Statement::Loop(e) => loop {
+                res = match run(e, ctx)? {
+                    RunResult::Yield(v) => RunResult::Yield(v),
+                    RunResult::Break => break,
+                };
+            },
+            Statement::While(cond, e) => loop {
+                match eval(cond, ctx) {
+                    RunResult::Yield(v) => if v == 0. {
+                        break;
+                    },
+                    RunResult::Break => break,
+                }
                 res = match run(e, ctx)? {
                     RunResult::Yield(v) => RunResult::Yield(v),
                     RunResult::Break => break,
