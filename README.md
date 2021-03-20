@@ -17,7 +17,7 @@ In ascending order of difficulty.
 
 * [x] Functions, recursive calls
 * [x] Loops
-* [ ] Proper expression statements (brace expressions)
+* [x] Proper expression statements (brace expressions)
 * [ ] Definition initialization
 * [ ] Type declaration
 * [ ] Primitive types (i32, u32, f32, f64)
