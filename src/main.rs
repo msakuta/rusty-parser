@@ -219,14 +219,12 @@ fn conditional_expr(i: &str) -> IResult<&str, Expression> {
 }
 
 fn brace_expr(input: &str) -> IResult<&str, Expression> {
-    map_res(
-        delimited(
-            delimited(multispace0, tag("{"), multispace0),
-            source,
-            delimited(multispace0, tag("}"), multispace0),
-        ),
-        |res| -> Result<Expression, ()> { Ok(Expression::Brace(res)) },
-    )(input)
+    let (r, v) = delimited(
+        delimited(multispace0, tag("{"), multispace0),
+        source,
+        delimited(multispace0, tag("}"), multispace0),
+    )(input)?;
+    Ok((r, Expression::Brace(v)))
 }
 
 fn full_expression(input: &str) -> IResult<&str, Expression> {
