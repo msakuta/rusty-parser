@@ -18,12 +18,13 @@ In ascending order of difficulty.
 * [x] Functions, recursive calls
 * [x] Loops
 * [x] Proper expression statements (brace expressions)
-* [ ] Definition initialization
+* [x] Variable definition initializer
 * [ ] Type declaration
 * [ ] Primitive types (i32, u32, f32, f64)
 * [ ] String types? (Optional?)
 * [ ] Array types
 * [ ] Tuple types
+* [ ] Function types
 * [ ] Mutability qualifiers
 * [ ] Array slice syntax
 * [ ] Array shape constraints
