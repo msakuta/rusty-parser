@@ -19,6 +19,7 @@ enum Statement<'a> {
     FnDecl(&'a str, Vec<&'a str>, Vec<Statement<'a>>),
     Expression(Expression<'a>),
     Loop(Vec<Statement<'a>>),
+    While(Expression<'a>, Vec<Statement<'a>>),
     Break,
 }
 
@@ -243,6 +244,17 @@ fn loop_stmt(input: &str) -> IResult<&str, Statement> {
     Ok((r, Statement::Loop(stmts)))
 }
 
+fn while_stmt(input: &str) -> IResult<&str, Statement> {
+    let (r, _) = multispace0(tag("while")(multispace0(input)?.0)?.0)?;
+    let (r, cond) = cmp_expr(r)?;
+    let (r, stmts) = delimited(
+        delimited(multispace0, tag("{"), multispace0),
+        source,
+        delimited(multispace0, tag("}"), multispace0),
+    )(r)?;
+    Ok((r, Statement::While(cond, stmts)))
+}
+
 fn break_stmt(input: &str) -> IResult<&str, Statement> {
     let (r, _) = delimited(multispace0, tag("break"), multispace0)(input)?;
     Ok((r, Statement::Break))
@@ -260,6 +272,7 @@ fn last_statement(input: &str) -> IResult<&str, Statement> {
         var_decl,
         func_decl,
         loop_stmt,
+        while_stmt,
         terminated(break_stmt, opt(pair(tag(";"), multispace0))),
         terminated(expression_statement, opt(pair(tag(";"), multispace0))),
         comment,
@@ -298,10 +311,11 @@ macro_rules! unwrap_run {
 fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_>) -> RunResult {
     match e {
         Expression::NumLiteral(val) => RunResult::Yield(*val),
-        Expression::Variable(str) => RunResult::Yield(*ctx
-            .variables
-            .get(str)
-            .expect(&format!("Variable {} not found in scope", str))),
+        Expression::Variable(str) => RunResult::Yield(
+            *ctx.variables
+                .get(str)
+                .expect(&format!("Variable {} not found in scope", str)),
+        ),
         Expression::VarAssign(str, rhs) => {
             let value = unwrap_run!(eval(rhs, ctx));
             if let None = ctx.variables.insert(str, value) {
@@ -327,18 +341,26 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_>) -> Run
                         RunResult::Break => panic!("break in function toplevel"),
                     }
                 }
-                FuncDef::Native(native) => RunResult::Yield(native(&args.iter().map(|e| 
-                    if let RunResult::Yield(v) = e {
-                        *v
-                    } else {
-                        0.
-                    }).collect::<Vec<_>>())),
+                FuncDef::Native(native) => RunResult::Yield(native(
+                    &args
+                        .iter()
+                        .map(|e| if let RunResult::Yield(v) = e { *v } else { 0. })
+                        .collect::<Vec<_>>(),
+                )),
             }
         }
-        Expression::Add(lhs, rhs) => RunResult::Yield(unwrap_run!(eval(lhs, ctx)) + unwrap_run!(eval(rhs, ctx))),
-        Expression::Sub(lhs, rhs) => RunResult::Yield(unwrap_run!(eval(lhs, ctx)) - unwrap_run!(eval(rhs, ctx))),
-        Expression::Mult(lhs, rhs) => RunResult::Yield(unwrap_run!(eval(lhs, ctx)) * unwrap_run!(eval(rhs, ctx))),
-        Expression::Div(lhs, rhs) => RunResult::Yield(unwrap_run!(eval(lhs, ctx)) / unwrap_run!(eval(rhs, ctx))),
+        Expression::Add(lhs, rhs) => {
+            RunResult::Yield(unwrap_run!(eval(lhs, ctx)) + unwrap_run!(eval(rhs, ctx)))
+        }
+        Expression::Sub(lhs, rhs) => {
+            RunResult::Yield(unwrap_run!(eval(lhs, ctx)) - unwrap_run!(eval(rhs, ctx)))
+        }
+        Expression::Mult(lhs, rhs) => {
+            RunResult::Yield(unwrap_run!(eval(lhs, ctx)) * unwrap_run!(eval(rhs, ctx)))
+        }
+        Expression::Div(lhs, rhs) => {
+            RunResult::Yield(unwrap_run!(eval(lhs, ctx)) / unwrap_run!(eval(rhs, ctx)))
+        }
         Expression::LT(lhs, rhs) => {
             if unwrap_run!(eval(lhs, ctx)) < unwrap_run!(eval(rhs, ctx)) {
                 RunResult::Yield(1.)
@@ -406,7 +428,7 @@ impl<'a, 'b> EvalContext<'a, 'b, '_> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum RunResult {
     Yield(f64),
     Break,
@@ -433,17 +455,12 @@ fn run<'src, 'ast>(
                 }
                 // println!("Expression evaluates to: {:?}", res);
             }
-            Statement::Loop(e) => {
-                loop {
-                    res = match run(e, ctx)? {
-                        RunResult::Yield(v) => {
-                            RunResult::Yield(v)},
-                        RunResult::Break => {
-                            break
-                        }
-                    };
-                }
-            }
+            Statement::Loop(e) => loop {
+                res = match run(e, ctx)? {
+                    RunResult::Yield(v) => RunResult::Yield(v),
+                    RunResult::Break => break,
+                };
+            },
             Statement::Break => {
                 return Ok(RunResult::Break);
             }

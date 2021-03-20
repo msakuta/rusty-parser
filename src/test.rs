@@ -128,7 +128,7 @@ fn parens_test() {
     );
 }
 
-fn eval0(s: &Expression) -> f64 {
+fn eval0(s: &Expression) -> RunResult {
     let mut ctx = EvalContext {
         variables: HashMap::new(),
         functions: HashMap::new(),
@@ -138,16 +138,28 @@ fn eval0(s: &Expression) -> f64 {
 
 #[test]
 fn eval_test() {
-    assert_eq!(eval0(&expr(" 1 +  2 ").unwrap().1), 3.);
-    assert_eq!(eval0(&expr(" 12 + 6 - 4+  3").unwrap().1), 17.);
-    assert_eq!(eval0(&expr(" 1 + 2*3 + 4").unwrap().1), 11.);
+    assert_eq!(eval0(&expr(" 1 +  2 ").unwrap().1), RunResult::Yield(3.));
+    assert_eq!(
+        eval0(&expr(" 12 + 6 - 4+  3").unwrap().1),
+        RunResult::Yield(17.)
+    );
+    assert_eq!(
+        eval0(&expr(" 1 + 2*3 + 4").unwrap().1),
+        RunResult::Yield(11.)
+    );
 }
 
 #[test]
 fn parens_eval_test() {
-    assert_eq!(eval0(&expr(" (  2 )").unwrap().1), 2.);
-    assert_eq!(eval0(&expr(" 2* (  3 + 4 ) ").unwrap().1), 14.);
-    assert_eq!(eval0(&expr("  2*2 / ( 5 - 1) + 3").unwrap().1), 4.);
+    assert_eq!(eval0(&expr(" (  2 )").unwrap().1), RunResult::Yield(2.));
+    assert_eq!(
+        eval0(&expr(" 2* (  3 + 4 ) ").unwrap().1),
+        RunResult::Yield(14.)
+    );
+    assert_eq!(
+        eval0(&expr("  2*2 / ( 5 - 1) + 3").unwrap().1),
+        RunResult::Yield(4.)
+    );
 }
 
 #[test]
@@ -164,7 +176,10 @@ fn var_test() {
         functions: HashMap::new(),
     };
     ctx.variables.insert("x", 42.);
-    assert_eq!(eval(&expr(" x +  2 ").unwrap().1, &mut ctx), 44.);
+    assert_eq!(
+        eval(&expr(" x +  2 ").unwrap().1, &mut ctx),
+        RunResult::Yield(44.)
+    );
 }
 
 #[test]
@@ -181,7 +196,10 @@ fn var_assign_test() {
             Expression::VarAssign("x", Box::new(Expression::NumLiteral(12.)))
         ))
     );
-    assert_eq!(eval(&var_assign("x=12").unwrap().1, &mut ctx), 12.);
+    assert_eq!(
+        eval(&var_assign("x=12").unwrap().1, &mut ctx),
+        RunResult::Yield(12.)
+    );
 }
 
 #[test]
@@ -262,14 +280,17 @@ fn cond_test() {
 
 #[test]
 fn cond_eval_test() {
-    assert_eq!(eval0(&conditional("if 0 { 1; }").unwrap().1), 0.);
+    assert_eq!(
+        eval0(&conditional("if 0 { 1; }").unwrap().1),
+        RunResult::Yield(0.)
+    );
     assert_eq!(
         eval0(&conditional("if (1) { 2; } else { 3;}").unwrap().1),
-        2.
+        RunResult::Yield(2.)
     );
     assert_eq!(
         eval0(&conditional("if (0) { 2; } else { 3;}").unwrap().1),
-        3.
+        RunResult::Yield(3.)
     );
 }
 
@@ -299,10 +320,13 @@ fn cmp_test() {
 
 #[test]
 fn cmp_eval_test() {
-    assert_eq!(eval0(&cmp_expr(" 1 <  2 ").unwrap().1), 1.);
-    assert_eq!(eval0(&cmp_expr(" 1 > 2").unwrap().1), 0.);
-    assert_eq!(eval0(&cmp_expr(" 2 < 1").unwrap().1), 0.);
-    assert_eq!(eval0(&cmp_expr(" 2 > 1").unwrap().1), 1.);
+    assert_eq!(
+        eval0(&cmp_expr(" 1 <  2 ").unwrap().1),
+        RunResult::Yield(1.)
+    );
+    assert_eq!(eval0(&cmp_expr(" 1 > 2").unwrap().1), RunResult::Yield(0.));
+    assert_eq!(eval0(&cmp_expr(" 2 < 1").unwrap().1), RunResult::Yield(0.));
+    assert_eq!(eval0(&cmp_expr(" 2 > 1").unwrap().1), RunResult::Yield(1.));
 }
 
 #[test]
@@ -408,6 +432,36 @@ fn loop_test() {
                         None
                     ))
                 ])
+            ]
+        ))
+    );
+}
+
+#[test]
+fn while_test() {
+    assert_eq!(
+        source(" var i; i = 0; while i < 10 { i = i + 1; }"),
+        Ok((
+            "",
+            vec![
+                Statement::VarDecl("i"),
+                Statement::Expression(Expression::VarAssign(
+                    "i",
+                    Box::new(Expression::NumLiteral(0.))
+                )),
+                Statement::While(
+                    Expression::LT(
+                        Box::new(Expression::Variable("i")),
+                        Box::new(Expression::NumLiteral(10.)),
+                    ),
+                    vec![Statement::Expression(Expression::VarAssign(
+                        "i",
+                        Box::new(Expression::Add(
+                            Box::new(Expression::Variable("i")),
+                            Box::new(Expression::NumLiteral(1.)),
+                        ))
+                    )),]
+                )
             ]
         ))
     );
