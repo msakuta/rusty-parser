@@ -409,13 +409,37 @@ fn stmts_test() {
 }
 
 #[test]
+fn var_decl_test() {
+    assert_eq!(
+        source(" var x; x = 0;"),
+        Ok((
+            "",
+            vec![
+                Statement::VarDecl("x", None),
+                Statement::Expression(Expression::VarAssign(
+                    "x",
+                    Box::new(Expression::NumLiteral(0.))
+                )),
+            ]
+        ))
+    );
+    assert_eq!(
+        source(" var x = 0;"),
+        Ok((
+            "",
+            vec![Statement::VarDecl("x", Some(Expression::NumLiteral(0.)))]
+        ))
+    );
+}
+
+#[test]
 fn loop_test() {
     assert_eq!(
         source(" var i; i = 0; loop { i = i + 1; }"),
         Ok((
             "",
             vec![
-                Statement::VarDecl("i"),
+                Statement::VarDecl("i", None),
                 Statement::Expression(Expression::VarAssign(
                     "i",
                     Box::new(Expression::NumLiteral(0.))
@@ -449,7 +473,7 @@ fn loop_test() {
         Ok((
             "",
             vec![
-                Statement::VarDecl("i"),
+                Statement::VarDecl("i", None),
                 Statement::Expression(Expression::VarAssign(
                     "i",
                     Box::new(Expression::NumLiteral(0.))
@@ -483,7 +507,7 @@ fn while_test() {
         Ok((
             "",
             vec![
-                Statement::VarDecl("i"),
+                Statement::VarDecl("i", None),
                 Statement::Expression(Expression::VarAssign(
                     "i",
                     Box::new(Expression::NumLiteral(0.))

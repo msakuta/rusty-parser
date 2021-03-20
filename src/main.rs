@@ -15,7 +15,7 @@ use std::{collections::HashMap, env};
 #[derive(Debug, PartialEq, Clone)]
 enum Statement<'a> {
     Comment(&'a str),
-    VarDecl(&'a str),
+    VarDecl(&'a str, Option<Expression<'a>>),
     FnDecl(&'a str, Vec<&'a str>, Vec<Statement<'a>>),
     Expression(Expression<'a>),
     Loop(Vec<Statement<'a>>),
@@ -68,8 +68,13 @@ fn var_ref(input: &str) -> IResult<&str, Expression> {
 fn var_decl(input: &str) -> IResult<&str, Statement> {
     let (r, _) = multispace1(tag("var")(multispace0(input)?.0)?.0)?;
     let (r, ident) = identifier(r)?;
+    let (r, initializer) = opt(delimited(
+        delimited(multispace0, tag("="), multispace0),
+        full_expression,
+        multispace0,
+    ))(r)?;
     let (r, _) = char(';')(multispace0(r)?.0)?;
-    Ok((r, Statement::VarDecl(ident)))
+    Ok((r, Statement::VarDecl(ident, initializer)))
 }
 
 fn numeric_literal_expression(input: &str) -> IResult<&str, Expression> {
@@ -521,8 +526,13 @@ fn run<'src, 'ast>(
     let mut res = RunResult::Yield(0.);
     for stmt in stmts {
         match stmt {
-            Statement::VarDecl(var) => {
-                ctx.variables.insert(*var, 0.);
+            Statement::VarDecl(var, initializer) => {
+                let init_val = if let Some(init_expr) = initializer {
+                    unwrap_break!(eval(init_expr, ctx))
+                } else {
+                    0.
+                };
+                ctx.variables.insert(*var, init_val);
             }
             Statement::FnDecl(var, args, stmts) => {
                 ctx.functions
