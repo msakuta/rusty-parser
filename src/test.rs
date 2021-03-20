@@ -466,3 +466,22 @@ fn while_test() {
         ))
     );
 }
+
+#[test]
+fn for_test() {
+    assert_eq!(
+        source(" for i in 0 .. 10 { print(i); }"),
+        Ok((
+            "",
+            vec![Statement::For(
+                "i",
+                Expression::NumLiteral(0.),
+                Expression::NumLiteral(10.),
+                vec![Statement::Expression(Expression::FnInvoke(
+                    "print",
+                    vec![Expression::Variable("i")],
+                ))]
+            )]
+        ))
+    );
+}

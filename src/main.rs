@@ -20,6 +20,7 @@ enum Statement<'a> {
     Expression(Expression<'a>),
     Loop(Vec<Statement<'a>>),
     While(Expression<'a>, Vec<Statement<'a>>),
+    For(&'a str, Expression<'a>, Expression<'a>, Vec<Statement<'a>>),
     Break,
 }
 
@@ -255,6 +256,21 @@ fn while_stmt(input: &str) -> IResult<&str, Statement> {
     Ok((r, Statement::While(cond, stmts)))
 }
 
+fn for_stmt(input: &str) -> IResult<&str, Statement> {
+    let (r, _) = delimited(multispace0, tag("for"), multispace1)(input)?;
+    let (r, iter) = identifier(r)?;
+    let (r, _) = delimited(multispace0, tag("in"), multispace0)(r)?;
+    let (r, from) = expr(r)?;
+    let (r, _) = delimited(multispace0, tag(".."), multispace0)(r)?;
+    let (r, to) = expr(r)?;
+    let (r, stmts) = delimited(
+        delimited(multispace0, tag("{"), multispace0),
+        source,
+        delimited(multispace0, tag("}"), multispace0),
+    )(r)?;
+    Ok((r, Statement::For(iter, from, to, stmts)))
+}
+
 fn break_stmt(input: &str) -> IResult<&str, Statement> {
     let (r, _) = delimited(multispace0, tag("break"), multispace0)(input)?;
     Ok((r, Statement::Break))
@@ -273,6 +289,7 @@ fn last_statement(input: &str) -> IResult<&str, Statement> {
         func_decl,
         loop_stmt,
         while_stmt,
+        for_stmt,
         terminated(break_stmt, opt(pair(tag(";"), multispace0))),
         terminated(expression_statement, opt(pair(tag(";"), multispace0))),
         comment,
@@ -285,6 +302,7 @@ fn statement(input: &str) -> IResult<&str, Statement> {
         func_decl,
         loop_stmt,
         while_stmt,
+        for_stmt,
         terminated(break_stmt, pair(tag(";"), multispace0)),
         terminated(expression_statement, pair(tag(";"), multispace0)),
         comment,
@@ -464,9 +482,11 @@ fn run<'src, 'ast>(
             },
             Statement::While(cond, e) => loop {
                 match eval(cond, ctx) {
-                    RunResult::Yield(v) => if v == 0. {
-                        break;
-                    },
+                    RunResult::Yield(v) => {
+                        if v == 0. {
+                            break;
+                        }
+                    }
                     RunResult::Break => break,
                 }
                 res = match run(e, ctx)? {
