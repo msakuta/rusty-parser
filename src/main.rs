@@ -283,30 +283,35 @@ fn break_stmt(input: &str) -> IResult<&str, Statement> {
 
 // }
 
+fn general_statement<'a>(last: bool) -> impl Fn(&'a str) -> IResult<&'a str, Statement> {
+    let terminator = move |i| -> IResult<&str, ()> {
+        let mut semicolon = pair(tag(";"), multispace0);
+        if last {
+            Ok((opt(semicolon)(i)?.0, ()))
+        } else {
+            Ok((semicolon(i)?.0, ()))
+        }
+    };
+    move |input: &str| {
+        alt((
+            var_decl,
+            func_decl,
+            loop_stmt,
+            while_stmt,
+            for_stmt,
+            terminated(break_stmt, terminator),
+            terminated(expression_statement, terminator),
+            comment,
+        ))(input)
+    }
+}
+
 fn last_statement(input: &str) -> IResult<&str, Statement> {
-    alt((
-        var_decl,
-        func_decl,
-        loop_stmt,
-        while_stmt,
-        for_stmt,
-        terminated(break_stmt, opt(pair(tag(";"), multispace0))),
-        terminated(expression_statement, opt(pair(tag(";"), multispace0))),
-        comment,
-    ))(input)
+    general_statement(true)(input)
 }
 
 fn statement(input: &str) -> IResult<&str, Statement> {
-    alt((
-        var_decl,
-        func_decl,
-        loop_stmt,
-        while_stmt,
-        for_stmt,
-        terminated(break_stmt, pair(tag(";"), multispace0)),
-        terminated(expression_statement, pair(tag(";"), multispace0)),
-        comment,
-    ))(input)
+    general_statement(false)(input)
 }
 
 fn source(input: &str) -> IResult<&str, Vec<Statement>> {
