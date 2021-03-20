@@ -453,6 +453,15 @@ enum RunResult {
     Break,
 }
 
+macro_rules! unwrap_break {
+    ($e:expr) => {
+        match $e {
+            RunResult::Yield(v) => v,
+            RunResult::Break => break,
+        }
+    };
+}
+
 fn run<'src, 'ast>(
     stmts: &'ast Vec<Statement<'src>>,
     ctx: &mut EvalContext<'src, 'ast, '_>,
@@ -494,6 +503,17 @@ fn run<'src, 'ast>(
                     RunResult::Break => break,
                 };
             },
+            Statement::For(iter, from, to, e) => {
+                let from_res = unwrap_break!(eval(from, ctx)) as isize;
+                let to_res = unwrap_break!(eval(to, ctx)) as isize;
+                for i in from_res..to_res {
+                    ctx.variables.insert(iter, i as f64);
+                    res = match run(e, ctx)? {
+                        RunResult::Yield(v) => RunResult::Yield(v),
+                        RunResult::Break => break,
+                    };
+                }
+            }
             Statement::Break => {
                 return Ok(RunResult::Break);
             }
