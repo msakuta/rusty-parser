@@ -319,9 +319,18 @@ fn cmp_eval_test() {
         eval0(&cmp_expr(" 1 <  2 ").unwrap().1),
         RunResult::Yield(Value::F64(1.))
     );
-    assert_eq!(eval0(&cmp_expr(" 1 > 2").unwrap().1), RunResult::Yield(Value::F64(0.)));
-    assert_eq!(eval0(&cmp_expr(" 2 < 1").unwrap().1), RunResult::Yield(Value::F64(0.)));
-    assert_eq!(eval0(&cmp_expr(" 2 > 1").unwrap().1), RunResult::Yield(Value::F64(1.)));
+    assert_eq!(
+        eval0(&cmp_expr(" 1 > 2").unwrap().1),
+        RunResult::Yield(Value::F64(0.))
+    );
+    assert_eq!(
+        eval0(&cmp_expr(" 2 < 1").unwrap().1),
+        RunResult::Yield(Value::F64(0.))
+    );
+    assert_eq!(
+        eval0(&cmp_expr(" 2 > 1").unwrap().1),
+        RunResult::Yield(Value::F64(1.))
+    );
 }
 
 #[test]

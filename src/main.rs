@@ -440,10 +440,16 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
             let value = unwrap_run!(eval(rhs, ctx));
             let mut search_ctx: Option<&EvalContext> = Some(ctx);
             while let Some(c) = search_ctx {
-                if let None = c.variables.borrow().get(str) {
-                    search_ctx = c.super_context;
-                    continue;
-                }
+                let value = match c.variables.borrow().get(str) {
+                    None => {
+                        search_ctx = c.super_context;
+                        continue;
+                    }
+                    Some(Value::F64(_)) => Value::F64(coerce_f64(&value)),
+                    Some(Value::F32(_)) => Value::F32(coerce_f64(&value) as f32),
+                    Some(Value::I64(_)) => Value::I64(coerce_i64(&value)),
+                    Some(Value::I32(_)) => Value::I32(coerce_i64(&value) as i32),
+                };
                 c.variables.borrow_mut().insert(str, value);
                 break;
             }
