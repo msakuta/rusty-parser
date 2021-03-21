@@ -20,8 +20,8 @@ fn test_add() {
         Ok((
             "",
             Statement::Expression(Expression::Add(
-                Box::new(Expression::NumLiteral(123.4)),
-                Box::new(Expression::NumLiteral(456.0))
+                Box::new(Expression::NumLiteral(Value::F64(123.4))),
+                Box::new(Expression::NumLiteral(Value::I64(456)))
             ))
         )),
         expression_statement("123.4 + 456")
@@ -34,10 +34,10 @@ fn test_add_paren() {
         Ok((
             "",
             Statement::Expression(Expression::Add(
-                Box::new(Expression::NumLiteral(123.4)),
+                Box::new(Expression::NumLiteral(Value::F64(123.4))),
                 Box::new(Expression::Add(
-                    Box::new(Expression::NumLiteral(456.0)),
-                    Box::new(Expression::NumLiteral(789.5)),
+                    Box::new(Expression::NumLiteral(Value::I64(456))),
+                    Box::new(Expression::NumLiteral(Value::F64(789.5))),
                 ))
             ))
         )),
@@ -52,8 +52,8 @@ fn expr_test() {
         Ok((
             "",
             Expression::Add(
-                Box::new(Expression::NumLiteral(1.)),
-                Box::new(Expression::NumLiteral(2.))
+                Box::new(Expression::NumLiteral(Value::I64(1))),
+                Box::new(Expression::NumLiteral(Value::I64(2)))
             )
         ))
     );
@@ -64,12 +64,12 @@ fn expr_test() {
             Expression::Add(
                 Box::new(Expression::Sub(
                     Box::new(Expression::Add(
-                        Box::new(Expression::NumLiteral(12.)),
-                        Box::new(Expression::NumLiteral(6.)),
+                        Box::new(Expression::NumLiteral(Value::I64(12))),
+                        Box::new(Expression::NumLiteral(Value::I64(6))),
                     )),
-                    Box::new(Expression::NumLiteral(4.)),
+                    Box::new(Expression::NumLiteral(Value::I64(4))),
                 )),
-                Box::new(Expression::NumLiteral(3.))
+                Box::new(Expression::NumLiteral(Value::I64(3)))
             )
         ))
     );
@@ -79,13 +79,13 @@ fn expr_test() {
             "",
             Expression::Add(
                 Box::new(Expression::Add(
-                    Box::new(Expression::NumLiteral(1.)),
+                    Box::new(Expression::NumLiteral(Value::I64(1))),
                     Box::new(Expression::Mult(
-                        Box::new(Expression::NumLiteral(2.)),
-                        Box::new(Expression::NumLiteral(3.)),
+                        Box::new(Expression::NumLiteral(Value::I64(2))),
+                        Box::new(Expression::NumLiteral(Value::I64(3))),
                     ))
                 )),
-                Box::new(Expression::NumLiteral(4.))
+                Box::new(Expression::NumLiteral(Value::I64(4)))
             )
         ))
     );
@@ -93,16 +93,19 @@ fn expr_test() {
 
 #[test]
 fn parens_test() {
-    assert_eq!(expr(" (  2 )"), Ok(("", Expression::NumLiteral(2.))));
+    assert_eq!(
+        expr(" (  2 )"),
+        Ok(("", Expression::NumLiteral(Value::I64(2))))
+    );
     assert_eq!(
         expr(" 2* (  3 + 4 ) "),
         Ok((
             "",
             Expression::Mult(
-                Box::new(Expression::NumLiteral(2.)),
+                Box::new(Expression::NumLiteral(Value::I64(2))),
                 Box::new(Expression::Add(
-                    Box::new(Expression::NumLiteral(3.)),
-                    Box::new(Expression::NumLiteral(4.)),
+                    Box::new(Expression::NumLiteral(Value::I64(3))),
+                    Box::new(Expression::NumLiteral(Value::I64(4))),
                 ))
             )
         ))
@@ -114,15 +117,15 @@ fn parens_test() {
             Expression::Add(
                 Box::new(Expression::Div(
                     Box::new(Expression::Mult(
-                        Box::new(Expression::NumLiteral(2.)),
-                        Box::new(Expression::NumLiteral(2.)),
+                        Box::new(Expression::NumLiteral(Value::I64(2))),
+                        Box::new(Expression::NumLiteral(Value::I64(2))),
                     )),
                     Box::new(Expression::Sub(
-                        Box::new(Expression::NumLiteral(5.)),
-                        Box::new(Expression::NumLiteral(1.)),
+                        Box::new(Expression::NumLiteral(Value::I64(5))),
+                        Box::new(Expression::NumLiteral(Value::I64(1))),
                     )),
                 )),
-                Box::new(Expression::NumLiteral(3.)),
+                Box::new(Expression::NumLiteral(Value::I64(3))),
             )
         ))
     );
@@ -137,15 +140,19 @@ fn eval0(s: &Expression) -> RunResult {
 fn eval_test() {
     assert_eq!(
         eval0(&expr(" 1 +  2 ").unwrap().1),
-        RunResult::Yield(Value::F64(3.))
+        RunResult::Yield(Value::I64(3))
     );
     assert_eq!(
         eval0(&expr(" 12 + 6 - 4+  3").unwrap().1),
-        RunResult::Yield(Value::F64(17.))
+        RunResult::Yield(Value::I64(17))
     );
     assert_eq!(
         eval0(&expr(" 1 + 2*3 + 4").unwrap().1),
-        RunResult::Yield(Value::F64(11.))
+        RunResult::Yield(Value::I64(11))
+    );
+    assert_eq!(
+        eval0(&expr(" 1 +  2.5 ").unwrap().1),
+        RunResult::Yield(Value::F64(3.5))
     );
 }
 
@@ -153,15 +160,15 @@ fn eval_test() {
 fn parens_eval_test() {
     assert_eq!(
         eval0(&expr(" (  2 )").unwrap().1),
-        RunResult::Yield(Value::F64(2.))
+        RunResult::Yield(Value::I64(2))
     );
     assert_eq!(
         eval0(&expr(" 2* (  3 + 4 ) ").unwrap().1),
-        RunResult::Yield(Value::F64(14.))
+        RunResult::Yield(Value::I64(14))
     );
     assert_eq!(
         eval0(&expr("  2*2 / ( 5 - 1) + 3").unwrap().1),
-        RunResult::Yield(Value::F64(4.))
+        RunResult::Yield(Value::I64(4))
     );
 }
 
@@ -188,7 +195,7 @@ fn var_assign_test() {
         var_assign("x=12"),
         Ok((
             "",
-            Expression::VarAssign("x", Box::new(Expression::NumLiteral(12.)))
+            Expression::VarAssign("x", Box::new(Expression::NumLiteral(Value::I64(12))))
         ))
     );
     assert_eq!(
@@ -214,7 +221,7 @@ fn fn_decl_test() {
                 vec![
                     Statement::Expression(Expression::VarAssign(
                         "x",
-                        Box::new(Expression::NumLiteral(123.))
+                        Box::new(Expression::NumLiteral(Value::I64(123)))
                     )),
                     Statement::Expression(Expression::Mult(
                         Box::new(Expression::Variable("x")),
@@ -241,7 +248,7 @@ fn fn_invoke_test() {
             "",
             vec![Statement::Expression(Expression::FnInvoke(
                 "f",
-                vec![Expression::NumLiteral(1.)]
+                vec![Expression::NumLiteral(Value::I64(1))]
             ))]
         ))
     );
@@ -254,8 +261,8 @@ fn cond_test() {
         Ok((
             "",
             Expression::Conditional(
-                Box::new(Expression::NumLiteral(0.)),
-                vec![Statement::Expression(Expression::NumLiteral(1.))],
+                Box::new(Expression::NumLiteral(Value::I64(0))),
+                vec![Statement::Expression(Expression::NumLiteral(Value::I64(1)))],
                 None,
             )
         ))
@@ -265,9 +272,11 @@ fn cond_test() {
         Ok((
             "",
             Expression::Conditional(
-                Box::new(Expression::NumLiteral(1.)),
-                vec![Statement::Expression(Expression::NumLiteral(2.))],
-                Some(vec![Statement::Expression(Expression::NumLiteral(3.))]),
+                Box::new(Expression::NumLiteral(Value::I64(1))),
+                vec![Statement::Expression(Expression::NumLiteral(Value::I64(2)))],
+                Some(vec![Statement::Expression(Expression::NumLiteral(
+                    Value::I64(3)
+                ))]),
             )
         ))
     );
@@ -281,11 +290,11 @@ fn cond_eval_test() {
     );
     assert_eq!(
         eval0(&conditional("if (1) { 2; } else { 3;}").unwrap().1),
-        RunResult::Yield(Value::F64(2.))
+        RunResult::Yield(Value::I64(2))
     );
     assert_eq!(
         eval0(&conditional("if (0) { 2; } else { 3;}").unwrap().1),
-        RunResult::Yield(Value::F64(3.))
+        RunResult::Yield(Value::I64(3))
     );
 }
 
@@ -296,8 +305,8 @@ fn cmp_test() {
         Ok((
             "",
             Expression::LT(
-                Box::new(Expression::NumLiteral(1.)),
-                Box::new(Expression::NumLiteral(2.))
+                Box::new(Expression::NumLiteral(Value::I64(1))),
+                Box::new(Expression::NumLiteral(Value::I64(2)))
             )
         ))
     );
@@ -306,8 +315,8 @@ fn cmp_test() {
         Ok((
             "",
             Expression::GT(
-                Box::new(Expression::NumLiteral(1.)),
-                Box::new(Expression::NumLiteral(2.))
+                Box::new(Expression::NumLiteral(Value::I64(1))),
+                Box::new(Expression::NumLiteral(Value::I64(2)))
             )
         ))
     );
@@ -317,19 +326,19 @@ fn cmp_test() {
 fn cmp_eval_test() {
     assert_eq!(
         eval0(&cmp_expr(" 1 <  2 ").unwrap().1),
-        RunResult::Yield(Value::F64(1.))
+        RunResult::Yield(Value::I64(1))
     );
     assert_eq!(
         eval0(&cmp_expr(" 1 > 2").unwrap().1),
-        RunResult::Yield(Value::F64(0.))
+        RunResult::Yield(Value::I64(0))
     );
     assert_eq!(
         eval0(&cmp_expr(" 2 < 1").unwrap().1),
-        RunResult::Yield(Value::F64(0.))
+        RunResult::Yield(Value::I64(0))
     );
     assert_eq!(
         eval0(&cmp_expr(" 2 > 1").unwrap().1),
-        RunResult::Yield(Value::F64(1.))
+        RunResult::Yield(Value::I64(1))
     );
 }
 
@@ -339,22 +348,28 @@ fn brace_expr_test() {
     use Statement::Expression as Expr;
     assert_eq!(
         full_expression(" { 1; }"),
-        Ok(("", Expression::Brace(vec![Expr(NL(1.))])))
+        Ok(("", Expression::Brace(vec![Expr(NL(Value::I64(1)))])))
     );
     assert_eq!(
         full_expression(" { 1; 2; }"),
-        Ok(("", Expression::Brace(vec![Expr(NL(1.)), Expr(NL(2.)),])))
+        Ok((
+            "",
+            Expression::Brace(vec![Expr(NL(Value::I64(1))), Expr(NL(Value::I64(2))),])
+        ))
     );
     assert_eq!(
         full_expression(" { 1; 2 }"),
-        Ok(("", Expression::Brace(vec![Expr(NL(1.)), Expr(NL(2.)),])))
+        Ok((
+            "",
+            Expression::Brace(vec![Expr(NL(Value::I64(1))), Expr(NL(Value::I64(2))),])
+        ))
     );
     assert_eq!(
         statement(" { x = 1; x }; "),
         Ok((
             "",
             Expr(Expression::Brace(vec![
-                Expr(Expression::VarAssign("x", Box::new(NL(1.)))),
+                Expr(Expression::VarAssign("x", Box::new(NL(Value::I64(1))))),
                 Expr(Expression::Variable("x")),
             ]))
         ))
@@ -365,19 +380,23 @@ fn brace_expr_test() {
 fn brace_expr_eval_test() {
     assert_eq!(
         eval0(&full_expression(" { 1; } ").unwrap().1),
-        RunResult::Yield(Value::F64(1.))
+        RunResult::Yield(Value::I64(1))
     );
     assert_eq!(
         eval0(&full_expression(" { 1; 2 }").unwrap().1),
-        RunResult::Yield(Value::F64(2.))
+        RunResult::Yield(Value::I64(2))
     );
     assert_eq!(
         eval0(&full_expression(" {1; 2;} ").unwrap().1),
-        RunResult::Yield(Value::F64(2.))
+        RunResult::Yield(Value::I64(2))
     );
     assert_eq!(
-        eval0(&full_expression("  { var x; x = 1; x } ").unwrap().1),
-        RunResult::Yield(Value::F64(1.))
+        eval0(
+            &full_expression("  { var x: i64 = 0; x = 1; x } ")
+                .unwrap()
+                .1
+        ),
+        RunResult::Yield(Value::I64(1))
     );
 }
 
@@ -385,15 +404,24 @@ fn brace_expr_eval_test() {
 fn stmt_test() {
     assert_eq!(
         statement(" 1;"),
-        Ok(("", Statement::Expression(Expression::NumLiteral(1.)),))
+        Ok((
+            "",
+            Statement::Expression(Expression::NumLiteral(Value::I64(1))),
+        ))
     );
     assert_eq!(
         last_statement(" 1 "),
-        Ok(("", Statement::Expression(Expression::NumLiteral(1.)),))
+        Ok((
+            "",
+            Statement::Expression(Expression::NumLiteral(Value::I64(1))),
+        ))
     );
     assert_eq!(
         last_statement(" 1; "),
-        Ok(("", Statement::Expression(Expression::NumLiteral(1.)),))
+        Ok((
+            "",
+            Statement::Expression(Expression::NumLiteral(Value::I64(1))),
+        ))
     );
 }
 
@@ -404,8 +432,8 @@ fn stmts_test() {
         Ok((
             "",
             vec![
-                Statement::Expression(Expression::NumLiteral(1.)),
-                Statement::Expression(Expression::NumLiteral(2.)),
+                Statement::Expression(Expression::NumLiteral(Value::I64(1))),
+                Statement::Expression(Expression::NumLiteral(Value::I64(2))),
             ]
         ))
     );
@@ -414,8 +442,8 @@ fn stmts_test() {
         Ok((
             "",
             vec![
-                Statement::Expression(Expression::NumLiteral(1.)),
-                Statement::Expression(Expression::NumLiteral(2.)),
+                Statement::Expression(Expression::NumLiteral(Value::I64(1))),
+                Statement::Expression(Expression::NumLiteral(Value::I64(2))),
             ]
         ))
     );
@@ -431,29 +459,29 @@ fn var_decl_test() {
             "",
             vec![
                 VD("x", TypeDecl::F64, None),
-                Statement::Expression(Expression::VarAssign("x", Box::new(NL(0.)))),
+                Statement::Expression(Expression::VarAssign("x", Box::new(NL(Value::I64(0))))),
             ]
         ))
     );
     assert_eq!(
         source(" var x = 0;"),
-        Ok(("", vec![VD("x", TypeDecl::F64, Some(NL(0.)))]))
+        Ok(("", vec![VD("x", TypeDecl::F64, Some(NL(Value::I64(0))))]))
     );
     assert_eq!(
         source(" var x: f64 = 0;"),
-        Ok(("", vec![VD("x", TypeDecl::F64, Some(NL(0.)))]))
+        Ok(("", vec![VD("x", TypeDecl::F64, Some(NL(Value::I64(0))))]))
     );
     assert_eq!(
         source(" var x: f32 = 0;"),
-        Ok(("", vec![VD("x", TypeDecl::F32, Some(NL(0.)))]))
+        Ok(("", vec![VD("x", TypeDecl::F32, Some(NL(Value::I64(0))))]))
     );
     assert_eq!(
         source(" var x: i64 = 0;"),
-        Ok(("", vec![VD("x", TypeDecl::I64, Some(NL(0.)))]))
+        Ok(("", vec![VD("x", TypeDecl::I64, Some(NL(Value::I64(0))))]))
     );
     assert_eq!(
         source(" var x: i32 = 0;"),
-        Ok(("", vec![VD("x", TypeDecl::I32, Some(NL(0.)))]))
+        Ok(("", vec![VD("x", TypeDecl::I32, Some(NL(Value::I64(0))))]))
     );
 }
 
@@ -467,13 +495,13 @@ fn loop_test() {
                 Statement::VarDecl("i", TypeDecl::F64, None),
                 Statement::Expression(Expression::VarAssign(
                     "i",
-                    Box::new(Expression::NumLiteral(0.))
+                    Box::new(Expression::NumLiteral(Value::I64(0)))
                 )),
                 Statement::Loop(vec![Statement::Expression(Expression::VarAssign(
                     "i",
                     Box::new(Expression::Add(
                         Box::new(Expression::Variable("i")),
-                        Box::new(Expression::NumLiteral(1.)),
+                        Box::new(Expression::NumLiteral(Value::I64(1))),
                     ))
                 )),])
             ]
@@ -486,7 +514,7 @@ fn loop_test() {
             vec![Statement::Expression(Expression::Conditional(
                 Box::new(Expression::LT(
                     Box::new(Expression::Variable("i")),
-                    Box::new(Expression::NumLiteral(10.)),
+                    Box::new(Expression::NumLiteral(Value::I64(10))),
                 )),
                 vec![Statement::Break],
                 None,
@@ -501,20 +529,20 @@ fn loop_test() {
                 Statement::VarDecl("i", TypeDecl::F64, None),
                 Statement::Expression(Expression::VarAssign(
                     "i",
-                    Box::new(Expression::NumLiteral(0.))
+                    Box::new(Expression::NumLiteral(Value::I64(0)))
                 )),
                 Statement::Loop(vec![
                     Statement::Expression(Expression::VarAssign(
                         "i",
                         Box::new(Expression::Add(
                             Box::new(Expression::Variable("i")),
-                            Box::new(Expression::NumLiteral(1.)),
+                            Box::new(Expression::NumLiteral(Value::I64(1))),
                         ))
                     )),
                     Statement::Expression(Expression::Conditional(
                         Box::new(Expression::LT(
                             Box::new(Expression::Variable("i")),
-                            Box::new(Expression::NumLiteral(10.)),
+                            Box::new(Expression::NumLiteral(Value::I64(10))),
                         )),
                         vec![Statement::Break],
                         None
@@ -528,25 +556,25 @@ fn loop_test() {
 #[test]
 fn while_test() {
     assert_eq!(
-        source(" var i; i = 0; while i < 10 { i = i + 1; }"),
+        source(" var i: i64; i = 0; while i < 10 { i = i + 1; }"),
         Ok((
             "",
             vec![
-                Statement::VarDecl("i", TypeDecl::F64, None),
+                Statement::VarDecl("i", TypeDecl::I64, None),
                 Statement::Expression(Expression::VarAssign(
                     "i",
-                    Box::new(Expression::NumLiteral(0.))
+                    Box::new(Expression::NumLiteral(Value::I64(0)))
                 )),
                 Statement::While(
                     Expression::LT(
                         Box::new(Expression::Variable("i")),
-                        Box::new(Expression::NumLiteral(10.)),
+                        Box::new(Expression::NumLiteral(Value::I64(10))),
                     ),
                     vec![Statement::Expression(Expression::VarAssign(
                         "i",
                         Box::new(Expression::Add(
                             Box::new(Expression::Variable("i")),
-                            Box::new(Expression::NumLiteral(1.)),
+                            Box::new(Expression::NumLiteral(Value::I64(1))),
                         ))
                     )),]
                 )
@@ -563,8 +591,8 @@ fn for_test() {
             "",
             vec![Statement::For(
                 "i",
-                Expression::NumLiteral(0.),
-                Expression::NumLiteral(10.),
+                Expression::NumLiteral(Value::I64(0)),
+                Expression::NumLiteral(Value::I64(10)),
                 vec![Statement::Expression(Expression::FnInvoke(
                     "print",
                     vec![Expression::Variable("i")],

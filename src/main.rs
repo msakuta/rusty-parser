@@ -4,7 +4,7 @@ use nom::{
     character::complete::{alpha1, alphanumeric1, char, multispace0, multispace1},
     combinator::{map_res, opt, recognize},
     multi::{fold_many0, many0},
-    number::complete::double,
+    number::complete::recognize_float,
     sequence::{delimited, pair, preceded, terminated, tuple},
     IResult,
 };
@@ -42,7 +42,7 @@ enum Statement<'a> {
 
 #[derive(Debug, PartialEq, Clone)]
 enum Expression<'a> {
-    NumLiteral(f64),
+    NumLiteral(Value),
     Variable(&'a str),
     VarAssign(&'a str, Box<Expression<'a>>),
     FnInvoke(&'a str, Vec<Expression<'a>>),
@@ -111,9 +111,33 @@ fn var_decl(input: &str) -> IResult<&str, Statement> {
     ))
 }
 
+fn double_expr(input: &str) -> IResult<&str, Expression> {
+    let (r, v) = recognize_float(input)?;
+    // For now we have very simple conditinon to decide if it is a floating point literal
+    // by a presense of a period.
+    Ok((
+        r,
+        Expression::NumLiteral(if v.contains('.') {
+            let parsed = v.parse().map_err(|_| {
+                nom::Err::Error(nom::error::Error {
+                    input,
+                    code: nom::error::ErrorKind::Digit,
+                })
+            })?;
+            Value::F64(parsed)
+        } else {
+            Value::I64(v.parse().map_err(|_| {
+                nom::Err::Error(nom::error::Error {
+                    input,
+                    code: nom::error::ErrorKind::Digit,
+                })
+            })?)
+        }),
+    ))
+}
+
 fn numeric_literal_expression(input: &str) -> IResult<&str, Expression> {
-    let (r, val) = double(multispace0(input)?.0)?;
-    Ok((multispace0(r)?.0, Expression::NumLiteral(val)))
+    delimited(multispace0, double_expr, multispace0)(input)
 }
 
 // We parse any expr surrounded by parens, ignoring all whitespaces around those
@@ -431,25 +455,32 @@ fn coerce_i64(a: &Value) -> i64 {
 
 fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) -> RunResult {
     match e {
-        Expression::NumLiteral(val) => RunResult::Yield(Value::F64(*val)),
+        Expression::NumLiteral(val) => RunResult::Yield(*val),
         Expression::Variable(str) => RunResult::Yield(
             ctx.get_var(str)
                 .expect(&format!("Variable {} not found in scope", str)),
         ),
         Expression::VarAssign(str, rhs) => {
-            let value = unwrap_run!(eval(rhs, ctx));
+            let mut value = unwrap_run!(eval(rhs, ctx));
             let mut search_ctx: Option<&EvalContext> = Some(ctx);
             while let Some(c) = search_ctx {
-                let value = match c.variables.borrow().get(str) {
-                    None => {
-                        search_ctx = c.super_context;
-                        continue;
-                    }
-                    Some(Value::F64(_)) => Value::F64(coerce_f64(&value)),
-                    Some(Value::F32(_)) => Value::F32(coerce_f64(&value) as f32),
-                    Some(Value::I64(_)) => Value::I64(coerce_i64(&value)),
-                    Some(Value::I32(_)) => Value::I32(coerce_i64(&value) as i32),
+                let existing_value = if let Some(val) = c.variables.borrow().get(str) {
+                    *val
+                } else {
+                    search_ctx = c.super_context;
+                    continue;
                 };
+                value = match existing_value {
+                    Value::F64(_) => Value::F64(coerce_f64(&value)),
+                    Value::F32(_) => Value::F32(coerce_f64(&value) as f32),
+                    Value::I64(_) => Value::I64(coerce_i64(&value)),
+                    Value::I32(_) => Value::I32(coerce_i64(&value) as i32),
+                };
+                println!(
+                    "assigning: {:?} to {:?}",
+                    value,
+                    c.variables.borrow().get(str)
+                );
                 c.variables.borrow_mut().insert(str, value);
                 break;
             }
@@ -527,7 +558,7 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
             unwrap_run!(eval(lhs, ctx)),
             unwrap_run!(eval(rhs, ctx)),
             |lhs, rhs| if lhs > rhs { 1. } else { 0. },
-            |lhs, rhs| if lhs < rhs { 1 } else { 0 },
+            |lhs, rhs| if lhs > rhs { 1 } else { 0 },
         )),
         Expression::Conditional(cond, true_branch, false_branch) => {
             if truthy(&unwrap_run!(eval(cond, ctx))) {
