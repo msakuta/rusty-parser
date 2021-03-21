@@ -46,6 +46,14 @@ fn test_add_paren() {
 }
 
 #[test]
+fn str_test() {
+    assert_eq!(
+        expr("\"hello\""),
+        Ok(("", Expression::StrLiteral("hello".to_string())))
+    );
+}
+
+#[test]
 fn expr_test() {
     assert_eq!(
         expr(" 1 +  2 "),

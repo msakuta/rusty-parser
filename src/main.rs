@@ -1,7 +1,7 @@
 use nom::{
     branch::alt,
     bytes::complete::{tag, take_until},
-    character::complete::{alpha1, alphanumeric1, char, multispace0, multispace1},
+    character::complete::{alpha1, alphanumeric1, char, multispace0, multispace1, none_of},
     combinator::{map_res, opt, recognize},
     multi::{fold_many0, many0},
     number::complete::recognize_float,
@@ -18,14 +18,16 @@ enum TypeDecl {
     F32,
     I64,
     I32,
+    Str,
 }
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone)]
 enum Value {
     F64(f64),
     F32(f32),
     I64(i64),
     I32(i32),
+    Str(String),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -43,6 +45,7 @@ enum Statement<'a> {
 #[derive(Debug, PartialEq, Clone)]
 enum Expression<'a> {
     NumLiteral(Value),
+    StrLiteral(String),
     Variable(&'a str),
     VarAssign(&'a str, Box<Expression<'a>>),
     FnInvoke(&'a str, Vec<Expression<'a>>),
@@ -86,7 +89,7 @@ fn var_decl(input: &str) -> IResult<&str, Statement> {
     let (r, ident) = identifier(r)?;
     let (r, type_) = opt(delimited(
         delimited(multispace0, tag(":"), multispace0),
-        alt((tag("f64"), tag("f32"), tag("i64"), tag("i32"))),
+        alt((tag("f64"), tag("f32"), tag("i64"), tag("i32"), tag("str"))),
         multispace0,
     ))(r)?;
     let (r, initializer) = opt(delimited(
@@ -104,6 +107,7 @@ fn var_decl(input: &str) -> IResult<&str, Statement> {
                 Some("f32") => TypeDecl::F32,
                 Some("i32") => TypeDecl::I32,
                 Some("i64") => TypeDecl::I64,
+                Some("str") => TypeDecl::Str,
                 Some(unknown) => panic!(format!("Unknown type: \"{}\"", unknown)),
             },
             initializer,
@@ -140,6 +144,15 @@ fn numeric_literal_expression(input: &str) -> IResult<&str, Expression> {
     delimited(multispace0, double_expr, multispace0)(input)
 }
 
+fn str_literal(input: &str) -> IResult<&str, Expression> {
+    let (r, val) = delimited(
+        preceded(multispace0, char('\"')),
+        many0(none_of("\"\\")),
+        terminated(char('"'), multispace0),
+    )(input)?;
+    Ok((r, Expression::StrLiteral(val.iter().collect())))
+}
+
 // We parse any expr surrounded by parens, ignoring all whitespaces around those
 fn parens(i: &str) -> IResult<&str, Expression> {
     delimited(
@@ -173,6 +186,7 @@ fn func_invoke(i: &str) -> IResult<&str, Expression> {
 fn factor(i: &str) -> IResult<&str, Expression> {
     alt((
         numeric_literal_expression,
+        str_literal,
         func_invoke,
         var_ref,
         parens,
@@ -414,7 +428,7 @@ fn binary_op(
     d: impl Fn(f64, f64) -> f64,
     i: impl Fn(i64, i64) -> i64,
 ) -> Value {
-    match (lhs, rhs) {
+    match (lhs.clone(), rhs.clone()) {
         (Value::F64(lhs), rhs) => Value::F64(d(lhs, coerce_f64(&rhs))),
         (lhs, Value::F64(rhs)) => Value::F64(d(coerce_f64(&lhs), rhs)),
         (Value::F32(lhs), rhs) => Value::F32(d(lhs as f64, coerce_f64(&rhs)) as f32),
@@ -423,6 +437,10 @@ fn binary_op(
         (Value::I64(lhs), Value::I32(rhs)) => Value::I64(i(lhs, rhs as i64)),
         (Value::I32(lhs), Value::I64(rhs)) => Value::I64(i(lhs as i64, rhs)),
         (Value::I32(lhs), Value::I32(rhs)) => Value::I32(i(lhs as i64, rhs as i64) as i32),
+        _ => panic!(format!(
+            "Unsupported addition between {:?} and {:?}",
+            lhs, rhs
+        )),
     }
 }
 
@@ -432,6 +450,7 @@ fn truthy(a: &Value) -> bool {
         Value::F32(v) => v != 0.,
         Value::I64(v) => v != 0,
         Value::I32(v) => v != 0,
+        _ => false,
     }
 }
 
@@ -441,6 +460,7 @@ fn coerce_f64(a: &Value) -> f64 {
         Value::F32(v) => v as f64,
         Value::I64(v) => v as f64,
         Value::I32(v) => v as f64,
+        _ => 0.,
     }
 }
 
@@ -450,12 +470,24 @@ fn coerce_i64(a: &Value) -> i64 {
         Value::F32(v) => v as i64,
         Value::I64(v) => v as i64,
         Value::I32(v) => v as i64,
+        _ => 0,
+    }
+}
+
+fn coerce_str(a: &Value) -> String {
+    match a {
+        Value::F64(v) => v.to_string(),
+        Value::F32(v) => v.to_string(),
+        Value::I64(v) => v.to_string(),
+        Value::I32(v) => v.to_string(),
+        Value::Str(v) => v.clone(),
     }
 }
 
 fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) -> RunResult {
     match e {
-        Expression::NumLiteral(val) => RunResult::Yield(*val),
+        Expression::NumLiteral(val) => RunResult::Yield(val.clone()),
+        Expression::StrLiteral(val) => RunResult::Yield(Value::Str(val.clone())),
         Expression::Variable(str) => RunResult::Yield(
             ctx.get_var(str)
                 .expect(&format!("Variable {} not found in scope", str)),
@@ -465,7 +497,7 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
             let mut search_ctx: Option<&EvalContext> = Some(ctx);
             while let Some(c) = search_ctx {
                 let existing_value = if let Some(val) = c.variables.borrow().get(str) {
-                    *val
+                    val.clone()
                 } else {
                     search_ctx = c.super_context;
                     continue;
@@ -475,13 +507,9 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
                     Value::F32(_) => Value::F32(coerce_f64(&value) as f32),
                     Value::I64(_) => Value::I64(coerce_i64(&value)),
                     Value::I32(_) => Value::I32(coerce_i64(&value) as i32),
+                    Value::Str(_) => Value::Str(coerce_str(&value)),
                 };
-                println!(
-                    "assigning: {:?} to {:?}",
-                    value,
-                    c.variables.borrow().get(str)
-                );
-                c.variables.borrow_mut().insert(str, value);
+                c.variables.borrow_mut().insert(str, value.clone());
                 break;
             }
             if search_ctx.is_none() {
@@ -498,7 +526,10 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
             match func {
                 FuncDef::Code(func) => {
                     for (k, v) in func.args.iter().zip(&args) {
-                        subctx.variables.borrow_mut().insert(k, unwrap_run!(*v));
+                        subctx
+                            .variables
+                            .borrow_mut()
+                            .insert(k, unwrap_run!(v).clone());
                     }
                     let run_result = run(func.stmts, &mut subctx).unwrap();
                     match run_result {
@@ -511,7 +542,7 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
                         .iter()
                         .map(|e| {
                             if let RunResult::Yield(v) = e {
-                                *v
+                                v.clone()
                             } else {
                                 Value::F64(0.)
                             }
@@ -527,7 +558,6 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
                 |lhs, rhs| lhs + rhs,
                 |lhs, rhs| lhs + rhs,
             ));
-            println!("add result: {:?}", res);
             res
         }
         Expression::Sub(lhs, rhs) => RunResult::Yield(binary_op(
@@ -578,14 +608,29 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
 
 fn s_print(vals: &[Value]) -> Value {
     if let [val, ..] = vals {
-        match *val {
+        match val {
             Value::F64(val) => println!("print: {}", val),
             Value::F32(val) => println!("print: {}", val),
             Value::I64(val) => println!("print: {}", val),
             Value::I32(val) => println!("print: {}", val),
+            Value::Str(val) => println!("print: {}", val),
         }
     }
     Value::I32(0)
+}
+
+fn s_type(vals: &[Value]) -> Value {
+    if let [val, ..] = vals {
+        Value::Str(match val {
+            Value::F64(_) => "f64".to_string(),
+            Value::F32(_) => "f32".to_string(),
+            Value::I64(_) => "i64".to_string(),
+            Value::I32(_) => "i32".to_string(),
+            Value::Str(_) => "str".to_string(),
+        })
+    } else {
+        Value::I32(0)
+    }
 }
 
 #[derive(Clone)]
@@ -619,6 +664,7 @@ impl<'src, 'ast, 'native, 'ctx> EvalContext<'src, 'ast, 'native, 'ctx> {
     fn new() -> Self {
         let mut functions = HashMap::new();
         functions.insert("print".to_string(), FuncDef::Native(&s_print));
+        functions.insert("type".to_string(), FuncDef::Native(&s_type));
         Self {
             variables: RefCell::new(HashMap::new()),
             functions,
@@ -636,7 +682,7 @@ impl<'src, 'ast, 'native, 'ctx> EvalContext<'src, 'ast, 'native, 'ctx> {
 
     fn get_var(&self, name: &str) -> Option<Value> {
         if let Some(val) = self.variables.borrow_mut().get(name) {
-            Some(*val)
+            Some(val.clone())
         } else if let Some(super_ctx) = self.super_context {
             super_ctx.get_var(name)
         } else {
@@ -688,8 +734,8 @@ fn run<'src, 'ast>(
                     TypeDecl::F32 => Value::F32(coerce_f64(&init_val) as f32),
                     TypeDecl::I64 => Value::I64(coerce_i64(&init_val)),
                     TypeDecl::I32 => Value::I32(coerce_i64(&init_val) as i32),
+                    TypeDecl::Str => Value::Str(coerce_str(&init_val)),
                 };
-                println!("VarDecl {:?}", init_val);
                 ctx.variables.borrow_mut().insert(*var, init_val);
             }
             Statement::FnDecl(var, args, stmts) => {
