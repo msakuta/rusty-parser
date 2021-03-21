@@ -135,51 +135,55 @@ fn eval0(s: &Expression) -> RunResult {
 
 #[test]
 fn eval_test() {
-    assert_eq!(eval0(&expr(" 1 +  2 ").unwrap().1), RunResult::Yield(3.));
+    assert_eq!(
+        eval0(&expr(" 1 +  2 ").unwrap().1),
+        RunResult::Yield(Value::F64(3.))
+    );
     assert_eq!(
         eval0(&expr(" 12 + 6 - 4+  3").unwrap().1),
-        RunResult::Yield(17.)
+        RunResult::Yield(Value::F64(17.))
     );
     assert_eq!(
         eval0(&expr(" 1 + 2*3 + 4").unwrap().1),
-        RunResult::Yield(11.)
+        RunResult::Yield(Value::F64(11.))
     );
 }
 
 #[test]
 fn parens_eval_test() {
-    assert_eq!(eval0(&expr(" (  2 )").unwrap().1), RunResult::Yield(2.));
+    assert_eq!(
+        eval0(&expr(" (  2 )").unwrap().1),
+        RunResult::Yield(Value::F64(2.))
+    );
     assert_eq!(
         eval0(&expr(" 2* (  3 + 4 ) ").unwrap().1),
-        RunResult::Yield(14.)
+        RunResult::Yield(Value::F64(14.))
     );
     assert_eq!(
         eval0(&expr("  2*2 / ( 5 - 1) + 3").unwrap().1),
-        RunResult::Yield(4.)
+        RunResult::Yield(Value::F64(4.))
     );
 }
 
 #[test]
 fn var_ident_test() {
-    let mut vars = HashMap::new();
-    vars.insert("x", 42.);
     assert_eq!(var_ref(" x123 "), Ok(("", Expression::Variable("x123"))));
 }
 
 #[test]
 fn var_test() {
     let mut ctx = EvalContext::new();
-    ctx.variables.borrow_mut().insert("x", 42.);
+    ctx.variables.borrow_mut().insert("x", Value::F64(42.));
     assert_eq!(
         eval(&expr(" x +  2 ").unwrap().1, &mut ctx),
-        RunResult::Yield(44.)
+        RunResult::Yield(Value::F64(44.))
     );
 }
 
 #[test]
 fn var_assign_test() {
     let mut ctx = EvalContext::new();
-    ctx.variables.borrow_mut().insert("x", 42.);
+    ctx.variables.borrow_mut().insert("x", Value::F64(42.));
     assert_eq!(
         var_assign("x=12"),
         Ok((
@@ -189,7 +193,7 @@ fn var_assign_test() {
     );
     assert_eq!(
         eval(&var_assign("x=12").unwrap().1, &mut ctx),
-        RunResult::Yield(12.)
+        RunResult::Yield(Value::F64(12.))
     );
 }
 
@@ -273,15 +277,15 @@ fn cond_test() {
 fn cond_eval_test() {
     assert_eq!(
         eval0(&conditional("if 0 { 1; }").unwrap().1),
-        RunResult::Yield(0.)
+        RunResult::Yield(Value::I32(0))
     );
     assert_eq!(
         eval0(&conditional("if (1) { 2; } else { 3;}").unwrap().1),
-        RunResult::Yield(2.)
+        RunResult::Yield(Value::F64(2.))
     );
     assert_eq!(
         eval0(&conditional("if (0) { 2; } else { 3;}").unwrap().1),
-        RunResult::Yield(3.)
+        RunResult::Yield(Value::F64(3.))
     );
 }
 
@@ -313,11 +317,11 @@ fn cmp_test() {
 fn cmp_eval_test() {
     assert_eq!(
         eval0(&cmp_expr(" 1 <  2 ").unwrap().1),
-        RunResult::Yield(1.)
+        RunResult::Yield(Value::F64(1.))
     );
-    assert_eq!(eval0(&cmp_expr(" 1 > 2").unwrap().1), RunResult::Yield(0.));
-    assert_eq!(eval0(&cmp_expr(" 2 < 1").unwrap().1), RunResult::Yield(0.));
-    assert_eq!(eval0(&cmp_expr(" 2 > 1").unwrap().1), RunResult::Yield(1.));
+    assert_eq!(eval0(&cmp_expr(" 1 > 2").unwrap().1), RunResult::Yield(Value::F64(0.)));
+    assert_eq!(eval0(&cmp_expr(" 2 < 1").unwrap().1), RunResult::Yield(Value::F64(0.)));
+    assert_eq!(eval0(&cmp_expr(" 2 > 1").unwrap().1), RunResult::Yield(Value::F64(1.)));
 }
 
 #[test]
@@ -352,19 +356,19 @@ fn brace_expr_test() {
 fn brace_expr_eval_test() {
     assert_eq!(
         eval0(&full_expression(" { 1; } ").unwrap().1),
-        RunResult::Yield(1.)
+        RunResult::Yield(Value::F64(1.))
     );
     assert_eq!(
         eval0(&full_expression(" { 1; 2 }").unwrap().1),
-        RunResult::Yield(2.)
+        RunResult::Yield(Value::F64(2.))
     );
     assert_eq!(
         eval0(&full_expression(" {1; 2;} ").unwrap().1),
-        RunResult::Yield(2.)
+        RunResult::Yield(Value::F64(2.))
     );
     assert_eq!(
         eval0(&full_expression("  { var x; x = 1; x } ").unwrap().1),
-        RunResult::Yield(1.)
+        RunResult::Yield(Value::F64(1.))
     );
 }
 
@@ -451,7 +455,7 @@ fn loop_test() {
         Ok((
             "",
             vec![
-                Statement::VarDecl("i", None),
+                Statement::VarDecl("i", TypeDecl::F64, None),
                 Statement::Expression(Expression::VarAssign(
                     "i",
                     Box::new(Expression::NumLiteral(0.))
@@ -485,7 +489,7 @@ fn loop_test() {
         Ok((
             "",
             vec![
-                Statement::VarDecl("i", None),
+                Statement::VarDecl("i", TypeDecl::F64, None),
                 Statement::Expression(Expression::VarAssign(
                     "i",
                     Box::new(Expression::NumLiteral(0.))
@@ -519,7 +523,7 @@ fn while_test() {
         Ok((
             "",
             vec![
-                Statement::VarDecl("i", None),
+                Statement::VarDecl("i", TypeDecl::F64, None),
                 Statement::Expression(Expression::VarAssign(
                     "i",
                     Box::new(Expression::NumLiteral(0.))
