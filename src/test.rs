@@ -419,6 +419,27 @@ fn logic_test() {
             )
         ))
     );
+    assert_eq!(
+        conditional_expr(" 1 || !1"),
+        Ok((
+            "",
+            Expression::Or(
+                Box::new(Expression::NumLiteral(Value::I64(1))),
+                Box::new(Expression::Not(Box::new(Expression::NumLiteral(
+                    Value::I64(1)
+                )),)),
+            )
+        ))
+    );
+    assert_eq!(
+        conditional_expr(" !!1"),
+        Ok((
+            "",
+            Expression::Not(Box::new(Expression::Not(Box::new(Expression::NumLiteral(
+                Value::I64(1)
+            )),)))
+        ))
+    );
 }
 
 #[test]
@@ -438,6 +459,10 @@ fn logic_eval_test() {
     assert_eq!(
         eval0(&full_expression(" 1 && 0 || 0 ").unwrap().1),
         RunResult::Yield(Value::I32(0))
+    );
+    assert_eq!(
+        eval0(&full_expression(" 1 && !0 ").unwrap().1),
+        RunResult::Yield(Value::I32(1))
     );
 }
 

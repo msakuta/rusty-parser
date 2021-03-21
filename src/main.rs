@@ -52,6 +52,7 @@ enum Expression<'a> {
     Variable(&'a str),
     VarAssign(&'a str, Box<Expression<'a>>),
     FnInvoke(&'a str, Vec<Expression<'a>>),
+    Not(Box<Expression<'a>>),
     Add(Box<Expression<'a>>, Box<Expression<'a>>),
     Sub(Box<Expression<'a>>, Box<Expression<'a>>),
     Mult(Box<Expression<'a>>, Box<Expression<'a>>),
@@ -200,14 +201,23 @@ fn factor(i: &str) -> IResult<&str, Expression> {
     ))(i)
 }
 
+fn not(i: &str) -> IResult<&str, Expression> {
+    let (r, v) = preceded(delimited(multispace0, tag("!"), multispace0), not_factor)(i)?;
+    Ok((r, Expression::Not(Box::new(v))))
+}
+
+fn not_factor(i: &str) -> IResult<&str, Expression> {
+    alt((not, factor))(i)
+}
+
 // We read an initial factor and for each time we find
 // a * or / operator followed by another factor, we do
 // the math by folding everything
 fn term(i: &str) -> IResult<&str, Expression> {
-    let (i, init) = factor(i)?;
+    let (i, init) = not_factor(i)?;
 
     fold_many0(
-        pair(alt((char('*'), char('/'))), factor),
+        pair(alt((char('*'), char('/'))), not_factor),
         init,
         |acc, (op, val): (char, Expression)| {
             if op == '*' {
@@ -600,6 +610,13 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
                         .collect::<Vec<_>>(),
                 )),
             }
+        }
+        Expression::Not(val) => {
+            RunResult::Yield(Value::I32(if truthy(&unwrap_run!(eval(val, ctx))) {
+                0
+            } else {
+                1
+            }))
         }
         Expression::Add(lhs, rhs) => {
             let res = RunResult::Yield(binary_op(
