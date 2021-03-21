@@ -10,7 +10,7 @@ use nom::{
 };
 use std::fs::File;
 use std::io::prelude::*;
-use std::{collections::HashMap, env};
+use std::{cell::RefCell, collections::HashMap, env};
 
 #[derive(Debug, PartialEq, Clone)]
 enum Statement<'a> {
@@ -354,13 +354,22 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
     match e {
         Expression::NumLiteral(val) => RunResult::Yield(*val),
         Expression::Variable(str) => RunResult::Yield(
-            *ctx.get_var(str)
+            ctx.get_var(str)
                 .expect(&format!("Variable {} not found in scope", str)),
         ),
         Expression::VarAssign(str, rhs) => {
             let value = unwrap_run!(eval(rhs, ctx));
-            if let None = ctx.variables.insert(str, value) {
-                panic!("Variable was not declared!");
+            let mut search_ctx: Option<&EvalContext> = Some(ctx);
+            while let Some(c) = search_ctx {
+                if let None = c.variables.borrow().get(str) {
+                    search_ctx = c.super_context;
+                    continue;
+                }
+                c.variables.borrow_mut().insert(str, value);
+                break;
+            }
+            if search_ctx.is_none() {
+                panic!(format!("Variable \"{}\" was not declared!", str));
             }
             RunResult::Yield(value)
         }
@@ -373,7 +382,7 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
             match func {
                 FuncDef::Code(func) => {
                     for (k, v) in func.args.iter().zip(&args) {
-                        subctx.variables.insert(k, unwrap_run!(*v));
+                        subctx.variables.borrow_mut().insert(k, unwrap_run!(*v));
                     }
                     let run_result = run(func.stmts, &mut subctx).unwrap();
                     match run_result {
@@ -456,7 +465,8 @@ enum FuncDef<'src, 'ast, 'native> {
 /// the AST ('ast), because usually AST is created after the source.
 #[derive(Clone)]
 struct EvalContext<'src, 'ast, 'native, 'ctx> {
-    variables: HashMap<&'src str, f64>,
+    /// RefCell to allow mutation in super context
+    variables: RefCell<HashMap<&'src str, f64>>,
     /// Function names are owned strings because it can be either from source or native.
     functions: HashMap<String, FuncDef<'src, 'ast, 'native>>,
     super_context: Option<&'ctx EvalContext<'src, 'ast, 'native, 'ctx>>,
@@ -467,7 +477,7 @@ impl<'src, 'ast, 'native, 'ctx> EvalContext<'src, 'ast, 'native, 'ctx> {
         let mut functions = HashMap::new();
         functions.insert("print".to_string(), FuncDef::Native(&s_print));
         Self {
-            variables: HashMap::new(),
+            variables: RefCell::new(HashMap::new()),
             functions,
             super_context: None,
         }
@@ -475,15 +485,15 @@ impl<'src, 'ast, 'native, 'ctx> EvalContext<'src, 'ast, 'native, 'ctx> {
 
     fn push_stack(super_ctx: &'ctx Self) -> Self {
         Self {
-            variables: HashMap::new(),
+            variables: RefCell::new(HashMap::new()),
             functions: HashMap::new(),
             super_context: Some(super_ctx),
         }
     }
 
-    fn get_var(&self, name: &str) -> Option<&f64> {
-        if let Some(val) = self.variables.get(name) {
-            Some(val)
+    fn get_var(&self, name: &str) -> Option<f64> {
+        if let Some(val) = self.variables.borrow_mut().get(name) {
+            Some(*val)
         } else if let Some(super_ctx) = self.super_context {
             super_ctx.get_var(name)
         } else {
@@ -530,7 +540,7 @@ fn run<'src, 'ast>(
                 } else {
                     0.
                 };
-                ctx.variables.insert(*var, init_val);
+                ctx.variables.borrow_mut().insert(*var, init_val);
             }
             Statement::FnDecl(var, args, stmts) => {
                 ctx.functions
@@ -567,7 +577,7 @@ fn run<'src, 'ast>(
                 let from_res = unwrap_break!(eval(from, ctx)) as isize;
                 let to_res = unwrap_break!(eval(to, ctx)) as isize;
                 for i in from_res..to_res {
-                    ctx.variables.insert(iter, i as f64);
+                    ctx.variables.borrow_mut().insert(iter, i as f64);
                     res = match run(e, ctx)? {
                         RunResult::Yield(v) => RunResult::Yield(v),
                         RunResult::Break => break,

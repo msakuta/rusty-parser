@@ -169,7 +169,7 @@ fn var_ident_test() {
 #[test]
 fn var_test() {
     let mut ctx = EvalContext::new();
-    ctx.variables.insert("x", 42.);
+    ctx.variables.borrow_mut().insert("x", 42.);
     assert_eq!(
         eval(&expr(" x +  2 ").unwrap().1, &mut ctx),
         RunResult::Yield(44.)
@@ -179,7 +179,7 @@ fn var_test() {
 #[test]
 fn var_assign_test() {
     let mut ctx = EvalContext::new();
-    ctx.variables.insert("x", 42.);
+    ctx.variables.borrow_mut().insert("x", 42.);
     assert_eq!(
         var_assign("x=12"),
         Ok((

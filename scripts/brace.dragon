@@ -4,7 +4,9 @@ var x = 42;
 var result = {
     var y;
     y = 10;
+    x = x * 10;
     x + y
 };
 
 print(result);
+print(x);
