@@ -696,20 +696,22 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
 }
 
 fn s_print(vals: &[Value]) -> Value {
-    if let [val, ..] = vals {
+    print!("print:");
+    for val in vals {
         match val {
-            Value::F64(val) => println!("print: {}", val),
-            Value::F32(val) => println!("print: {}", val),
-            Value::I64(val) => println!("print: {}", val),
-            Value::I32(val) => println!("print: {}", val),
-            Value::Str(val) => println!("print: {}", val),
+            Value::F64(val) => print!(" {}", val),
+            Value::F32(val) => print!(" {}", val),
+            Value::I64(val) => print!(" {}", val),
+            Value::I32(val) => print!(" {}", val),
+            Value::Str(val) => print!(" {}", val),
         }
     }
+    print!("\n");
     Value::I32(0)
 }
 
 fn s_puts(vals: &[Value]) -> Value {
-    if let [val, ..] = vals {
+    for val in vals {
         match val {
             Value::F64(val) => print!("{}", val),
             Value::F32(val) => print!("{}", val),
