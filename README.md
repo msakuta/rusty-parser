@@ -19,9 +19,11 @@ In ascending order of difficulty.
 * [x] Loops
 * [x] Proper expression statements (brace expressions)
 * [x] Variable definition initializer
-* [ ] Type declaration
-* [ ] Primitive types (i32, u32, f32, f64)
-* [ ] String types? (Optional?)
+* [x] Type declaration
+* [x] Primitive types (i32, u32, f32, f64)
+* [x] String types? (Optional?)
+* [ ] Logical operators (||, &&)
+* [ ] String manipulations
 * [ ] Array types
 * [ ] Tuple types
 * [ ] Function types

@@ -1,0 +1,27 @@
+var d: f64 = 123.;
+var f: f32 = 321.;
+var l: i64 = 1000;
+var i: i32 = 100;
+
+print(type(d));
+print(d + f);
+print(f + f);
+print(l + i);
+print(i + i);
+
+l = 0.5;
+
+print(l);
+print(type(l));
+
+fn coerce_i64(a: i64) {
+    a
+}
+
+print(coerce_i64(123.45));
+
+fn coerce_f64(a: f64) {
+    a
+}
+
+print(type(coerce_f64(123)));

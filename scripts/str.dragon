@@ -1,0 +1,13 @@
+
+var s: str = 123;
+
+print(s);
+print(type(s));
+
+s = "hello";
+
+print(s);
+
+var l: i64 = "aaa";
+
+print(l);
