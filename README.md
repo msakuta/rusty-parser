@@ -22,7 +22,7 @@ In ascending order of difficulty.
 * [x] Type declaration
 * [x] Primitive types (i32, u32, f32, f64)
 * [x] String types? (Optional?)
-* [ ] Logical operators (||, &&)
+* [x] Logical operators (||, &&)
 * [ ] String manipulations
 * [ ] Array types
 * [ ] Tuple types
