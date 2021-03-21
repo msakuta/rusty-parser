@@ -4,10 +4,10 @@ var s: str = 123;
 print(s);
 print(type(s));
 
-s = "hello";
+s = "some text\nhello";
 
 print(s);
 
-var l: i64 = "aaa";
+var l: i64 = "some text\nhello";
 
 print(l);

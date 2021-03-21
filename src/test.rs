@@ -51,6 +51,14 @@ fn str_test() {
         expr("\"hello\""),
         Ok(("", Expression::StrLiteral("hello".to_string())))
     );
+    assert_eq!(
+        expr("\"sl\\\\ash\""),
+        Ok(("", Expression::StrLiteral("sl\\ash".to_string())))
+    );
+    assert_eq!(
+        expr("\"new\\nline\""),
+        Ok(("", Expression::StrLiteral("new\nline".to_string())))
+    );
 }
 
 #[test]

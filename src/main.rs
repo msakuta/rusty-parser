@@ -154,10 +154,18 @@ fn numeric_literal_expression(input: &str) -> IResult<&str, Expression> {
 fn str_literal(input: &str) -> IResult<&str, Expression> {
     let (r, val) = delimited(
         preceded(multispace0, char('\"')),
-        many0(none_of("\"\\")),
+        many0(none_of("\"")),
         terminated(char('"'), multispace0),
     )(input)?;
-    Ok((r, Expression::StrLiteral(val.iter().collect())))
+    Ok((
+        r,
+        Expression::StrLiteral(
+            val.iter()
+                .collect::<String>()
+                .replace("\\\\", "\\")
+                .replace("\\n", "\n"),
+        ),
+    ))
 }
 
 // We parse any expr surrounded by parens, ignoring all whitespaces around those
@@ -703,11 +711,11 @@ fn s_print(vals: &[Value]) -> Value {
 fn s_puts(vals: &[Value]) -> Value {
     if let [val, ..] = vals {
         match val {
-            Value::F64(val) => print!("print: {}", val),
-            Value::F32(val) => print!("print: {}", val),
-            Value::I64(val) => print!("print: {}", val),
-            Value::I32(val) => print!("print: {}", val),
-            Value::Str(val) => print!("print: {}", val),
+            Value::F64(val) => print!("{}", val),
+            Value::F32(val) => print!("{}", val),
+            Value::I64(val) => print!("{}", val),
+            Value::I32(val) => print!("{}", val),
+            Value::Str(val) => print!("{}", val),
         }
     }
     Value::I32(0)
