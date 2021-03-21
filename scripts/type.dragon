@@ -13,3 +13,15 @@ l = 0.5;
 
 print(l);
 print(type(l));
+
+fn coerce_i64(a: i64) {
+    a
+}
+
+print(coerce_i64(123.45));
+
+fn coerce_f64(a: f64) {
+    a
+}
+
+print(type(coerce_f64(123)));

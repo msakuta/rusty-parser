@@ -8,11 +8,11 @@ use nom::{
     sequence::{delimited, pair, preceded, terminated, tuple},
     IResult,
 };
-use std::fs::File;
 use std::io::prelude::*;
+use std::fs::File;
 use std::{cell::RefCell, collections::HashMap, env};
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 enum TypeDecl {
     F64,
     F32,
@@ -31,10 +31,13 @@ enum Value {
 }
 
 #[derive(Debug, PartialEq, Clone)]
+struct ArgDecl<'a>(&'a str, TypeDecl);
+
+#[derive(Debug, PartialEq, Clone)]
 enum Statement<'a> {
     Comment(&'a str),
     VarDecl(&'a str, TypeDecl, Option<Expression<'a>>),
-    FnDecl(&'a str, Vec<&'a str>, Vec<Statement<'a>>),
+    FnDecl(&'a str, Vec<ArgDecl<'a>>, Vec<Statement<'a>>),
     Expression(Expression<'a>),
     Loop(Vec<Statement<'a>>),
     While(Expression<'a>, Vec<Statement<'a>>),
@@ -84,35 +87,36 @@ fn var_ref(input: &str) -> IResult<&str, Expression> {
     Ok((r, Expression::Variable(res)))
 }
 
-fn var_decl(input: &str) -> IResult<&str, Statement> {
-    let (r, _) = multispace1(tag("var")(multispace0(input)?.0)?.0)?;
-    let (r, ident) = identifier(r)?;
+fn type_spec(input: &str) -> IResult<&str, TypeDecl> {
     let (r, type_) = opt(delimited(
         delimited(multispace0, tag(":"), multispace0),
         alt((tag("f64"), tag("f32"), tag("i64"), tag("i32"), tag("str"))),
         multispace0,
-    ))(r)?;
+    ))(input)?;
+    Ok((
+        r,
+        match type_ {
+            Some("f64") | None => TypeDecl::F64,
+            Some("f32") => TypeDecl::F32,
+            Some("i32") => TypeDecl::I32,
+            Some("i64") => TypeDecl::I64,
+            Some("str") => TypeDecl::Str,
+            Some(unknown) => panic!(format!("Unknown type: \"{}\"", unknown)),
+        },
+    ))
+}
+
+fn var_decl(input: &str) -> IResult<&str, Statement> {
+    let (r, _) = multispace1(tag("var")(multispace0(input)?.0)?.0)?;
+    let (r, ident) = identifier(r)?;
+    let (r, ts) = type_spec(r)?;
     let (r, initializer) = opt(delimited(
         delimited(multispace0, tag("="), multispace0),
         full_expression,
         multispace0,
     ))(r)?;
     let (r, _) = char(';')(multispace0(r)?.0)?;
-    Ok((
-        r,
-        Statement::VarDecl(
-            ident,
-            match type_ {
-                Some("f64") | None => TypeDecl::F64,
-                Some("f32") => TypeDecl::F32,
-                Some("i32") => TypeDecl::I32,
-                Some("i64") => TypeDecl::I64,
-                Some("str") => TypeDecl::Str,
-                Some(unknown) => panic!(format!("Unknown type: \"{}\"", unknown)),
-            },
-            initializer,
-        ),
-    ))
+    Ok((r, Statement::VarDecl(ident, ts, initializer)))
 }
 
 fn double_expr(input: &str) -> IResult<&str, Expression> {
@@ -308,6 +312,18 @@ fn expression_statement(input: &str) -> IResult<&str, Statement> {
     Ok((r, Statement::Expression(val)))
 }
 
+fn func_arg(input: &str) -> IResult<&str, ArgDecl> {
+    let (r, v) = pair(
+        identifier,
+        opt(delimited(
+            multispace0,
+            type_spec,
+            multispace0,
+        )),
+    )(input)?;
+    Ok((r, ArgDecl(v.0, v.1.unwrap_or(TypeDecl::F64))))
+}
+
 fn func_decl(input: &str) -> IResult<&str, Statement> {
     let (r, _) = multispace1(tag("fn")(multispace0(input)?.0)?.0)?;
     let (r, ident) = identifier(r)?;
@@ -317,7 +333,7 @@ fn func_decl(input: &str) -> IResult<&str, Statement> {
             tag("("),
             many0(delimited(
                 multispace0,
-                identifier,
+                func_arg,
                 delimited(multispace0, opt(tag(",")), multispace0),
             )),
             tag(")"),
@@ -484,6 +500,27 @@ fn coerce_str(a: &Value) -> String {
     }
 }
 
+fn coerce_var(value: &Value, target: &Value) -> Value {
+    match target {
+        Value::F64(_) => Value::F64(coerce_f64(value)),
+        Value::F32(_) => Value::F32(coerce_f64(value) as f32),
+        Value::I64(_) => Value::I64(coerce_i64(value)),
+        Value::I32(_) => Value::I32(coerce_i64(value) as i32),
+        Value::Str(_) => Value::Str(coerce_str(value)),
+    }
+}
+
+fn coerce_type(value: &Value, target: &TypeDecl) -> Value {
+    match target {
+        TypeDecl::F64 => Value::F64(coerce_f64(value)),
+        TypeDecl::F32 => Value::F32(coerce_f64(value) as f32),
+        TypeDecl::I64 => Value::I64(coerce_i64(value)),
+        TypeDecl::I32 => Value::I32(coerce_i64(value) as i32),
+        TypeDecl::Str => Value::Str(coerce_str(value)),
+    }
+}
+
+
 fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) -> RunResult {
     match e {
         Expression::NumLiteral(val) => RunResult::Yield(val.clone()),
@@ -502,13 +539,7 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
                     search_ctx = c.super_context;
                     continue;
                 };
-                value = match existing_value {
-                    Value::F64(_) => Value::F64(coerce_f64(&value)),
-                    Value::F32(_) => Value::F32(coerce_f64(&value) as f32),
-                    Value::I64(_) => Value::I64(coerce_i64(&value)),
-                    Value::I32(_) => Value::I32(coerce_i64(&value) as i32),
-                    Value::Str(_) => Value::Str(coerce_str(&value)),
-                };
+                value = coerce_var(&value, &existing_value);
                 c.variables.borrow_mut().insert(str, value.clone());
                 break;
             }
@@ -529,7 +560,7 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
                         subctx
                             .variables
                             .borrow_mut()
-                            .insert(k, unwrap_run!(v).clone());
+                            .insert(k.0, coerce_type(unwrap_run!(v), &k.1));
                     }
                     let run_result = run(func.stmts, &mut subctx).unwrap();
                     match run_result {
@@ -619,6 +650,19 @@ fn s_print(vals: &[Value]) -> Value {
     Value::I32(0)
 }
 
+fn s_puts(vals: &[Value]) -> Value {
+    if let [val, ..] = vals {
+        match val {
+            Value::F64(val) => print!("print: {}", val),
+            Value::F32(val) => print!("print: {}", val),
+            Value::I64(val) => print!("print: {}", val),
+            Value::I32(val) => print!("print: {}", val),
+            Value::Str(val) => print!("print: {}", val),
+        }
+    }
+    Value::I32(0)
+}
+
 fn s_type(vals: &[Value]) -> Value {
     if let [val, ..] = vals {
         Value::Str(match val {
@@ -635,7 +679,7 @@ fn s_type(vals: &[Value]) -> Value {
 
 #[derive(Clone)]
 struct FuncCode<'src, 'ast> {
-    args: &'ast Vec<&'src str>,
+    args: &'ast Vec<ArgDecl<'src>>,
     stmts: &'ast Vec<Statement<'src>>,
 }
 
@@ -664,6 +708,7 @@ impl<'src, 'ast, 'native, 'ctx> EvalContext<'src, 'ast, 'native, 'ctx> {
     fn new() -> Self {
         let mut functions = HashMap::new();
         functions.insert("print".to_string(), FuncDef::Native(&s_print));
+        functions.insert("puts".to_string(), FuncDef::Native(&s_puts));
         functions.insert("type".to_string(), FuncDef::Native(&s_type));
         Self {
             variables: RefCell::new(HashMap::new()),

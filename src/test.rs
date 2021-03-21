@@ -225,7 +225,7 @@ fn fn_decl_test() {
             "",
             Statement::FnDecl(
                 "f",
-                vec!["a"],
+                vec![ArgDecl("a", TypeDecl::F64)],
                 vec![
                     Statement::Expression(Expression::VarAssign(
                         "x",
@@ -234,6 +234,26 @@ fn fn_decl_test() {
                     Statement::Expression(Expression::Mult(
                         Box::new(Expression::Variable("x")),
                         Box::new(Expression::Variable("a"))
+                    ))
+                ]
+            )
+        ))
+    );
+    assert_eq!(
+        func_arg("a: i32"),
+        Ok(("", ArgDecl("a", TypeDecl::I32))),
+    );
+    assert_eq!(
+        func_decl("fn f(a: i32) { a * 2 }"),
+        Ok((
+            "",
+            Statement::FnDecl(
+                "f",
+                vec![ArgDecl("a", TypeDecl::I32)],
+                vec![
+                    Statement::Expression(Expression::Mult(
+                        Box::new(Expression::Variable("a")),
+                        Box::new(Expression::NumLiteral(Value::I64(2)))
                     ))
                 ]
             )
