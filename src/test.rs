@@ -239,10 +239,7 @@ fn fn_decl_test() {
             )
         ))
     );
-    assert_eq!(
-        func_arg("a: i32"),
-        Ok(("", ArgDecl("a", TypeDecl::I32))),
-    );
+    assert_eq!(func_arg("a: i32"), Ok(("", ArgDecl("a", TypeDecl::I32))),);
     assert_eq!(
         func_decl("fn f(a: i32) { a * 2 }"),
         Ok((
@@ -250,12 +247,10 @@ fn fn_decl_test() {
             Statement::FnDecl(
                 "f",
                 vec![ArgDecl("a", TypeDecl::I32)],
-                vec![
-                    Statement::Expression(Expression::Mult(
-                        Box::new(Expression::Variable("a")),
-                        Box::new(Expression::NumLiteral(Value::I64(2)))
-                    ))
-                ]
+                vec![Statement::Expression(Expression::Mult(
+                    Box::new(Expression::Variable("a")),
+                    Box::new(Expression::NumLiteral(Value::I64(2)))
+                ))]
             )
         ))
     );
@@ -301,6 +296,22 @@ fn cond_test() {
             "",
             Expression::Conditional(
                 Box::new(Expression::NumLiteral(Value::I64(1))),
+                vec![Statement::Expression(Expression::NumLiteral(Value::I64(2)))],
+                Some(vec![Statement::Expression(Expression::NumLiteral(
+                    Value::I64(3)
+                ))]),
+            )
+        ))
+    );
+    assert_eq!(
+        conditional("if 1 && 2 { 2; } else { 3; }"),
+        Ok((
+            "",
+            Expression::Conditional(
+                Box::new(Expression::And(
+                    Box::new(Expression::NumLiteral(Value::I64(1))),
+                    Box::new(Expression::NumLiteral(Value::I64(2))),
+                )),
                 vec![Statement::Expression(Expression::NumLiteral(Value::I64(2)))],
                 Some(vec![Statement::Expression(Expression::NumLiteral(
                     Value::I64(3)
@@ -367,6 +378,66 @@ fn cmp_eval_test() {
     assert_eq!(
         eval0(&cmp_expr(" 2 > 1").unwrap().1),
         RunResult::Yield(Value::I64(1))
+    );
+}
+
+#[test]
+fn logic_test() {
+    assert_eq!(
+        conditional_expr(" 0 && 1 "),
+        Ok((
+            "",
+            Expression::And(
+                Box::new(Expression::NumLiteral(Value::I64(0))),
+                Box::new(Expression::NumLiteral(Value::I64(1)))
+            )
+        ))
+    );
+    assert_eq!(
+        conditional_expr(" 1 || 2"),
+        Ok((
+            "",
+            Expression::Or(
+                Box::new(Expression::NumLiteral(Value::I64(1))),
+                Box::new(Expression::NumLiteral(Value::I64(2)))
+            )
+        ))
+    );
+    assert_eq!(
+        conditional_expr(" 1 && 2 || 3 && 4"),
+        Ok((
+            "",
+            Expression::Or(
+                Box::new(Expression::And(
+                    Box::new(Expression::NumLiteral(Value::I64(1))),
+                    Box::new(Expression::NumLiteral(Value::I64(2)))
+                )),
+                Box::new(Expression::And(
+                    Box::new(Expression::NumLiteral(Value::I64(3))),
+                    Box::new(Expression::NumLiteral(Value::I64(4)))
+                )),
+            )
+        ))
+    );
+}
+
+#[test]
+fn logic_eval_test() {
+    assert_eq!(
+        eval0(&full_expression(" 0 && 1 ").unwrap().1),
+        RunResult::Yield(Value::I32(0))
+    );
+    assert_eq!(
+        eval0(&full_expression(" 0 || 1 ").unwrap().1),
+        RunResult::Yield(Value::I32(1))
+    );
+    assert_eq!(
+        eval0(&full_expression(" 1 && 0 || 1 ").unwrap().1),
+        RunResult::Yield(Value::I32(1))
+    );
+    assert_eq!(
+        eval0(&full_expression(" 1 && 0 || 0 ").unwrap().1),
+        RunResult::Yield(Value::I32(0))
     );
 }
 

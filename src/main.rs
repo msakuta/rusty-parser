@@ -8,8 +8,8 @@ use nom::{
     sequence::{delimited, pair, preceded, terminated, tuple},
     IResult,
 };
-use std::io::prelude::*;
 use std::fs::File;
+use std::io::prelude::*;
 use std::{cell::RefCell, collections::HashMap, env};
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -58,6 +58,8 @@ enum Expression<'a> {
     Div(Box<Expression<'a>>, Box<Expression<'a>>),
     LT(Box<Expression<'a>>, Box<Expression<'a>>),
     GT(Box<Expression<'a>>, Box<Expression<'a>>),
+    And(Box<Expression<'a>>, Box<Expression<'a>>),
+    Or(Box<Expression<'a>>, Box<Expression<'a>>),
     Conditional(
         Box<Expression<'a>>,
         Vec<Statement<'a>>,
@@ -249,7 +251,7 @@ fn cmp(i: &str) -> IResult<&str, Expression> {
 
 fn conditional(i: &str) -> IResult<&str, Expression> {
     let (r, _) = delimited(multispace0, tag("if"), multispace0)(i)?;
-    let (r, cond) = cmp_expr(r)?;
+    let (r, cond) = or_expr(r)?;
     let (r, true_branch) = delimited(
         delimited(multispace0, tag("{"), multispace0),
         source,
@@ -286,8 +288,30 @@ fn cmp_expr(i: &str) -> IResult<&str, Expression> {
     alt((cmp, expr))(i)
 }
 
+fn and(i: &str) -> IResult<&str, Expression> {
+    let (r, first) = cmp_expr(i)?;
+    let (r, _) = delimited(multispace0, tag("&&"), multispace0)(r)?;
+    let (r, second) = cmp_expr(r)?;
+    Ok((r, Expression::And(Box::new(first), Box::new(second))))
+}
+
+fn and_expr(i: &str) -> IResult<&str, Expression> {
+    alt((and, cmp_expr))(i)
+}
+
+fn or(i: &str) -> IResult<&str, Expression> {
+    let (r, first) = and_expr(i)?;
+    let (r, _) = delimited(multispace0, tag("||"), multispace0)(r)?;
+    let (r, second) = and_expr(r)?;
+    Ok((r, Expression::Or(Box::new(first), Box::new(second))))
+}
+
+fn or_expr(i: &str) -> IResult<&str, Expression> {
+    alt((or, and_expr))(i)
+}
+
 fn assign_expr(i: &str) -> IResult<&str, Expression> {
-    alt((var_assign, cmp_expr))(i)
+    alt((var_assign, or_expr))(i)
 }
 
 fn conditional_expr(i: &str) -> IResult<&str, Expression> {
@@ -315,11 +339,7 @@ fn expression_statement(input: &str) -> IResult<&str, Statement> {
 fn func_arg(input: &str) -> IResult<&str, ArgDecl> {
     let (r, v) = pair(
         identifier,
-        opt(delimited(
-            multispace0,
-            type_spec,
-            multispace0,
-        )),
+        opt(delimited(multispace0, type_spec, multispace0)),
     )(input)?;
     Ok((r, ArgDecl(v.0, v.1.unwrap_or(TypeDecl::F64))))
 }
@@ -520,7 +540,6 @@ fn coerce_type(value: &Value, target: &TypeDecl) -> Value {
     }
 }
 
-
 fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) -> RunResult {
     match e {
         Expression::NumLiteral(val) => RunResult::Yield(val.clone()),
@@ -620,6 +639,20 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
             unwrap_run!(eval(rhs, ctx)),
             |lhs, rhs| if lhs > rhs { 1. } else { 0. },
             |lhs, rhs| if lhs > rhs { 1 } else { 0 },
+        )),
+        Expression::And(lhs, rhs) => RunResult::Yield(Value::I32(
+            if truthy(&unwrap_run!(eval(lhs, ctx))) && truthy(&unwrap_run!(eval(rhs, ctx))) {
+                1
+            } else {
+                0
+            },
+        )),
+        Expression::Or(lhs, rhs) => RunResult::Yield(Value::I32(
+            if truthy(&unwrap_run!(eval(lhs, ctx))) || truthy(&unwrap_run!(eval(rhs, ctx))) {
+                1
+            } else {
+                0
+            },
         )),
         Expression::Conditional(cond, true_branch, false_branch) => {
             if truthy(&unwrap_run!(eval(cond, ctx))) {
