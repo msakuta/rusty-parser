@@ -410,25 +410,37 @@ fn stmts_test() {
 
 #[test]
 fn var_decl_test() {
+    use Expression::NumLiteral as NL;
+    use Statement::VarDecl as VD;
     assert_eq!(
         source(" var x; x = 0;"),
         Ok((
             "",
             vec![
-                Statement::VarDecl("x", None),
-                Statement::Expression(Expression::VarAssign(
-                    "x",
-                    Box::new(Expression::NumLiteral(0.))
-                )),
+                VD("x", TypeDecl::F64, None),
+                Statement::Expression(Expression::VarAssign("x", Box::new(NL(0.)))),
             ]
         ))
     );
     assert_eq!(
         source(" var x = 0;"),
-        Ok((
-            "",
-            vec![Statement::VarDecl("x", Some(Expression::NumLiteral(0.)))]
-        ))
+        Ok(("", vec![VD("x", TypeDecl::F64, Some(NL(0.)))]))
+    );
+    assert_eq!(
+        source(" var x: f64 = 0;"),
+        Ok(("", vec![VD("x", TypeDecl::F64, Some(NL(0.)))]))
+    );
+    assert_eq!(
+        source(" var x: f32 = 0;"),
+        Ok(("", vec![VD("x", TypeDecl::F32, Some(NL(0.)))]))
+    );
+    assert_eq!(
+        source(" var x: i64 = 0;"),
+        Ok(("", vec![VD("x", TypeDecl::I64, Some(NL(0.)))]))
+    );
+    assert_eq!(
+        source(" var x: i32 = 0;"),
+        Ok(("", vec![VD("x", TypeDecl::I32, Some(NL(0.)))]))
     );
 }
 

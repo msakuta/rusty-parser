@@ -13,9 +13,17 @@ use std::io::prelude::*;
 use std::{cell::RefCell, collections::HashMap, env};
 
 #[derive(Debug, PartialEq, Clone)]
+enum TypeDecl {
+    F64,
+    F32,
+    I64,
+    I32,
+}
+
+#[derive(Debug, PartialEq, Clone)]
 enum Statement<'a> {
     Comment(&'a str),
-    VarDecl(&'a str, Option<Expression<'a>>),
+    VarDecl(&'a str, TypeDecl, Option<Expression<'a>>),
     FnDecl(&'a str, Vec<&'a str>, Vec<Statement<'a>>),
     Expression(Expression<'a>),
     Loop(Vec<Statement<'a>>),
@@ -68,13 +76,31 @@ fn var_ref(input: &str) -> IResult<&str, Expression> {
 fn var_decl(input: &str) -> IResult<&str, Statement> {
     let (r, _) = multispace1(tag("var")(multispace0(input)?.0)?.0)?;
     let (r, ident) = identifier(r)?;
+    let (r, type_) = opt(delimited(
+        delimited(multispace0, tag(":"), multispace0),
+        alt((tag("f64"), tag("f32"), tag("i64"), tag("i32"))),
+        multispace0,
+    ))(r)?;
     let (r, initializer) = opt(delimited(
         delimited(multispace0, tag("="), multispace0),
         full_expression,
         multispace0,
     ))(r)?;
     let (r, _) = char(';')(multispace0(r)?.0)?;
-    Ok((r, Statement::VarDecl(ident, initializer)))
+    Ok((
+        r,
+        Statement::VarDecl(
+            ident,
+            match type_ {
+                Some("f64") | None => TypeDecl::F64,
+                Some("f32") => TypeDecl::F32,
+                Some("i32") => TypeDecl::I32,
+                Some("i64") => TypeDecl::I64,
+                Some(unknown) => panic!(format!("Unknown type: \"{}\"", unknown)),
+            },
+            initializer,
+        ),
+    ))
 }
 
 fn numeric_literal_expression(input: &str) -> IResult<&str, Expression> {
@@ -468,6 +494,8 @@ struct EvalContext<'src, 'ast, 'native, 'ctx> {
     /// RefCell to allow mutation in super context
     variables: RefCell<HashMap<&'src str, f64>>,
     /// Function names are owned strings because it can be either from source or native.
+    /// Unlike variables, functions cannot be overwritten in the outer scope, so it does not
+    /// need to be wrapped in a RefCell.
     functions: HashMap<String, FuncDef<'src, 'ast, 'native>>,
     super_context: Option<&'ctx EvalContext<'src, 'ast, 'native, 'ctx>>,
 }
@@ -534,7 +562,7 @@ fn run<'src, 'ast>(
     let mut res = RunResult::Yield(0.);
     for stmt in stmts {
         match stmt {
-            Statement::VarDecl(var, initializer) => {
+            Statement::VarDecl(var, type_, initializer) => {
                 let init_val = if let Some(init_expr) = initializer {
                     unwrap_break!(eval(init_expr, ctx))
                 } else {
