@@ -582,6 +582,22 @@ fn stmts_test() {
 }
 
 #[test]
+fn array_decl_test() {
+    assert_eq!(type_spec(": i32"), Ok(("", TypeDecl::I32)));
+    assert_eq!(
+        type_spec(": [i32]"),
+        Ok(("", TypeDecl::Array(Box::new(TypeDecl::I32))))
+    );
+    assert_eq!(
+        type_spec(": [[f32]]"),
+        Ok((
+            "",
+            TypeDecl::Array(Box::new(TypeDecl::Array(Box::new(TypeDecl::F32))))
+        ))
+    );
+}
+
+#[test]
 fn var_decl_test() {
     use Expression::NumLiteral as NL;
     use Statement::VarDecl as VD;

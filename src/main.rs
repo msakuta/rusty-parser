@@ -12,13 +12,14 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::{cell::RefCell, collections::HashMap, env};
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone)]
 enum TypeDecl {
     F64,
     F32,
     I64,
     I32,
     Str,
+    Array(Box<TypeDecl>),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -28,6 +29,7 @@ enum Value {
     I64(i64),
     I32(i32),
     Str(String),
+    Array(TypeDecl, Vec<Value>),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -90,9 +92,9 @@ fn var_ref(input: &str) -> IResult<&str, Expression> {
     Ok((r, Expression::Variable(res)))
 }
 
-fn type_spec(input: &str) -> IResult<&str, TypeDecl> {
+fn type_scalar(input: &str) -> IResult<&str, TypeDecl> {
     let (r, type_) = opt(delimited(
-        delimited(multispace0, tag(":"), multispace0),
+        multispace0,
         alt((tag("f64"), tag("f32"), tag("i64"), tag("i32"), tag("str"))),
         multispace0,
     ))(input)?;
@@ -105,6 +107,31 @@ fn type_spec(input: &str) -> IResult<&str, TypeDecl> {
             Some("i64") => TypeDecl::I64,
             Some("str") => TypeDecl::Str,
             Some(unknown) => panic!(format!("Unknown type: \"{}\"", unknown)),
+        },
+    ))
+}
+
+fn type_array(input: &str) -> IResult<&str, TypeDecl> {
+    let (r, arr) = delimited(
+        delimited(multispace0, tag("["), multispace0),
+        alt((type_array, type_scalar)),
+        delimited(multispace0, tag("]"), multispace0),
+    )(input)?;
+    Ok((r, TypeDecl::Array(Box::new(arr))))
+}
+
+fn type_spec(input: &str) -> IResult<&str, TypeDecl> {
+    let (r, type_) = opt(delimited(
+        delimited(multispace0, tag(":"), multispace0),
+        alt((type_array, type_scalar)),
+        multispace0,
+    ))(input)?;
+    Ok((
+        r,
+        if let Some(a) = type_ {
+            a
+        } else {
+            TypeDecl::F64
         },
     ))
 }
@@ -535,6 +562,7 @@ fn coerce_str(a: &Value) -> String {
         Value::I64(v) => v.to_string(),
         Value::I32(v) => v.to_string(),
         Value::Str(v) => v.clone(),
+        _ => panic!("Can't convert array to str"),
     }
 }
 
@@ -545,6 +573,28 @@ fn coerce_var(value: &Value, target: &Value) -> Value {
         Value::I64(_) => Value::I64(coerce_i64(value)),
         Value::I32(_) => Value::I32(coerce_i64(value) as i32),
         Value::Str(_) => Value::Str(coerce_str(value)),
+        Value::Array(inner_type, inner) => {
+            if inner.len() == 0 {
+                if let Value::Array(value_inner_type, value_inner) = value {
+                    if value_inner.len() == 0 {
+                        return value.clone();
+                    }
+                }
+                panic!("Cannot coerce type to empty array");
+            } else {
+                if let Value::Array(value_inner_type, value_inner) = value {
+                    Value::Array(
+                        inner_type.clone(),
+                        value_inner
+                            .iter()
+                            .map(|val| coerce_type(val, inner_type))
+                            .collect(),
+                    )
+                } else {
+                    panic!("Cannot coerce scalar to array");
+                }
+            }
+        }
     }
 }
 
@@ -555,6 +605,7 @@ fn coerce_type(value: &Value, target: &TypeDecl) -> Value {
         TypeDecl::I64 => Value::I64(coerce_i64(value)),
         TypeDecl::I32 => Value::I32(coerce_i64(value) as i32),
         TypeDecl::Str => Value::Str(coerce_str(value)),
+        TypeDecl::Array(inner) => coerce_type(value, inner),
     }
 }
 
@@ -697,30 +748,53 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
 
 fn s_print(vals: &[Value]) -> Value {
     print!("print:");
-    for val in vals {
-        match val {
-            Value::F64(val) => print!(" {}", val),
-            Value::F32(val) => print!(" {}", val),
-            Value::I64(val) => print!(" {}", val),
-            Value::I32(val) => print!(" {}", val),
-            Value::Str(val) => print!(" {}", val),
+    fn print_inner(vals: &[Value]) {
+        for val in vals {
+            match val {
+                Value::F64(val) => print!(" {}", val),
+                Value::F32(val) => print!(" {}", val),
+                Value::I64(val) => print!(" {}", val),
+                Value::I32(val) => print!(" {}", val),
+                Value::Str(val) => print!(" {}", val),
+                Value::Array(_, val) => {
+                    print!("[");
+                    print_inner(val);
+                    print!("]");
+                }
+            }
         }
     }
+    print_inner(vals);
     print!("\n");
     Value::I32(0)
 }
 
 fn s_puts(vals: &[Value]) -> Value {
-    for val in vals {
-        match val {
-            Value::F64(val) => print!("{}", val),
-            Value::F32(val) => print!("{}", val),
-            Value::I64(val) => print!("{}", val),
-            Value::I32(val) => print!("{}", val),
-            Value::Str(val) => print!("{}", val),
+    fn puts_inner(vals: &[Value]) {
+        for val in vals {
+            match val {
+                Value::F64(val) => print!("{}", val),
+                Value::F32(val) => print!("{}", val),
+                Value::I64(val) => print!("{}", val),
+                Value::I32(val) => print!("{}", val),
+                Value::Str(val) => print!("{}", val),
+                Value::Array(_, val) => puts_inner(val),
+            }
         }
     }
+    puts_inner(vals);
     Value::I32(0)
+}
+
+fn type_decl_to_str(t: &TypeDecl) -> String {
+    match t {
+        TypeDecl::F64 => "f64".to_string(),
+        TypeDecl::F32 => "f32".to_string(),
+        TypeDecl::I64 => "i64".to_string(),
+        TypeDecl::I32 => "i32".to_string(),
+        TypeDecl::Str => "str".to_string(),
+        TypeDecl::Array(inner) => format!("[{}]", type_decl_to_str(inner)),
+    }
 }
 
 fn s_type(vals: &[Value]) -> Value {
@@ -731,6 +805,7 @@ fn s_type(vals: &[Value]) -> Value {
             Value::I64(_) => "i64".to_string(),
             Value::I32(_) => "i32".to_string(),
             Value::Str(_) => "str".to_string(),
+            Value::Array(inner, _) => format!("[{}]", type_decl_to_str(inner)),
         })
     } else {
         Value::I32(0)
@@ -834,13 +909,7 @@ fn run<'src, 'ast>(
                 } else {
                     Value::I32(0)
                 };
-                let init_val = match type_ {
-                    TypeDecl::F64 => Value::F64(coerce_f64(&init_val)),
-                    TypeDecl::F32 => Value::F32(coerce_f64(&init_val) as f32),
-                    TypeDecl::I64 => Value::I64(coerce_i64(&init_val)),
-                    TypeDecl::I32 => Value::I32(coerce_i64(&init_val) as i32),
-                    TypeDecl::Str => Value::Str(coerce_str(&init_val)),
-                };
+                let init_val = coerce_type(&init_val, type_);
                 ctx.variables.borrow_mut().insert(*var, init_val);
             }
             Statement::FnDecl(var, args, stmts) => {
