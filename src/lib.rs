@@ -1,3 +1,4 @@
+use wasm_bindgen::prelude::*;
 use nom::{
     branch::alt,
     bytes::complete::{tag, take_until},
@@ -16,6 +17,12 @@ use std::{
     env,
     rc::Rc,
 };
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(js_namespace = console)]
+    pub(crate) fn log(s: &str);
+}
 
 #[derive(Debug, PartialEq, Clone)]
 enum TypeDecl {
@@ -910,15 +917,15 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
 }
 
 fn s_print(vals: &[Value]) -> Value {
-    print!("print:");
+    log("print:");
     fn print_inner(vals: &[Value]) {
         for val in vals {
             match val {
-                Value::F64(val) => print!(" {}", val),
-                Value::F32(val) => print!(" {}", val),
-                Value::I64(val) => print!(" {}", val),
-                Value::I32(val) => print!(" {}", val),
-                Value::Str(val) => print!(" {}", val),
+                Value::F64(val) => log(&format!(" {}", val)),
+                Value::F32(val) => log(&format!(" {}", val)),
+                Value::I64(val) => log(&format!(" {}", val)),
+                Value::I32(val) => log(&format!(" {}", val)),
+                Value::Str(val) => log(&format!(" {}", val)),
                 Value::Array(_, val) => {
                     print!("[");
                     print_inner(&val.iter().map(|v| v.borrow().clone()).collect::<Vec<_>>());
@@ -933,7 +940,7 @@ fn s_print(vals: &[Value]) -> Value {
         }
     }
     print_inner(vals);
-    print!("\n");
+    log(&format!("\n"));
     Value::I32(0)
 }
 
@@ -1177,6 +1184,12 @@ fn run<'src, 'ast>(
         }
     }
     Ok(res)
+}
+
+#[wasm_bindgen]
+pub fn entry(src: &str) {
+    let mut ctx = EvalContext::new();
+    run(&source(src).unwrap().1, &mut ctx);
 }
 
 fn main() -> std::io::Result<()> {
