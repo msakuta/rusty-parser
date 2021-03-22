@@ -152,6 +152,11 @@ fn eval0(s: &Expression) -> RunResult {
     eval(s, &mut ctx)
 }
 
+fn run0(s: &Vec<Statement>) -> Result<RunResult, ()> {
+    let mut ctx = EvalContext::new();
+    run(s, &mut ctx)
+}
+
 #[test]
 fn eval_test() {
     assert_eq!(
@@ -594,6 +599,55 @@ fn array_decl_test() {
             "",
             TypeDecl::Array(Box::new(TypeDecl::Array(Box::new(TypeDecl::F32))))
         ))
+    );
+}
+
+#[test]
+fn array_literal_test() {
+    use Expression::NumLiteral as NL;
+    use Value::*;
+    assert_eq!(
+        array_literal("[1,3,5]"),
+        Ok((
+            "",
+            Expression::ArrLiteral(vec![NL(I64(1)), NL(I64(3)), NL(I64(5))])
+        ))
+    );
+    assert_eq!(
+        full_expression("[1,3,5]"),
+        Ok((
+            "",
+            Expression::ArrLiteral(vec![NL(I64(1)), NL(I64(3)), NL(I64(5))])
+        ))
+    );
+    assert_eq!(
+        full_expression("[[1,3,5],[7,8,9]]"),
+        Ok((
+            "",
+            Expression::ArrLiteral(vec![
+                Expression::ArrLiteral(vec![NL(I64(1)), NL(I64(3)), NL(I64(5))]),
+                Expression::ArrLiteral(vec![NL(I64(7)), NL(I64(8)), NL(I64(9))]),
+            ])
+        ))
+    );
+}
+
+#[test]
+fn array_literal_eval_test() {
+    use Value::*;
+    assert_eq!(
+        eval0(&full_expression("[1,3,5]").unwrap().1),
+        // Right now array literals have "Any" internal type, but it should be decided somehow.
+        RunResult::Yield(Value::Array(TypeDecl::Any, vec![I64(1), I64(3), I64(5)]))
+    );
+
+    // Type coarsion through variable declaration
+    assert_eq!(
+        run0(&source("var v: [f64] = [1,3,5]; v").unwrap().1),
+        Ok(RunResult::Yield(Value::Array(
+            TypeDecl::F64,
+            vec![F64(1.), F64(3.), F64(5.)]
+        )))
     );
 }
 

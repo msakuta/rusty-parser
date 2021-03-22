@@ -14,6 +14,7 @@ use std::{cell::RefCell, collections::HashMap, env};
 
 #[derive(Debug, PartialEq, Clone)]
 enum TypeDecl {
+    Any,
     F64,
     F32,
     I64,
@@ -51,6 +52,7 @@ enum Statement<'a> {
 enum Expression<'a> {
     NumLiteral(Value),
     StrLiteral(String),
+    ArrLiteral(Vec<Expression<'a>>),
     Variable(&'a str),
     VarAssign(&'a str, Box<Expression<'a>>),
     FnInvoke(&'a str, Vec<Expression<'a>>),
@@ -195,6 +197,25 @@ fn str_literal(input: &str) -> IResult<&str, Expression> {
     ))
 }
 
+fn array_literal(input: &str) -> IResult<&str, Expression> {
+    let (r, (mut val, last)) = delimited(
+        multispace0,
+        delimited(
+            tag("["),
+            pair(
+                many0(terminated(full_expression, tag(","))),
+                opt(full_expression),
+            ),
+            tag("]"),
+        ),
+        multispace0,
+    )(input)?;
+    if let Some(last) = last {
+        val.push(last);
+    }
+    Ok((r, Expression::ArrLiteral(val)))
+}
+
 // We parse any expr surrounded by parens, ignoring all whitespaces around those
 fn parens(i: &str) -> IResult<&str, Expression> {
     delimited(
@@ -229,6 +250,7 @@ fn factor(i: &str) -> IResult<&str, Expression> {
     alt((
         numeric_literal_expression,
         str_literal,
+        array_literal,
         func_invoke,
         var_ref,
         parens,
@@ -575,14 +597,14 @@ fn coerce_var(value: &Value, target: &Value) -> Value {
         Value::Str(_) => Value::Str(coerce_str(value)),
         Value::Array(inner_type, inner) => {
             if inner.len() == 0 {
-                if let Value::Array(value_inner_type, value_inner) = value {
+                if let Value::Array(_, value_inner) = value {
                     if value_inner.len() == 0 {
                         return value.clone();
                     }
                 }
                 panic!("Cannot coerce type to empty array");
             } else {
-                if let Value::Array(value_inner_type, value_inner) = value {
+                if let Value::Array(_, value_inner) = value {
                     Value::Array(
                         inner_type.clone(),
                         value_inner
@@ -600,12 +622,25 @@ fn coerce_var(value: &Value, target: &Value) -> Value {
 
 fn coerce_type(value: &Value, target: &TypeDecl) -> Value {
     match target {
+        TypeDecl::Any => value.clone(),
         TypeDecl::F64 => Value::F64(coerce_f64(value)),
         TypeDecl::F32 => Value::F32(coerce_f64(value) as f32),
         TypeDecl::I64 => Value::I64(coerce_i64(value)),
         TypeDecl::I32 => Value::I32(coerce_i64(value) as i32),
         TypeDecl::Str => Value::Str(coerce_str(value)),
-        TypeDecl::Array(inner) => coerce_type(value, inner),
+        TypeDecl::Array(inner) => {
+            if let Value::Array(_, value_inner) = value {
+                Value::Array(
+                    (**inner).clone(),
+                    value_inner
+                        .iter()
+                        .map(|value_elem| coerce_type(value_elem, inner))
+                        .collect(),
+                )
+            } else {
+                panic!(format!("Incompatible type to array! {:?}", value));
+            }
+        }
     }
 }
 
@@ -613,6 +648,18 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
     match e {
         Expression::NumLiteral(val) => RunResult::Yield(val.clone()),
         Expression::StrLiteral(val) => RunResult::Yield(Value::Str(val.clone())),
+        Expression::ArrLiteral(val) => RunResult::Yield(Value::Array(
+            TypeDecl::Any,
+            val.iter()
+                .map(|v| {
+                    if let RunResult::Yield(y) = eval(v, ctx) {
+                        y
+                    } else {
+                        panic!("Break in array literal not supported");
+                    }
+                })
+                .collect(),
+        )),
         Expression::Variable(str) => RunResult::Yield(
             ctx.get_var(str)
                 .expect(&format!("Variable {} not found in scope", str)),
@@ -788,6 +835,7 @@ fn s_puts(vals: &[Value]) -> Value {
 
 fn type_decl_to_str(t: &TypeDecl) -> String {
     match t {
+        TypeDecl::Any => "any".to_string(),
         TypeDecl::F64 => "f64".to_string(),
         TypeDecl::F32 => "f32".to_string(),
         TypeDecl::I64 => "i64".to_string(),
