@@ -15,3 +15,8 @@ print("value:", c);
 print("type:", type(c));
 
 print("first:", c[0]);
+
+print(a[0] + a[1]);
+print(b[0][1]);
+print( (if 0 { a } else { b })[1] );
+print( [10, 20, 30][1] );

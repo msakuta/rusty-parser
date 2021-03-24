@@ -653,17 +653,20 @@ fn array_literal_eval_test() {
 
 #[test]
 fn array_index_test() {
-    use Expression::NumLiteral as NL;
+    use Expression::{NumLiteral as NL, Variable as Var};
     use Value::*;
     assert_eq!(
-        array_subscript("a[1]"),
-        Ok(("", Expression::ArrSub("a", vec![NL(I64(1))])))
+        array_index("a[1]"),
+        Ok((
+            "",
+            Expression::ArrIndex(Box::new(Var("a")), vec![NL(I64(1))])
+        ))
     );
     assert_eq!(
         full_expression("b[1,3,5]"),
         Ok((
             "",
-            Expression::ArrSub("b", vec![NL(I64(1)), NL(I64(3)), NL(I64(5))])
+            Expression::ArrIndex(Box::new(Var("b")), vec![NL(I64(1)), NL(I64(3)), NL(I64(5))])
         ))
     );
 }

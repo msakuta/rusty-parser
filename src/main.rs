@@ -3,7 +3,7 @@ use nom::{
     bytes::complete::{tag, take_until},
     character::complete::{alpha1, alphanumeric1, char, multispace0, multispace1, none_of},
     combinator::{map_res, opt, recognize},
-    multi::{fold_many0, many0},
+    multi::{fold_many0, many0, many1},
     number::complete::recognize_float,
     sequence::{delimited, pair, preceded, terminated, tuple},
     IResult,
@@ -56,7 +56,7 @@ enum Expression<'a> {
     Variable(&'a str),
     VarAssign(&'a str, Box<Expression<'a>>),
     FnInvoke(&'a str, Vec<Expression<'a>>),
-    ArrSub(&'a str, Vec<Expression<'a>>),
+    ArrIndex(Box<Expression<'a>>, Vec<Expression<'a>>),
     Not(Box<Expression<'a>>),
     Add(Box<Expression<'a>>, Box<Expression<'a>>),
     Sub(Box<Expression<'a>>, Box<Expression<'a>>),
@@ -245,38 +245,44 @@ fn func_invoke(i: &str) -> IResult<&str, Expression> {
     Ok((r, Expression::FnInvoke(ident, args)))
 }
 
-fn array_subscript(i: &str) -> IResult<&str, Expression> {
-    let (r, ident) = delimited(multispace0, identifier, multispace0)(i)?;
-    // println!("func_invoke ident: {}", ident);
-    let (r, args) = delimited(
-        multispace0,
-        delimited(
-            tag("["),
-            many0(delimited(
-                multispace0,
-                expr,
-                delimited(multispace0, opt(tag(",")), multispace0),
-            )),
-            tag("]"),
-        ),
-        multispace0,
-    )(r)?;
-    Ok((r, Expression::ArrSub(ident, args)))
+fn array_index(i: &str) -> IResult<&str, Expression> {
+    let (r, (prim, indices)) = pair(
+        primary_expression,
+        many1(delimited(
+            multispace0,
+            delimited(
+                tag("["),
+                many0(delimited(
+                    multispace0,
+                    full_expression,
+                    delimited(multispace0, opt(tag(",")), multispace0),
+                )),
+                tag("]"),
+            ),
+            multispace0,
+        )),
+    )(i)?;
+    Ok((
+        r,
+        indices
+            .into_iter()
+            .fold(prim, |acc, v| Expression::ArrIndex(Box::new(acc), v)),
+    ))
 }
 
-// We transform an double string into a Expression::NumLiteral
-// on failure, we fallback to the parens parser defined above
-fn factor(i: &str) -> IResult<&str, Expression> {
+fn primary_expression(i: &str) -> IResult<&str, Expression> {
     alt((
         numeric_literal_expression,
         str_literal,
         array_literal,
-        func_invoke,
-        array_subscript,
         var_ref,
         parens,
         brace_expr,
     ))(i)
+}
+
+fn postfix_expression(i: &str) -> IResult<&str, Expression> {
+    alt((func_invoke, array_index, primary_expression))(i)
 }
 
 fn not(i: &str) -> IResult<&str, Expression> {
@@ -285,7 +291,7 @@ fn not(i: &str) -> IResult<&str, Expression> {
 }
 
 fn not_factor(i: &str) -> IResult<&str, Expression> {
-    alt((not, factor))(i)
+    alt((not, postfix_expression))(i)
 }
 
 // We read an initial factor and for each time we find
@@ -738,9 +744,9 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
                 )),
             }
         }
-        Expression::ArrSub(str, args) => {
+        Expression::ArrIndex(str, args) => {
             let args = args.iter().map(|v| eval(v, ctx)).collect::<Vec<_>>();
-            let var = ctx.get_var(str).expect("Variable is not found");
+            let var = unwrap_run!(eval(str, ctx));
             match var {
                 Value::Array(_, a) => {
                     if let Value::I64(idx) = coerce_type(unwrap_run!(&args[0]), &TypeDecl::I64) {
