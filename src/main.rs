@@ -901,6 +901,17 @@ fn s_type(vals: &[Value]) -> Value {
     }
 }
 
+fn s_len(vals: &[Value]) -> Value {
+    if let [val, ..] = vals {
+        Value::I64(match val {
+            Value::Array(_, inner) => inner.len() as i64,
+            _ => panic!("len() not supported other than arrays"),
+        })
+    } else {
+        Value::I32(0)
+    }
+}
+
 #[derive(Clone)]
 struct FuncCode<'src, 'ast> {
     args: &'ast Vec<ArgDecl<'src>>,
@@ -934,6 +945,7 @@ impl<'src, 'ast, 'native, 'ctx> EvalContext<'src, 'ast, 'native, 'ctx> {
         functions.insert("print".to_string(), FuncDef::Native(&s_print));
         functions.insert("puts".to_string(), FuncDef::Native(&s_puts));
         functions.insert("type".to_string(), FuncDef::Native(&s_type));
+        functions.insert("len".to_string(), FuncDef::Native(&s_len));
         Self {
             variables: RefCell::new(HashMap::new()),
             functions,

@@ -678,6 +678,14 @@ fn array_index_eval_test() {
         run0(&source("var a: [i32] = [1,3,5]; a[1]").unwrap().1),
         Ok(RunResult::Yield(I32(3)))
     );
+    assert_eq!(
+        run0(&source("[1,3,5][1]").unwrap().1),
+        Ok(RunResult::Yield(I64(3)))
+    );
+    assert_eq!(
+        run0(&source("len([1,3,5])").unwrap().1),
+        Ok(RunResult::Yield(I64(3)))
+    );
 }
 
 #[test]
