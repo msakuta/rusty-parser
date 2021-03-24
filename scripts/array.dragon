@@ -8,3 +8,10 @@ var b: [[i32]] = [[1,3,5],[7,8,9]];
 
 print("value:", b);
 print("type:", type(b));
+
+var c: [str] = ["Hello", "world"];
+
+print("value:", c);
+print("type:", type(c));
+
+print("first:", c[0]);

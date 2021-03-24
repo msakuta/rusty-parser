@@ -652,6 +652,32 @@ fn array_literal_eval_test() {
 }
 
 #[test]
+fn array_index_test() {
+    use Expression::NumLiteral as NL;
+    use Value::*;
+    assert_eq!(
+        array_subscript("a[1]"),
+        Ok(("", Expression::ArrSub("a", vec![NL(I64(1))])))
+    );
+    assert_eq!(
+        full_expression("b[1,3,5]"),
+        Ok((
+            "",
+            Expression::ArrSub("b", vec![NL(I64(1)), NL(I64(3)), NL(I64(5))])
+        ))
+    );
+}
+
+#[test]
+fn array_index_eval_test() {
+    use Value::*;
+    assert_eq!(
+        run0(&source("var a: [i32] = [1,3,5]; a[1]").unwrap().1),
+        Ok(RunResult::Yield(I32(3)))
+    );
+}
+
+#[test]
 fn var_decl_test() {
     use Expression::NumLiteral as NL;
     use Statement::VarDecl as VD;

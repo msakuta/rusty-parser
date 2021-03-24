@@ -56,6 +56,7 @@ enum Expression<'a> {
     Variable(&'a str),
     VarAssign(&'a str, Box<Expression<'a>>),
     FnInvoke(&'a str, Vec<Expression<'a>>),
+    ArrSub(&'a str, Vec<Expression<'a>>),
     Not(Box<Expression<'a>>),
     Add(Box<Expression<'a>>, Box<Expression<'a>>),
     Sub(Box<Expression<'a>>, Box<Expression<'a>>),
@@ -244,6 +245,25 @@ fn func_invoke(i: &str) -> IResult<&str, Expression> {
     Ok((r, Expression::FnInvoke(ident, args)))
 }
 
+fn array_subscript(i: &str) -> IResult<&str, Expression> {
+    let (r, ident) = delimited(multispace0, identifier, multispace0)(i)?;
+    // println!("func_invoke ident: {}", ident);
+    let (r, args) = delimited(
+        multispace0,
+        delimited(
+            tag("["),
+            many0(delimited(
+                multispace0,
+                expr,
+                delimited(multispace0, opt(tag(",")), multispace0),
+            )),
+            tag("]"),
+        ),
+        multispace0,
+    )(r)?;
+    Ok((r, Expression::ArrSub(ident, args)))
+}
+
 // We transform an double string into a Expression::NumLiteral
 // on failure, we fallback to the parens parser defined above
 fn factor(i: &str) -> IResult<&str, Expression> {
@@ -252,6 +272,7 @@ fn factor(i: &str) -> IResult<&str, Expression> {
         str_literal,
         array_literal,
         func_invoke,
+        array_subscript,
         var_ref,
         parens,
         brace_expr,
@@ -715,6 +736,20 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
                         })
                         .collect::<Vec<_>>(),
                 )),
+            }
+        }
+        Expression::ArrSub(str, args) => {
+            let args = args.iter().map(|v| eval(v, ctx)).collect::<Vec<_>>();
+            let var = ctx.get_var(str).expect("Variable is not found");
+            match var {
+                Value::Array(_, a) => {
+                    if let Value::I64(idx) = coerce_type(unwrap_run!(&args[0]), &TypeDecl::I64) {
+                        RunResult::Yield(a[idx as usize].clone())
+                    } else {
+                        panic!("Subscript type should be integer types");
+                    }
+                }
+                _ => panic!("Subscript operator is only applicable to arrays"),
             }
         }
         Expression::Not(val) => {
