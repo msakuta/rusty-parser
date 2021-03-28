@@ -201,27 +201,35 @@ fn var_ident_test() {
 #[test]
 fn var_test() {
     let mut ctx = EvalContext::new();
-    ctx.variables.borrow_mut().insert("x", Value::F64(42.));
+    ctx.variables
+        .borrow_mut()
+        .insert("x", Rc::new(RefCell::new(Value::F64(42.))));
     assert_eq!(
         eval(&expr(" x +  2 ").unwrap().1, &mut ctx),
         RunResult::Yield(Value::F64(44.))
     );
 }
 
+fn var_r(name: &str) -> Box<Expression> {
+    Box::new(Expression::Variable(name))
+}
+
 #[test]
 fn var_assign_test() {
     let mut ctx = EvalContext::new();
-    ctx.variables.borrow_mut().insert("x", Value::F64(42.));
+    ctx.variables
+        .borrow_mut()
+        .insert("x", Rc::new(RefCell::new(Value::F64(42.))));
     assert_eq!(
         var_assign("x=12"),
         Ok((
             "",
-            Expression::VarAssign("x", Box::new(Expression::NumLiteral(Value::I64(12))))
+            Expression::VarAssign(var_r("x"), Box::new(Expression::NumLiteral(Value::I64(12))))
         ))
     );
     assert_eq!(
         eval(&var_assign("x=12").unwrap().1, &mut ctx),
-        RunResult::Yield(Value::F64(12.))
+        RunResult::Yield(Value::I64(12))
     );
 }
 
@@ -241,7 +249,7 @@ fn fn_decl_test() {
                 vec![ArgDecl("a", TypeDecl::F64)],
                 vec![
                     Statement::Expression(Expression::VarAssign(
-                        "x",
+                        var_r("x"),
                         Box::new(Expression::NumLiteral(Value::I64(123)))
                     )),
                     Statement::Expression(Expression::Mult(
@@ -506,7 +514,10 @@ fn brace_expr_test() {
         Ok((
             "",
             Expr(Expression::Brace(vec![
-                Expr(Expression::VarAssign("x", Box::new(NL(Value::I64(1))))),
+                Expr(Expression::VarAssign(
+                    var_r("x"),
+                    Box::new(NL(Value::I64(1)))
+                )),
                 Expr(Expression::Variable("x")),
             ]))
         ))
@@ -533,7 +544,7 @@ fn brace_expr_eval_test() {
                 .unwrap()
                 .1
         ),
-        RunResult::Yield(Value::I64(1))
+        RunResult::YieldRef(ValueRef::Variable(Rc::new(RefCell::new(Value::I64(1)))))
     );
 }
 
@@ -644,10 +655,9 @@ fn array_literal_eval_test() {
     // Type coarsion through variable declaration
     assert_eq!(
         run0(&source("var v: [f64] = [1,3,5]; v").unwrap().1),
-        Ok(RunResult::Yield(Value::Array(
-            TypeDecl::F64,
-            vec![F64(1.), F64(3.), F64(5.)]
-        )))
+        Ok(RunResult::YieldRef(ValueRef::Variable(Rc::new(
+            RefCell::new(Value::Array(TypeDecl::F64, vec![F64(1.), F64(3.), F64(5.)]))
+        ))))
     );
 }
 
@@ -661,7 +671,7 @@ fn fn_array_decl_test() {
                 "f",
                 vec![ArgDecl("a", TypeDecl::Array(Box::new(TypeDecl::I32)))],
                 vec![Statement::Expression(Expression::VarAssign(
-                    "x",
+                    var_r("x"),
                     Box::new(Expression::NumLiteral(Value::I64(123)))
                 ))]
             )
@@ -707,6 +717,22 @@ fn array_index_eval_test() {
 }
 
 #[test]
+fn array_index_assign_test() {
+    use Expression::{NumLiteral as NL, Variable as Var};
+    use Value::*;
+    assert_eq!(
+        full_expression("a[0] = b[0]"),
+        Ok((
+            "",
+            Expression::VarAssign(
+                Box::new(Expression::ArrIndex(Box::new(Var("a")), vec![NL(I64(0))])),
+                Box::new(Expression::ArrIndex(Box::new(Var("b")), vec![NL(I64(0))])),
+            )
+        ))
+    );
+}
+
+#[test]
 fn var_decl_test() {
     use Expression::NumLiteral as NL;
     use Statement::VarDecl as VD;
@@ -716,7 +742,10 @@ fn var_decl_test() {
             "",
             vec![
                 VD("x", TypeDecl::F64, None),
-                Statement::Expression(Expression::VarAssign("x", Box::new(NL(Value::I64(0))))),
+                Statement::Expression(Expression::VarAssign(
+                    var_r("x"),
+                    Box::new(NL(Value::I64(0)))
+                )),
             ]
         ))
     );
@@ -751,13 +780,13 @@ fn loop_test() {
             vec![
                 Statement::VarDecl("i", TypeDecl::F64, None),
                 Statement::Expression(Expression::VarAssign(
-                    "i",
+                    var_r("i"),
                     Box::new(Expression::NumLiteral(Value::I64(0)))
                 )),
                 Statement::Loop(vec![Statement::Expression(Expression::VarAssign(
-                    "i",
+                    var_r("i"),
                     Box::new(Expression::Add(
-                        Box::new(Expression::Variable("i")),
+                        var_r("i"),
                         Box::new(Expression::NumLiteral(Value::I64(1))),
                     ))
                 )),])
@@ -785,12 +814,12 @@ fn loop_test() {
             vec![
                 Statement::VarDecl("i", TypeDecl::F64, None),
                 Statement::Expression(Expression::VarAssign(
-                    "i",
+                    var_r("i"),
                     Box::new(Expression::NumLiteral(Value::I64(0)))
                 )),
                 Statement::Loop(vec![
                     Statement::Expression(Expression::VarAssign(
-                        "i",
+                        var_r("i"),
                         Box::new(Expression::Add(
                             Box::new(Expression::Variable("i")),
                             Box::new(Expression::NumLiteral(Value::I64(1))),
@@ -819,7 +848,7 @@ fn while_test() {
             vec![
                 Statement::VarDecl("i", TypeDecl::I64, None),
                 Statement::Expression(Expression::VarAssign(
-                    "i",
+                    var_r("i"),
                     Box::new(Expression::NumLiteral(Value::I64(0)))
                 )),
                 Statement::While(
@@ -828,7 +857,7 @@ fn while_test() {
                         Box::new(Expression::NumLiteral(Value::I64(10))),
                     ),
                     vec![Statement::Expression(Expression::VarAssign(
-                        "i",
+                        var_r("i"),
                         Box::new(Expression::Add(
                             Box::new(Expression::Variable("i")),
                             Box::new(Expression::NumLiteral(Value::I64(1))),

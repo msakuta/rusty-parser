@@ -11,7 +11,7 @@ use nom::{
 use std::fs::File;
 use std::io::prelude::*;
 use std::{
-    cell::{Ref, RefCell},
+    cell::{Ref, RefCell, RefMut},
     collections::HashMap,
     env,
     rc::Rc,
@@ -59,7 +59,7 @@ enum Expression<'a> {
     StrLiteral(String),
     ArrLiteral(Vec<Expression<'a>>),
     Variable(&'a str),
-    VarAssign(&'a str, Box<Expression<'a>>),
+    VarAssign(Box<Expression<'a>>, Box<Expression<'a>>),
     FnInvoke(&'a str, Vec<Expression<'a>>),
     ArrIndex(Box<Expression<'a>>, Vec<Expression<'a>>),
     Not(Box<Expression<'a>>),
@@ -379,8 +379,8 @@ fn conditional(i: &str) -> IResult<&str, Expression> {
 }
 
 fn var_assign(input: &str) -> IResult<&str, Expression> {
-    let (r, res) = tuple((ident_space, char('='), cmp_expr))(input)?;
-    Ok((r, Expression::VarAssign(res.0, Box::new(res.2))))
+    let (r, res) = tuple((cmp_expr, char('='), cmp_expr))(input)?;
+    Ok((r, Expression::VarAssign(Box::new(res.0), Box::new(res.2))))
 }
 
 fn cmp_expr(i: &str) -> IResult<&str, Expression> {
@@ -719,28 +719,36 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
                 })
                 .collect(),
         )),
-        Expression::Variable(str) => RunResult::Yield(
-            ctx.get_var(str)
+        Expression::Variable(str) => RunResult::YieldRef(ValueRef::Variable(
+            ctx.get_var_rc(str)
                 .expect(&format!("Variable {} not found in scope", str)),
-        ),
-        Expression::VarAssign(str, rhs) => {
-            let mut value = unwrap_run!(eval(rhs, ctx));
-            let mut search_ctx: Option<&EvalContext> = Some(ctx);
-            while let Some(c) = search_ctx {
-                let existing_value = if let Some(val) = c.variables.borrow().get(str) {
-                    val.clone()
-                } else {
-                    search_ctx = c.super_context;
-                    continue;
-                };
-                value = coerce_var(&value, &existing_value);
-                c.variables.borrow_mut().insert(str, value.clone());
-                break;
-            }
-            if search_ctx.is_none() {
-                panic!(format!("Variable \"{}\" was not declared!", str));
-            }
-            RunResult::Yield(value)
+        )),
+        Expression::VarAssign(lhs, rhs) => {
+            let lhs_value = eval(lhs, ctx);
+            let lhs_value = if let RunResult::YieldRef(rc) = lhs_value {
+                rc
+            } else {
+                panic!(format!("We need variable reference on lhs to assign. Actually we got {:?}", lhs_value))
+            };
+            let ret_value = match lhs_value {
+                ValueRef::Variable(v) => {
+                    let val = unwrap_run!(eval(rhs, ctx));
+                    *v.borrow_mut() = val.clone();
+                    val
+                }
+                ValueRef::ArrayElem(v, idx) => {
+                    let mut borrowed = v.borrow_mut();
+                    let vr: &mut Vec<Value> = if let Value::Array(_, val) = &mut *borrowed {
+                        val
+                    } else {
+                        panic!("Array index operation should have array as first operand")
+                    };
+                    let val = unwrap_run!(eval(rhs, ctx));
+                    vr[idx as usize] = val.clone();
+                    val
+                }
+            };
+            RunResult::Yield(ret_value)
         }
         Expression::FnInvoke(str, args) => {
             let args = args.iter().map(|v| eval(v, ctx)).collect::<Vec<_>>();
@@ -751,10 +759,10 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
             match func {
                 FuncDef::Code(func) => {
                     for (k, v) in func.args.iter().zip(&args) {
-                        subctx
-                            .variables
-                            .borrow_mut()
-                            .insert(k.0, coerce_type(&unwrap_run!(v.clone()), &k.1));
+                        subctx.variables.borrow_mut().insert(
+                            k.0,
+                            Rc::new(RefCell::new(coerce_type(&unwrap_run!(v.clone()), &k.1))),
+                        );
                     }
                     let run_result = run(func.stmts, &mut subctx).unwrap();
                     match unwrap_deref(run_result) {
@@ -961,12 +969,20 @@ enum FuncDef<'src, 'ast, 'native> {
 
 /// A context stat for evaluating a script.
 ///
-/// It has 2 lifetime arguments, one for the source code ('src) and the other for
-/// the AST ('ast), because usually AST is created after the source.
+/// It has 4 lifetime arguments:
+///  * the source code ('src)
+///  * the AST ('ast),
+///  * the native function code ('native) and
+///  * the parent eval context ('ctx)
+///
+/// In general, they all can have different lifetimes. For example,
+/// usually AST is created after the source.
 #[derive(Clone)]
 struct EvalContext<'src, 'ast, 'native, 'ctx> {
-    /// RefCell to allow mutation in super context
-    variables: Rc<RefCell<HashMap<&'src str, Value>>>,
+    /// RefCell to allow mutation in super context.
+    /// Also, the inner values must be Rc of RefCell because a reference could be returned from
+    /// a function so that the variable scope may have been ended.
+    variables: RefCell<HashMap<&'src str, Rc<RefCell<Value>>>>,
     /// Function names are owned strings because it can be either from source or native.
     /// Unlike variables, functions cannot be overwritten in the outer scope, so it does not
     /// need to be wrapped in a RefCell.
@@ -982,7 +998,7 @@ impl<'src, 'ast, 'native, 'ctx> EvalContext<'src, 'ast, 'native, 'ctx> {
         functions.insert("type".to_string(), FuncDef::Native(&s_type));
         functions.insert("len".to_string(), FuncDef::Native(&s_len));
         Self {
-            variables: Rc::new(RefCell::new(HashMap::new())),
+            variables: RefCell::new(HashMap::new()),
             functions,
             super_context: None,
         }
@@ -990,17 +1006,27 @@ impl<'src, 'ast, 'native, 'ctx> EvalContext<'src, 'ast, 'native, 'ctx> {
 
     fn push_stack(super_ctx: &'ctx Self) -> Self {
         Self {
-            variables: Rc::new(RefCell::new(HashMap::new())),
+            variables: RefCell::new(HashMap::new()),
             functions: HashMap::new(),
             super_context: Some(super_ctx),
         }
     }
 
     fn get_var(&self, name: &str) -> Option<Value> {
-        if let Some(val) = self.variables.borrow_mut().get(name) {
-            Some(val.clone())
+        if let Some(val) = self.variables.borrow().get(name) {
+            Some(val.borrow().clone())
         } else if let Some(super_ctx) = self.super_context {
             super_ctx.get_var(name)
+        } else {
+            None
+        }
+    }
+
+    fn get_var_rc(&self, name: &str) -> Option<Rc<RefCell<Value>>> {
+        if let Some(val) = self.variables.borrow().get(name) {
+            Some(val.clone())
+        } else if let Some(super_ctx) = self.super_context {
+            super_ctx.get_var_rc(name)
         } else {
             None
         }
@@ -1054,7 +1080,9 @@ fn run<'src, 'ast>(
                     Value::I32(0)
                 };
                 let init_val = coerce_type(&init_val, type_);
-                ctx.variables.borrow_mut().insert(*var, init_val);
+                ctx.variables
+                    .borrow_mut()
+                    .insert(*var, Rc::new(RefCell::new(init_val)));
             }
             Statement::FnDecl(var, args, stmts) => {
                 ctx.functions
@@ -1090,7 +1118,9 @@ fn run<'src, 'ast>(
                 let from_res = coerce_i64(&unwrap_break!(eval(from, ctx))) as i64;
                 let to_res = coerce_i64(&unwrap_break!(eval(to, ctx))) as i64;
                 for i in from_res..to_res {
-                    ctx.variables.borrow_mut().insert(iter, Value::I64(i));
+                    ctx.variables
+                        .borrow_mut()
+                        .insert(iter, Rc::new(RefCell::new(Value::I64(i))));
                     res = RunResult::Yield(unwrap_break!(run(e, ctx)?));
                 }
             }
