@@ -10,7 +10,12 @@ use nom::{
 };
 use std::fs::File;
 use std::io::prelude::*;
-use std::{cell::RefCell, collections::HashMap, env};
+use std::{
+    cell::{Ref, RefCell},
+    collections::HashMap,
+    env,
+    rc::Rc,
+};
 
 #[derive(Debug, PartialEq, Clone)]
 enum TypeDecl {
@@ -543,11 +548,38 @@ fn source(input: &str) -> IResult<&str, Vec<Statement>> {
     Ok((r, v))
 }
 
+fn unwrap_deref(e: RunResult) -> RunResult {
+    match e {
+        RunResult::Yield(v) => RunResult::Yield(v),
+        RunResult::YieldRef(vref) => match vref {
+            ValueRef::Variable(var) => {
+                let r = var.borrow();
+                RunResult::Yield(r.clone())
+            }
+            ValueRef::ArrayElem(var, idx) => {
+                let bvar = var.borrow();
+                RunResult::Yield(
+                    Ref::map(bvar, |v| {
+                        if let Value::Array(_, a) = v {
+                            &a[idx as usize]
+                        } else {
+                            panic!("Referenced value is not an arary")
+                        }
+                    })
+                    .clone(),
+                )
+            }
+        },
+        RunResult::Break => return RunResult::Break,
+    }
+}
+
 macro_rules! unwrap_run {
     ($e:expr) => {
-        match $e {
+        match unwrap_deref($e) {
             RunResult::Yield(v) => v,
             RunResult::Break => return RunResult::Break,
+            _ => panic!("Shouwldn't happen"),
         }
     };
 }
@@ -722,12 +754,13 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
                         subctx
                             .variables
                             .borrow_mut()
-                            .insert(k.0, coerce_type(unwrap_run!(v), &k.1));
+                            .insert(k.0, coerce_type(&unwrap_run!(v.clone()), &k.1));
                     }
                     let run_result = run(func.stmts, &mut subctx).unwrap();
-                    match run_result {
+                    match unwrap_deref(run_result) {
                         RunResult::Yield(v) => RunResult::Yield(v),
                         RunResult::Break => panic!("break in function toplevel"),
+                        _ => panic!("should not happen"),
                     }
                 }
                 FuncDef::Native(native) => RunResult::Yield(native(
@@ -749,7 +782,9 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
             let var = unwrap_run!(eval(str, ctx));
             match var {
                 Value::Array(_, a) => {
-                    if let Value::I64(idx) = coerce_type(unwrap_run!(&args[0]), &TypeDecl::I64) {
+                    if let Value::I64(idx) =
+                        coerce_type(&unwrap_run!(args[0].clone()), &TypeDecl::I64)
+                    {
                         RunResult::Yield(a[idx as usize].clone())
                     } else {
                         panic!("Subscript type should be integer types");
@@ -931,7 +966,7 @@ enum FuncDef<'src, 'ast, 'native> {
 #[derive(Clone)]
 struct EvalContext<'src, 'ast, 'native, 'ctx> {
     /// RefCell to allow mutation in super context
-    variables: RefCell<HashMap<&'src str, Value>>,
+    variables: Rc<RefCell<HashMap<&'src str, Value>>>,
     /// Function names are owned strings because it can be either from source or native.
     /// Unlike variables, functions cannot be overwritten in the outer scope, so it does not
     /// need to be wrapped in a RefCell.
@@ -947,7 +982,7 @@ impl<'src, 'ast, 'native, 'ctx> EvalContext<'src, 'ast, 'native, 'ctx> {
         functions.insert("type".to_string(), FuncDef::Native(&s_type));
         functions.insert("len".to_string(), FuncDef::Native(&s_len));
         Self {
-            variables: RefCell::new(HashMap::new()),
+            variables: Rc::new(RefCell::new(HashMap::new())),
             functions,
             super_context: None,
         }
@@ -955,7 +990,7 @@ impl<'src, 'ast, 'native, 'ctx> EvalContext<'src, 'ast, 'native, 'ctx> {
 
     fn push_stack(super_ctx: &'ctx Self) -> Self {
         Self {
-            variables: RefCell::new(HashMap::new()),
+            variables: Rc::new(RefCell::new(HashMap::new())),
             functions: HashMap::new(),
             super_context: Some(super_ctx),
         }
@@ -982,16 +1017,24 @@ impl<'src, 'ast, 'native, 'ctx> EvalContext<'src, 'ast, 'native, 'ctx> {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
+enum ValueRef {
+    Variable(Rc<RefCell<Value>>),
+    ArrayElem(Rc<RefCell<Value>>, u64),
+}
+
+#[derive(Debug, PartialEq, Clone)]
 enum RunResult {
     Yield(Value),
+    YieldRef(ValueRef),
     Break,
 }
 
 macro_rules! unwrap_break {
     ($e:expr) => {
-        match $e {
+        match unwrap_deref($e) {
             RunResult::Yield(v) => v,
+            RunResult::YieldRef(_) => panic!("would not happen"),
             RunResult::Break => break,
         }
     };
@@ -1025,23 +1068,22 @@ fn run<'src, 'ast>(
                 // println!("Expression evaluates to: {:?}", res);
             }
             Statement::Loop(e) => loop {
-                res = match run(e, ctx)? {
-                    RunResult::Yield(v) => RunResult::Yield(v),
-                    RunResult::Break => break,
-                };
+                res = RunResult::Yield(unwrap_break!(run(e, ctx)?));
             },
             Statement::While(cond, e) => loop {
-                match eval(cond, ctx) {
+                match unwrap_deref(eval(cond, ctx)) {
                     RunResult::Yield(v) => {
                         if truthy(&v) {
                             break;
                         }
                     }
                     RunResult::Break => break,
+                    _ => panic!("Would not happen"),
                 }
-                res = match run(e, ctx)? {
+                res = match unwrap_deref(run(e, ctx)?) {
                     RunResult::Yield(v) => RunResult::Yield(v),
                     RunResult::Break => break,
+                    _ => panic!("Would not happen"),
                 };
             },
             Statement::For(iter, from, to, e) => {
@@ -1049,10 +1091,7 @@ fn run<'src, 'ast>(
                 let to_res = coerce_i64(&unwrap_break!(eval(to, ctx))) as i64;
                 for i in from_res..to_res {
                     ctx.variables.borrow_mut().insert(iter, Value::I64(i));
-                    res = match run(e, ctx)? {
-                        RunResult::Yield(v) => RunResult::Yield(v),
-                        RunResult::Break => break,
-                    };
+                    res = RunResult::Yield(unwrap_break!(run(e, ctx)?));
                 }
             }
             Statement::Break => {

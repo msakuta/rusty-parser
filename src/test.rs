@@ -652,6 +652,24 @@ fn array_literal_eval_test() {
 }
 
 #[test]
+fn fn_array_decl_test() {
+    assert_eq!(
+        func_decl("fn f(a: [i32]) { x = 123; }"),
+        Ok((
+            "",
+            Statement::FnDecl(
+                "f",
+                vec![ArgDecl("a", TypeDecl::Array(Box::new(TypeDecl::I32)))],
+                vec![Statement::Expression(Expression::VarAssign(
+                    "x",
+                    Box::new(Expression::NumLiteral(Value::I64(123)))
+                ))]
+            )
+        ))
+    );
+}
+
+#[test]
 fn array_index_test() {
     use Expression::{NumLiteral as NL, Variable as Var};
     use Value::*;
