@@ -728,7 +728,10 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
             let lhs_value = if let RunResult::YieldRef(rc) = lhs_value {
                 rc
             } else {
-                panic!(format!("We need variable reference on lhs to assign. Actually we got {:?}", lhs_value))
+                panic!(format!(
+                    "We need variable reference on lhs to assign. Actually we got {:?}",
+                    lhs_value
+                ))
             };
             let ret_value = match lhs_value {
                 ValueRef::Variable(v) => {
@@ -785,21 +788,52 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
                 )),
             }
         }
-        Expression::ArrIndex(str, args) => {
+        Expression::ArrIndex(ex, args) => {
             let args = args.iter().map(|v| eval(v, ctx)).collect::<Vec<_>>();
-            let var = unwrap_run!(eval(str, ctx));
-            match var {
-                Value::Array(_, a) => {
-                    if let Value::I64(idx) =
-                        coerce_type(&unwrap_run!(args[0].clone()), &TypeDecl::I64)
-                    {
-                        RunResult::Yield(a[idx as usize].clone())
+            let arg0 = match unwrap_deref(args[0].clone()) {
+                RunResult::Yield(v) => {
+                    if let Value::I64(idx) = coerce_type(&v, &TypeDecl::I64) {
+                        idx as usize
                     } else {
                         panic!("Subscript type should be integer types");
                     }
                 }
-                _ => panic!("Subscript operator is only applicable to arrays"),
-            }
+                RunResult::Break => {
+                    return RunResult::Break;
+                }
+                _ => panic!("Shouwldn't happen"),
+            };
+            let result = eval(ex, ctx);
+            let mut ret: Option<RunResult> = None;
+            match result {
+                RunResult::YieldRef(vr) => {
+                    match vr {
+                        ValueRef::Variable(rc) => {
+                            ret = Some(RunResult::YieldRef(ValueRef::ArrayElem(rc, arg0 as u64)));
+                        }
+                        ValueRef::ArrayElem(rc, idx) => {
+                            // Ref::map(rc.borrow(), |v| match v {
+                                // Value::Array(_, a) => {
+                                    ret = Some(RunResult::YieldRef(ValueRef::ArrayElem(rc, arg0 as u64)));
+                                    // &()
+                                // }
+                            //     _ => panic!("Indexing operator is only applicable to arrays"),
+                            // });
+                        }
+                    };
+                }
+                RunResult::Yield(v) => {
+                    match v {
+                        Value::Array(_, a) => {
+                            ret = Some(RunResult::Yield(a[arg0].clone()));
+                            &()
+                        }
+                        _ => panic!("Indexing operator is only applicable to arrays"),
+                    };
+                }
+                _ => panic!(format!("Indexing operator is only applicable to variable references, got {:?}, state {:#?}", result, ex)),
+            };
+            ret.unwrap()
         }
         Expression::Not(val) => {
             RunResult::Yield(Value::I32(if truthy(&unwrap_run!(eval(val, ctx))) {

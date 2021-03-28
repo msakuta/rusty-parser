@@ -702,9 +702,13 @@ fn array_index_test() {
 #[test]
 fn array_index_eval_test() {
     use Value::*;
+    let mut ctx = EvalContext::new();
     assert_eq!(
-        run0(&source("var a: [i32] = [1,3,5]; a[1]").unwrap().1),
-        Ok(RunResult::Yield(I32(3)))
+        run(&source("var a: [i32] = [1,3,5]; a[1]").unwrap().1, &mut ctx),
+        Ok(RunResult::YieldRef(ValueRef::ArrayElem(
+            ctx.get_var_rc("a").unwrap(),
+            1
+        )))
     );
     assert_eq!(
         run0(&source("[1,3,5][1]").unwrap().1),
@@ -729,6 +733,10 @@ fn array_index_assign_test() {
                 Box::new(Expression::ArrIndex(Box::new(Var("b")), vec![NL(I64(0))])),
             )
         ))
+    );
+    assert_eq!(
+        run0(&source("var a: [i32] = [1,3,5]; a[1] = 123").unwrap().1),
+        Ok(RunResult::Yield(I64(123)))
     );
 }
 
