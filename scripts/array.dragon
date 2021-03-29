@@ -28,11 +28,11 @@ fn f(a1: [i32]) {
     print("a1:", a1);
 }
 
-print("d:", d);
+print("d before modify: ", d);
 
 f(d);
 
-print("d:", d);
+print("d after modify:", d);
 
 d[1] = 102.;
 
@@ -41,3 +41,11 @@ print("d:", d);
 b[0][1] = 103.;
 
 print("b:", b);
+
+var e = b[1];
+
+print("e:", e);
+
+e[1] = 105.;
+
+print("b: ", b);

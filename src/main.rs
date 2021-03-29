@@ -39,6 +39,42 @@ enum Value {
     Ref(Rc<RefCell<Value>>),
 }
 
+impl Value {
+    fn _array_assign(&mut self, idx: usize, value: Value) {
+        if let Value::Array(_, array) = self {
+            array[idx] = Rc::new(RefCell::new(value.deref()));
+        } else {
+            panic!("assign_array must be called for an array")
+        }
+    }
+
+    fn array_push(&mut self, value: Value) {
+        if let Value::Array(_, array) = self {
+            array.push(Rc::new(RefCell::new(value.deref())));
+        } else {
+            panic!("push() must be called for an array")
+        }
+    }
+
+    /// Returns the length of an array, dereferencing recursively if the value was a reference.
+    fn array_len(&self) -> usize {
+        match self {
+            Value::Ref(rc) => rc.borrow().array_len(),
+            Value::Array(_, array) => array.len(),
+            _ => panic!("len() must be called for an array"),
+        }
+    }
+
+    /// Recursively peels off references
+    fn deref(self) -> Self {
+        if let Value::Ref(r) = self {
+            r.borrow().clone().deref()
+        } else {
+            self
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 struct ArgDecl<'a>(&'a str, TypeDecl);
 
@@ -952,10 +988,21 @@ fn s_type(vals: &[Value]) -> Value {
 
 fn s_len(vals: &[Value]) -> Value {
     if let [val, ..] = vals {
-        Value::I64(match val {
-            Value::Array(_, inner) => inner.len() as i64,
+        Value::I64(val.array_len() as i64)
+    } else {
+        Value::I32(0)
+    }
+}
+
+fn s_push(vals: &[Value]) -> Value {
+    if let [arr, val, ..] = vals {
+        match arr {
+            Value::Ref(rc) => {
+                rc.borrow_mut().array_push(val.clone());
+                Value::I32(0)
+            }
             _ => panic!("len() not supported other than arrays"),
-        })
+        }
     } else {
         Value::I32(0)
     }
@@ -1003,6 +1050,7 @@ impl<'src, 'ast, 'native, 'ctx> EvalContext<'src, 'ast, 'native, 'ctx> {
         functions.insert("puts".to_string(), FuncDef::Native(&s_puts));
         functions.insert("type".to_string(), FuncDef::Native(&s_type));
         functions.insert("len".to_string(), FuncDef::Native(&s_len));
+        functions.insert("push".to_string(), FuncDef::Native(&s_push));
         Self {
             variables: RefCell::new(HashMap::new()),
             functions,
