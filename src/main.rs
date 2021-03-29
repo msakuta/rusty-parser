@@ -140,7 +140,7 @@ fn type_spec(input: &str) -> IResult<&str, TypeDecl> {
         if let Some(a) = type_ {
             a
         } else {
-            TypeDecl::F64
+            TypeDecl::Any
         },
     ))
 }
@@ -752,7 +752,7 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
                 FuncDef::Native(native) => RunResult::Yield(native(
                     &args
                         .into_iter()
-                        .map(|e| match unwrap_deref(e) {
+                        .map(|e| match e {
                             RunResult::Yield(v) => v.clone(),
                             RunResult::Break => {
                                 panic!("Break in function argument is not supported yet!")

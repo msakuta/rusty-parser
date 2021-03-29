@@ -246,7 +246,7 @@ fn fn_decl_test() {
             "",
             Statement::FnDecl(
                 "f",
-                vec![ArgDecl("a", TypeDecl::F64)],
+                vec![ArgDecl("a", TypeDecl::Any)],
                 vec![
                     Statement::Expression(Expression::VarAssign(
                         var_r("x"),
@@ -764,7 +764,7 @@ fn var_decl_test() {
         Ok((
             "",
             vec![
-                VD("x", TypeDecl::F64, None),
+                VD("x", TypeDecl::Any, None),
                 Statement::Expression(Expression::VarAssign(
                     var_r("x"),
                     Box::new(NL(Value::I64(0)))
@@ -774,7 +774,7 @@ fn var_decl_test() {
     );
     assert_eq!(
         source(" var x = 0;"),
-        Ok(("", vec![VD("x", TypeDecl::F64, Some(NL(Value::I64(0))))]))
+        Ok(("", vec![VD("x", TypeDecl::Any, Some(NL(Value::I64(0))))]))
     );
     assert_eq!(
         source(" var x: f64 = 0;"),
@@ -801,7 +801,7 @@ fn loop_test() {
         Ok((
             "",
             vec![
-                Statement::VarDecl("i", TypeDecl::F64, None),
+                Statement::VarDecl("i", TypeDecl::Any, None),
                 Statement::Expression(Expression::VarAssign(
                     var_r("i"),
                     Box::new(Expression::NumLiteral(Value::I64(0)))
@@ -835,7 +835,7 @@ fn loop_test() {
         Ok((
             "",
             vec![
-                Statement::VarDecl("i", TypeDecl::F64, None),
+                Statement::VarDecl("i", TypeDecl::Any, None),
                 Statement::Expression(Expression::VarAssign(
                     var_r("i"),
                     Box::new(Expression::NumLiteral(Value::I64(0)))
