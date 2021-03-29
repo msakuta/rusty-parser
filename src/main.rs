@@ -11,7 +11,7 @@ use nom::{
 use std::fs::File;
 use std::io::prelude::*;
 use std::{
-    cell::{Ref, RefCell},
+    cell::RefCell,
     collections::HashMap,
     env,
     rc::Rc,
@@ -40,11 +40,29 @@ enum Value {
 }
 
 impl Value {
+    /// We don't really need assignment operation for an array (yet), because
+    /// array index will return a reference.
     fn _array_assign(&mut self, idx: usize, value: Value) {
         if let Value::Array(_, array) = self {
             array[idx] = Rc::new(RefCell::new(value.deref()));
         } else {
             panic!("assign_array must be called for an array")
+        }
+    }
+
+    fn _array_get(&self, idx: u64) -> Value {
+        match self {
+            Value::Ref(rc) => rc.borrow()._array_get(idx),
+            Value::Array(_, array) => array[idx as usize].borrow().clone(),
+            _ => panic!("array index must be called for an array"),
+        }
+    }
+
+    fn array_get_ref(&self, idx: u64) -> Value {
+        match self {
+            Value::Ref(rc) => rc.borrow().array_get_ref(idx),
+            Value::Array(_, array) => Value::Ref(array[idx as usize].clone()),
+            _ => panic!("array index must be called for an array"),
         }
     }
 
@@ -803,7 +821,7 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
             let arg0 = match unwrap_deref(args[0].clone()) {
                 RunResult::Yield(v) => {
                     if let Value::I64(idx) = coerce_type(&v, &TypeDecl::I64) {
-                        idx as usize
+                        idx as u64
                     } else {
                         panic!("Subscript type should be integer types");
                     }
@@ -812,24 +830,8 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
                     return RunResult::Break;
                 }
             };
-            let result = eval(ex, ctx);
-            let mut ret: Option<RunResult> = None;
-            match result {
-                RunResult::Yield(Value::Ref(rc)) => {
-                    Ref::map(rc.borrow(), |v| match v {
-                        Value::Array(_, a) => {
-                            ret = Some(RunResult::Yield(Value::Ref(a[arg0 as usize].clone())));
-                            &()
-                        }
-                        _ => panic!("Indexing operator is only applicable to arrays")
-                    });
-                }
-                RunResult::Yield(Value::Array(_, a)) => {
-                    ret = Some(RunResult::Yield(a[arg0].borrow().clone()));
-                }
-                _ => panic!(format!("Indexing operator is only applicable to a reference to an array, got {:?}, state {:#?}", result, ex)),
-            };
-            ret.unwrap()
+            let result = unwrap_run!(eval(ex, ctx));
+            RunResult::Yield(result.array_get_ref(arg0))
         }
         Expression::Not(val) => {
             RunResult::Yield(Value::I32(if truthy(&unwrap_run!(eval(val, ctx))) {

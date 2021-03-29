@@ -725,8 +725,11 @@ fn array_index_eval_test() {
     });
 
     assert_eq!(run_result, Ok(RunResult::Yield(Value::Ref(a_rc.unwrap()))));
+
+    // Technically, this test will return a reference to an element in a temporary array,
+    // but we wouldn't care and just unwrap_deref.
     assert_eq!(
-        run0(&source("[1,3,5][1]").unwrap().1),
+        run0(&source("[1,3,5][1]").unwrap().1).map(unwrap_deref),
         Ok(RunResult::Yield(I64(3)))
     );
     assert_eq!(
