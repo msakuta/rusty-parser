@@ -16,7 +16,20 @@ print("type:", type(c));
 
 print("first:", c[0]);
 
-print(a[0] + a[1]);
-print(b[0][1]);
+print("a[0] + a[1]: ", a[0] + a[1]);
+print("b[0][1]: ", b[0][1]);
 print( (if 0 { a } else { b })[1] );
 print( [10, 20, 30][1] );
+
+var d: [i32] = [10, 20, 30];
+
+fn f(a1: [i32]) {
+    a1[0] = 101.;
+    print("a1:", a1);
+}
+
+print("d:", d);
+
+f(d);
+
+print("d:", d);

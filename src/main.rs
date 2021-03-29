@@ -776,13 +776,13 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
                 }
                 FuncDef::Native(native) => RunResult::Yield(native(
                     &args
-                        .iter()
-                        .map(|e| {
-                            if let RunResult::Yield(v) = e {
-                                v.clone()
-                            } else {
-                                Value::F64(0.)
+                        .into_iter()
+                        .map(|e| match unwrap_deref(e) {
+                            RunResult::Yield(v) => v.clone(),
+                            RunResult::Break => {
+                                panic!("Break in function argument is not supported yet!")
                             }
+                            _ => panic!("Can't happen!"),
                         })
                         .collect::<Vec<_>>(),
                 )),
