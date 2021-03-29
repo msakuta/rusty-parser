@@ -5,11 +5,37 @@ A self-learning project for making a new language using Rust and nom.
 ## Requirements
 
 * rust 1.44
+* npm 7.0.2 (for WebAssembly browser, any web server should work)
 
-## Interpreter
 
-Currently it only works as an iterpreter. It can read a text file, parser it to a
-AST and run it.
+# How to build
+
+There are 2 ways to build this project.
+
+* Command line interpreter
+* WebAssembly browser application
+
+## Command line interpreter
+
+One is for native command line application.
+It can read a text file, parse it to an AST and run it.
+
+    cd cli
+    cargo run --release <script-file>.dragon
+
+
+## WebAssembly browser application
+
+You can also build a wasm package and run the interpreter on the browser.
+
+    cd wasm
+    wasm-pack --target web
+
+To launch the application, you can use `npx`
+
+    npx serve
+
+and browse http://localhost:5000.
 
 ## TODOs
 
@@ -25,7 +51,9 @@ In ascending order of difficulty.
 * [x] Logical operators (||, &&, !)
 * [ ] String manipulations
 * [x] Array types
+* [x] WebAssembly build target
 * [ ] Tuple types
+* [ ] Multi-dimensional arrays
 * [ ] Function types (first class function variables)
 * [ ] Lambda expressions
 * [ ] Mutability qualifiers

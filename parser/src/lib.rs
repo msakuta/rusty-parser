@@ -8,17 +8,10 @@ use nom::{
     sequence::{delimited, pair, preceded, terminated, tuple},
     IResult,
 };
-use std::fs::File;
-use std::io::prelude::*;
-use std::{
-    cell::RefCell,
-    collections::HashMap,
-    env,
-    rc::Rc,
-};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 #[derive(Debug, PartialEq, Clone)]
-enum TypeDecl {
+pub enum TypeDecl {
     Any,
     F64,
     F32,
@@ -29,7 +22,7 @@ enum TypeDecl {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-enum Value {
+pub enum Value {
     F64(f64),
     F32(f32),
     I64(i64),
@@ -94,10 +87,10 @@ impl Value {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-struct ArgDecl<'a>(&'a str, TypeDecl);
+pub struct ArgDecl<'a>(&'a str, TypeDecl);
 
 #[derive(Debug, PartialEq, Clone)]
-enum Statement<'a> {
+pub enum Statement<'a> {
     Comment(&'a str),
     VarDecl(&'a str, TypeDecl, Option<Expression<'a>>),
     FnDecl(&'a str, Vec<ArgDecl<'a>>, Vec<Statement<'a>>),
@@ -109,7 +102,7 @@ enum Statement<'a> {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-enum Expression<'a> {
+pub enum Expression<'a> {
     NumLiteral(Value),
     StrLiteral(String),
     ArrLiteral(Vec<Expression<'a>>),
@@ -594,7 +587,7 @@ fn statement(input: &str) -> IResult<&str, Statement> {
     general_statement(false)(input)
 }
 
-fn source(input: &str) -> IResult<&str, Vec<Statement>> {
+pub fn source(input: &str) -> IResult<&str, Vec<Statement>> {
     let (r, mut v) = many0(statement)(input)?;
     let (r, last) = opt(last_statement)(r)?;
     if let Some(last) = last {
@@ -910,15 +903,15 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
 }
 
 fn s_print(vals: &[Value]) -> Value {
-    print!("print:");
+    println!("print:");
     fn print_inner(vals: &[Value]) {
         for val in vals {
             match val {
-                Value::F64(val) => print!(" {}", val),
-                Value::F32(val) => print!(" {}", val),
-                Value::I64(val) => print!(" {}", val),
-                Value::I32(val) => print!(" {}", val),
-                Value::Str(val) => print!(" {}", val),
+                Value::F64(val) => println!(" {}", val),
+                Value::F32(val) => println!(" {}", val),
+                Value::I64(val) => println!(" {}", val),
+                Value::I32(val) => println!(" {}", val),
+                Value::Str(val) => println!(" {}", val),
                 Value::Array(_, val) => {
                     print!("[");
                     print_inner(&val.iter().map(|v| v.borrow().clone()).collect::<Vec<_>>());
@@ -1011,13 +1004,13 @@ fn s_push(vals: &[Value]) -> Value {
 }
 
 #[derive(Clone)]
-struct FuncCode<'src, 'ast> {
+pub struct FuncCode<'src, 'ast> {
     args: &'ast Vec<ArgDecl<'src>>,
     stmts: &'ast Vec<Statement<'src>>,
 }
 
 #[derive(Clone)]
-enum FuncDef<'src, 'ast, 'native> {
+pub enum FuncDef<'src, 'ast, 'native> {
     Code(FuncCode<'src, 'ast>),
     Native(&'native dyn Fn(&[Value]) -> Value),
 }
@@ -1033,7 +1026,7 @@ enum FuncDef<'src, 'ast, 'native> {
 /// In general, they all can have different lifetimes. For example,
 /// usually AST is created after the source.
 #[derive(Clone)]
-struct EvalContext<'src, 'ast, 'native, 'ctx> {
+pub struct EvalContext<'src, 'ast, 'native, 'ctx> {
     /// RefCell to allow mutation in super context.
     /// Also, the inner values must be Rc of RefCell because a reference could be returned from
     /// a function so that the variable scope may have been ended.
@@ -1046,7 +1039,7 @@ struct EvalContext<'src, 'ast, 'native, 'ctx> {
 }
 
 impl<'src, 'ast, 'native, 'ctx> EvalContext<'src, 'ast, 'native, 'ctx> {
-    fn new() -> Self {
+    pub fn new() -> Self {
         let mut functions = HashMap::new();
         functions.insert("print".to_string(), FuncDef::Native(&s_print));
         functions.insert("puts".to_string(), FuncDef::Native(&s_puts));
@@ -1058,6 +1051,10 @@ impl<'src, 'ast, 'native, 'ctx> EvalContext<'src, 'ast, 'native, 'ctx> {
             functions,
             super_context: None,
         }
+    }
+
+    pub fn set_fn(&mut self, name: &str, fun: FuncDef<'src, 'ast, 'native>) {
+        self.functions.insert(name.to_string(), fun);
     }
 
     fn push_stack(super_ctx: &'ctx Self) -> Self {
@@ -1100,7 +1097,7 @@ impl<'src, 'ast, 'native, 'ctx> EvalContext<'src, 'ast, 'native, 'ctx> {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-enum RunResult {
+pub enum RunResult {
     Yield(Value),
     Break,
 }
@@ -1114,7 +1111,7 @@ macro_rules! unwrap_break {
     };
 }
 
-fn run<'src, 'ast>(
+pub fn run<'src, 'ast>(
     stmts: &'ast Vec<Statement<'src>>,
     ctx: &mut EvalContext<'src, 'ast, '_, '_>,
 ) -> Result<RunResult, ()> {
@@ -1177,33 +1174,6 @@ fn run<'src, 'ast>(
         }
     }
     Ok(res)
-}
-
-fn main() -> std::io::Result<()> {
-    let args: Vec<String> = env::args().collect();
-    let mut contents = String::new();
-    let code = if 1 < args.len() {
-        if let Ok(mut file) = File::open(&args[1]) {
-            file.read_to_string(&mut contents)?;
-            &contents
-        } else {
-            &args[1]
-        }
-    } else {
-        r"var x;
-  /* This is a block comment. */
-  var y;
-  123;
-  123 + 456;
-  "
-    };
-    if let Ok(result) = source(code) {
-        println!("Match: {:?}", result.1);
-        run(&result.1, &mut EvalContext::new()).expect("Error in run()");
-    } else {
-        println!("failed");
-    }
-    Ok(())
 }
 
 mod test;

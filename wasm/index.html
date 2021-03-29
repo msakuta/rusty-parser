@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <title>rusty-parser wasm</title>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <style type="text/css">
+            body {
+                color: #000000;
+                text-align:center;
+
+                background-color: #f0f0f0;
+                margin: 0px;
+                width: 100%;
+            }
+            .code {
+                font-family:Monospace;
+                font-size:15px;
+            }
+            .justify {
+                text-align: justify;
+                padding: 4em;
+            }
+        </style>
+    </head>
+    <body>
+        <h1>rusty-parser Wasm</h1>
+        <p><em>Warning!</em> Currently the interpreter has no error checking, if you have syntax error
+        in your code, the page will crash! Reload the page in that case.</p>
+        <hr>
+        <div>
+            Samples: <span id="samples"></span>
+        </div>
+        <div class="code">
+            <textarea  id="input" type="text" cols="120" rows="20" >
+fn fact(n) {
+    if n < 1 {
+        1
+    } else {
+        n * fact(n - 1)
+    }
+}
+
+print(fact(10));</textarea>
+        </div>
+
+        <div>
+            <button id="run">Run</button>
+        </div>
+
+        <div class="code">
+            <textarea  id="output" type="text" readonly cols="120"  rows="20" ></textarea>
+        </div>
+
+        <div class="justify">
+            <h2>Data types</h2>
+            You can declare a type for a variable or function arguments in a syntax like <tt>a: type</tt>
+            or <tt>fn f(a: type)</tt>.
+            <tt>type</tt> can be one of:
+            <ul>
+                <li>f64</li>
+                <li>f32</li>
+                <li>i64</li>
+                <li>i32</li>
+                <li>str</li>
+                <li>[type] - declares an array of some other types. Can be nested like <tt>[[i32]]</tt>.</li>
+            </ul>
+
+            Note that the language is still dynamically typed (which I plan to change to static typing eventually),
+            so the type coercion only happens when you assign a value to a typed variable or typed function argument.
+
+            <h2>Built-in functions</h2>
+            As an experimental language, it has only few Built-in functions.
+
+            <ul>
+            <li>print(s, ...) - Prints arguments to the output and a newline.</li>
+            <li>puts(s, ...) - Prints arguments without a newline.</li>
+            <li>len(a: []) -> i64 - Returns length of a given array.</li>
+            <li>push(a: [], val) - Puts an element at the end of the array, expanding its length by 1.</li>
+            </ul>
+        </div>
+
+        <hr>
+        <p>Source on <a href="https://github.com/msakuta/rusty-parser">GitHub</a>.</p>
+
+        <script type="module" src="main.js"></script>
+    </body>
+</html>
