@@ -2,6 +2,8 @@
 
 A self-learning project for making a new language using Rust and nom.
 
+Try it now on your browser! https://msakuta.github.io/rusty-parser/
+
 ## Requirements
 
 * rust 1.44
