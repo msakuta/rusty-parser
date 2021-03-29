@@ -1,0 +1,19 @@
+var array: [i32];
+var n = 100;
+
+for i in 0 .. n {
+    array[i] = 1;
+}
+
+fn sieve(array: [i32], prime: i32) {
+    var i = 1;
+    while prime * i < n {
+        array[prime * i] = 0;
+        i = i + 1;
+    }
+    array
+}
+
+array = sieve(array, 2);
+
+print(array);
