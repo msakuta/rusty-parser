@@ -24,6 +24,11 @@ extern "C" {
     pub(crate) fn log(s: &str);
 }
 
+#[wasm_bindgen(module = "/wasm_api.js")]
+extern "C" {
+    pub(crate) fn wasm_print(s: &str);
+}
+
 #[derive(Debug, PartialEq, Clone)]
 enum TypeDecl {
     Any,
@@ -917,30 +922,30 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
 }
 
 fn s_print(vals: &[Value]) -> Value {
-    log("print:");
+    wasm_print("print:");
     fn print_inner(vals: &[Value]) {
         for val in vals {
             match val {
-                Value::F64(val) => log(&format!(" {}", val)),
-                Value::F32(val) => log(&format!(" {}", val)),
-                Value::I64(val) => log(&format!(" {}", val)),
-                Value::I32(val) => log(&format!(" {}", val)),
-                Value::Str(val) => log(&format!(" {}", val)),
+                Value::F64(val) => wasm_print(&format!(" {}", val)),
+                Value::F32(val) => wasm_print(&format!(" {}", val)),
+                Value::I64(val) => wasm_print(&format!(" {}", val)),
+                Value::I32(val) => wasm_print(&format!(" {}", val)),
+                Value::Str(val) => wasm_print(&format!(" {}", val)),
                 Value::Array(_, val) => {
-                    print!("[");
+                    wasm_print("[");
                     print_inner(&val.iter().map(|v| v.borrow().clone()).collect::<Vec<_>>());
-                    print!("]");
+                    wasm_print("]");
                 }
                 Value::Ref(r) => {
-                    print!("ref(");
+                    wasm_print("ref(");
                     print_inner(&[r.borrow().clone()]);
-                    print!(")");
+                    wasm_print(")");
                 }
             }
         }
     }
     print_inner(vals);
-    log(&format!("\n"));
+    wasm_print(&format!("\n"));
     Value::I32(0)
 }
 
