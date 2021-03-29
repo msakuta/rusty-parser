@@ -1,12 +1,7 @@
 use parser::*;
+use std::env;
 use std::fs::File;
 use std::io::prelude::*;
-use std::{
-    cell::RefCell,
-    collections::HashMap,
-    env,
-    rc::Rc,
-};
 
 fn main() -> std::io::Result<()> {
     let args: Vec<String> = env::args().collect();

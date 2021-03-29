@@ -9,14 +9,6 @@ use nom::{
     sequence::{delimited, pair, preceded, terminated, tuple},
     IResult,
 };
-use std::fs::File;
-use std::io::prelude::*;
-use std::{
-    cell::RefCell,
-    collections::HashMap,
-    env,
-    rc::Rc,
-};
 
 #[wasm_bindgen]
 extern "C" {

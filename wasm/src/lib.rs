@@ -1,13 +1,5 @@
-use wasm_bindgen::prelude::*;
-use std::fs::File;
-use std::io::prelude::*;
-use std::{
-    cell::RefCell,
-    collections::HashMap,
-    env,
-    rc::Rc,
-};
 use parser::*;
+use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 extern "C" {
@@ -69,9 +61,11 @@ fn s_puts(vals: &[Value]) -> Value {
 }
 
 #[wasm_bindgen]
-pub fn entry(src: &str) {
+pub fn entry(src: &str) -> Result<(), JsValue> {
     let mut ctx = EvalContext::new();
     ctx.set_fn("print", FuncDef::Native(&s_print));
     ctx.set_fn("puts", FuncDef::Native(&s_puts));
-    run(&source(src).unwrap().1, &mut ctx);
+    run(&source(src).unwrap().1, &mut ctx)
+        .map_err(|e| JsValue::from_str(&format!("Error on execution: {:?}", e)))?;
+    Ok(())
 }
