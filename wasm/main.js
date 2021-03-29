@@ -1,4 +1,4 @@
-import init, { entry } from "./pkg/rusty_parser.js";
+import init, { entry } from "./pkg/rusty_parser_wasm.js";
 
 
 async function run() {

@@ -22,10 +22,11 @@ jobs:
         #version: # optional, default is latest
     - name: Build
       run:
-        wasm-pack build --target web &&
+        cd wasm && wasm-pack build --target web &&
+        cp -r ../scripts ./scripts
         rm pkg/.gitignore # We don't want to ignore the products
     - name: Deploy
       uses: peaceiris/actions-gh-pages@v3
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: ./pkg
+        publish_dir: ./wasm

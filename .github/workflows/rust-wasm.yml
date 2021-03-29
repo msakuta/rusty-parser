@@ -22,6 +22,6 @@ jobs:
         # Optional version of wasm-pack to install (eg. "v0.9.1", "latest")
         #version: # optional, default is latest
     - name: Build
-      run: wasm-pack build --target web
+      run: cd wasm && wasm-pack build --target web
     - name: Run tests
-      run: cargo test --verbose
+      run: cd wasm && cargo test --verbose
