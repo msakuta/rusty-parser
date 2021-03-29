@@ -4,22 +4,27 @@
         <title>rusty-parser wasm</title>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <style>
+        <style type="text/css">
             body {
                 color: #000000;
-                font-family:Monospace;
-                font-size:15px;
                 text-align:center;
 
                 background-color: #f0f0f0;
                 margin: 0px;
-                width: fit-content;
+                width: 100%;
+            }
+            .code {
+                font-family:Monospace;
+                font-size:15px;
             }
         </style>
     </head>
     <body>
         <h1>rusty-parser Wasm</h1>
-        <div>
+        <p><em>Warning!</em> Currently the interpreter has no error checking, if you have syntax error
+        in your code, the page will crash! Reload the page in that case.</p>
+        <hr>
+        <div class="code">
             <textarea  id="input" type="text" cols="120" rows="20" >
 fn fact(n) {
     if n < 1 {
@@ -36,9 +41,12 @@ print(fact(10));</textarea>
             <button id="run">Run</button>
         </div>
 
-        <div>
+        <div class="code">
             <textarea  id="output" type="text" readonly cols="120"  rows="20" ></textarea>
         </div>
+
+        <hr>
+        <p>Source on <a href="https://github.com/msakuta/rusty-parser">GitHub</a>.</p>
 
         <script type="module" src="main.js"></script>
     </body>
