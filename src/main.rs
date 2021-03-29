@@ -11,7 +11,7 @@ use nom::{
 use std::fs::File;
 use std::io::prelude::*;
 use std::{
-    cell::{Ref, RefCell, RefMut},
+    cell::{Ref, RefCell},
     collections::HashMap,
     env,
     rc::Rc,
@@ -36,6 +36,7 @@ enum Value {
     I32(i32),
     Str(String),
     Array(TypeDecl, Vec<Rc<RefCell<Value>>>),
+    Ref(Rc<RefCell<Value>>),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -549,29 +550,15 @@ fn source(input: &str) -> IResult<&str, Vec<Statement>> {
 }
 
 fn unwrap_deref(e: RunResult) -> RunResult {
-    match e {
-        RunResult::Yield(v) => RunResult::Yield(v),
-        RunResult::YieldRef(vref) => match vref {
-            ValueRef::Variable(var) => {
-                let r = var.borrow();
-                RunResult::Yield(r.clone())
-            }
-            ValueRef::ArrayElem(var, idx) => {
-                let bvar = var.borrow();
-                let mut ret = None;
-                Ref::map(bvar, |v| {
-                    if let Value::Array(_, a) = v {
-                        ret = Some(a[idx as usize].borrow().clone());
-                        &()
-                    } else {
-                        panic!("Referenced value is not an arary")
-                    }
-                });
-                RunResult::Yield(ret.unwrap())
-            }
-        },
+    match &e {
+        RunResult::Yield(Value::Ref(vref)) => {
+            let r = vref.borrow();
+            return RunResult::Yield(r.clone());
+        }
         RunResult::Break => return RunResult::Break,
+        _ => (),
     }
+    e
 }
 
 macro_rules! unwrap_run {
@@ -579,7 +566,6 @@ macro_rules! unwrap_run {
         match unwrap_deref($e) {
             RunResult::Yield(v) => v,
             RunResult::Break => return RunResult::Break,
-            _ => panic!("Shouwldn't happen"),
         }
     };
 }
@@ -647,7 +633,7 @@ fn coerce_str(a: &Value) -> String {
     }
 }
 
-fn coerce_var(value: &Value, target: &Value) -> Value {
+fn _coerce_var(value: &Value, target: &Value) -> Value {
     match target {
         Value::F64(_) => Value::F64(coerce_f64(value)),
         Value::F32(_) => Value::F32(coerce_f64(value) as f32),
@@ -678,6 +664,8 @@ fn coerce_var(value: &Value, target: &Value) -> Value {
                 }
             }
         }
+        // We usually don't care about coercion
+        Value::Ref(_) => value.clone(),
     }
 }
 
@@ -723,13 +711,13 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
                 })
                 .collect(),
         )),
-        Expression::Variable(str) => RunResult::YieldRef(ValueRef::Variable(
+        Expression::Variable(str) => RunResult::Yield(Value::Ref(
             ctx.get_var_rc(str)
                 .expect(&format!("Variable {} not found in scope", str)),
         )),
         Expression::VarAssign(lhs, rhs) => {
             let lhs_value = eval(lhs, ctx);
-            let lhs_value = if let RunResult::YieldRef(rc) = lhs_value {
+            let lhs_value = if let RunResult::Yield(Value::Ref(rc)) = lhs_value {
                 rc
             } else {
                 panic!(format!(
@@ -737,26 +725,9 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
                     lhs_value
                 ))
             };
-            let ret_value = match lhs_value {
-                ValueRef::Variable(v) => {
-                    let val = unwrap_run!(eval(rhs, ctx));
-                    *v.borrow_mut() = val.clone();
-                    val
-                }
-                ValueRef::ArrayElem(v, idx) => {
-                    let mut borrowed = v.borrow_mut();
-                    let vr: &mut Vec<Rc<RefCell<Value>>> =
-                        if let Value::Array(_, val) = &mut *borrowed {
-                            val
-                        } else {
-                            panic!("Array index operation should have array as first operand")
-                        };
-                    let val = unwrap_run!(eval(rhs, ctx));
-                    *vr[idx as usize].borrow_mut() = val.clone();
-                    val
-                }
-            };
-            RunResult::Yield(ret_value)
+            let rhs_value = unwrap_run!(eval(rhs, ctx));
+            *lhs_value.borrow_mut() = rhs_value.clone();
+            RunResult::Yield(rhs_value)
         }
         Expression::FnInvoke(str, args) => {
             let args = args.iter().map(|v| eval(v, ctx)).collect::<Vec<_>>();
@@ -776,7 +747,6 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
                     match unwrap_deref(run_result) {
                         RunResult::Yield(v) => RunResult::Yield(v),
                         RunResult::Break => panic!("break in function toplevel"),
-                        _ => panic!("should not happen"),
                     }
                 }
                 FuncDef::Native(native) => RunResult::Yield(native(
@@ -787,7 +757,6 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
                             RunResult::Break => {
                                 panic!("Break in function argument is not supported yet!")
                             }
-                            _ => panic!("Can't happen!"),
                         })
                         .collect::<Vec<_>>(),
                 )),
@@ -806,43 +775,23 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
                 RunResult::Break => {
                     return RunResult::Break;
                 }
-                _ => panic!("Shouwldn't happen"),
             };
             let result = eval(ex, ctx);
             let mut ret: Option<RunResult> = None;
             match result {
-                RunResult::YieldRef(vr) => {
-                    match vr {
-                        ValueRef::Variable(rc) => {
-                            Ref::map(rc.borrow(), |v| match v {
-                                Value::Array(_, a) => {
-                                    ret = Some(RunResult::YieldRef(ValueRef::Variable(a[arg0 as usize].clone())));
-                                    &()
-                                }
-                                _ => panic!("Indexing operator is only applicable to arrays")
-                            });
-                        }
-                        ValueRef::ArrayElem(rc, idx) => {
-                            Ref::map(rc.borrow(), |v| match v {
-                                Value::Array(_, a) => {
-                                    ret = Some(RunResult::YieldRef(ValueRef::ArrayElem(a[idx as usize].clone(), arg0 as u64)));
-                                    &()
-                                }
-                                _ => panic!("Indexing operator is only applicable to arrays"),
-                            });
-                        }
-                    };
-                }
-                RunResult::Yield(v) => {
-                    match v {
+                RunResult::Yield(Value::Ref(rc)) => {
+                    Ref::map(rc.borrow(), |v| match v {
                         Value::Array(_, a) => {
-                            ret = Some(RunResult::Yield(a[arg0].borrow().clone()));
+                            ret = Some(RunResult::Yield(Value::Ref(a[arg0 as usize].clone())));
                             &()
                         }
-                        _ => panic!("Indexing operator is only applicable to arrays"),
-                    };
+                        _ => panic!("Indexing operator is only applicable to arrays")
+                    });
                 }
-                _ => panic!(format!("Indexing operator is only applicable to variable references, got {:?}, state {:#?}", result, ex)),
+                RunResult::Yield(Value::Array(_, a)) => {
+                    ret = Some(RunResult::Yield(a[arg0].borrow().clone()));
+                }
+                _ => panic!(format!("Indexing operator is only applicable to a reference to an array, got {:?}, state {:#?}", result, ex)),
             };
             ret.unwrap()
         }
@@ -937,6 +886,11 @@ fn s_print(vals: &[Value]) -> Value {
                     print_inner(&val.iter().map(|v| v.borrow().clone()).collect::<Vec<_>>());
                     print!("]");
                 }
+                Value::Ref(r) => {
+                    print!("ref(");
+                    print_inner(&[r.borrow().clone()]);
+                    print!(")");
+                }
             }
         }
     }
@@ -957,6 +911,7 @@ fn s_puts(vals: &[Value]) -> Value {
                 Value::Array(_, val) => {
                     puts_inner(&val.iter().map(|v| v.borrow().clone()).collect::<Vec<_>>())
                 }
+                Value::Ref(r) => puts_inner(&[r.borrow().clone()]),
             }
         }
     }
@@ -977,15 +932,19 @@ fn type_decl_to_str(t: &TypeDecl) -> String {
 }
 
 fn s_type(vals: &[Value]) -> Value {
-    if let [val, ..] = vals {
-        Value::Str(match val {
+    fn type_str(val: &Value) -> String {
+        match val {
             Value::F64(_) => "f64".to_string(),
             Value::F32(_) => "f32".to_string(),
             Value::I64(_) => "i64".to_string(),
             Value::I32(_) => "i32".to_string(),
             Value::Str(_) => "str".to_string(),
             Value::Array(inner, _) => format!("[{}]", type_decl_to_str(inner)),
-        })
+            Value::Ref(r) => format!("ref[{}]", type_str(&r.borrow())),
+        }
+    }
+    if let [val, ..] = vals {
+        Value::Str(type_str(val))
     } else {
         Value::I32(0)
     }
@@ -1091,15 +1050,8 @@ impl<'src, 'ast, 'native, 'ctx> EvalContext<'src, 'ast, 'native, 'ctx> {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-enum ValueRef {
-    Variable(Rc<RefCell<Value>>),
-    ArrayElem(Rc<RefCell<Value>>, u64),
-}
-
-#[derive(Debug, PartialEq, Clone)]
 enum RunResult {
     Yield(Value),
-    YieldRef(ValueRef),
     Break,
 }
 
@@ -1107,7 +1059,6 @@ macro_rules! unwrap_break {
     ($e:expr) => {
         match unwrap_deref($e) {
             RunResult::Yield(v) => v,
-            RunResult::YieldRef(_) => panic!("would not happen"),
             RunResult::Break => break,
         }
     };
@@ -1153,12 +1104,10 @@ fn run<'src, 'ast>(
                         }
                     }
                     RunResult::Break => break,
-                    _ => panic!("Would not happen"),
                 }
                 res = match unwrap_deref(run(e, ctx)?) {
                     RunResult::Yield(v) => RunResult::Yield(v),
                     RunResult::Break => break,
-                    _ => panic!("Would not happen"),
                 };
             },
             Statement::For(iter, from, to, e) => {

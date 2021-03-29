@@ -544,7 +544,7 @@ fn brace_expr_eval_test() {
                 .unwrap()
                 .1
         ),
-        RunResult::YieldRef(ValueRef::Variable(Rc::new(RefCell::new(Value::I64(1)))))
+        RunResult::Yield(Value::Ref(Rc::new(RefCell::new(Value::I64(1)))))
     );
 }
 
@@ -661,9 +661,9 @@ fn array_literal_eval_test() {
     // Type coarsion through variable declaration
     assert_eq!(
         run0(&source("var v: [f64] = [1,3,5]; v").unwrap().1),
-        Ok(RunResult::YieldRef(ValueRef::Variable(Rc::new(
-            RefCell::new(Value::Array(TypeDecl::F64, vec![f64(1.), f64(3.), f64(5.)]))
-        ))))
+        Ok(RunResult::Yield(Value::Ref(Rc::new(RefCell::new(
+            Value::Array(TypeDecl::F64, vec![f64(1.), f64(3.), f64(5.)])
+        )))))
     );
 }
 
@@ -716,7 +716,7 @@ fn array_index_eval_test() {
     let a_ref = ctx.get_var_rc("a").unwrap();
     let mut a_rc = None;
     // Very ugly idiom to extract a clone of a variant in a RefCell
-    Ref::map(a_ref.borrow(), |v| match v {
+    std::cell::Ref::map(a_ref.borrow(), |v| match v {
         Value::Array(_, a) => {
             a_rc = Some(a[1].clone());
             &()
@@ -724,10 +724,7 @@ fn array_index_eval_test() {
         _ => panic!("a must be an array"),
     });
 
-    assert_eq!(
-        run_result,
-        Ok(RunResult::YieldRef(ValueRef::Variable(a_rc.unwrap())))
-    );
+    assert_eq!(run_result, Ok(RunResult::Yield(Value::Ref(a_rc.unwrap()))));
     assert_eq!(
         run0(&source("[1,3,5][1]").unwrap().1),
         Ok(RunResult::Yield(I64(3)))
