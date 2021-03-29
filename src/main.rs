@@ -1068,11 +1068,11 @@ impl<'src, 'ast, 'native, 'ctx> EvalContext<'src, 'ast, 'native, 'ctx> {
         }
     }
 
-    fn get_var(&self, name: &str) -> Option<Value> {
+    fn _get_var(&self, name: &str) -> Option<Value> {
         if let Some(val) = self.variables.borrow().get(name) {
             Some(val.borrow().clone())
         } else if let Some(super_ctx) = self.super_context {
-            super_ctx.get_var(name)
+            super_ctx._get_var(name)
         } else {
             None
         }
