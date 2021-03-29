@@ -17,6 +17,10 @@
                 font-family:Monospace;
                 font-size:15px;
             }
+            .justify {
+                text-align: justify;
+                padding: 4em;
+            }
         </style>
     </head>
     <body>
@@ -46,6 +50,34 @@ print(fact(10));</textarea>
 
         <div class="code">
             <textarea  id="output" type="text" readonly cols="120"  rows="20" ></textarea>
+        </div>
+
+        <div class="justify">
+            <h2>Data types</h2>
+            You can declare a type for a variable or function arguments in a syntax like <tt>a: type</tt>
+            or <tt>fn f(a: type)</tt>.
+            <tt>type</tt> can be one of:
+            <ul>
+                <li>f64</li>
+                <li>f32</li>
+                <li>i64</li>
+                <li>i32</li>
+                <li>str</li>
+                <li>[type] - declares an array of some other types. Can be nested like <tt>[[i32]]</tt>.</li>
+            </ul>
+
+            Note that the language is still dynamically typed (which I plan to change to static typing eventually),
+            so the type coercion only happens when you assign a value to a typed variable or typed function argument.
+
+            <h2>Built-in functions</h2>
+            As an experimental language, it has only few Built-in functions.
+
+            <ul>
+            <li>print(s, ...) - Prints arguments to the output and a newline.</li>
+            <li>puts(s, ...) - Prints arguments without a newline.</li>
+            <li>len(a: []) -> i64 - Returns length of a given array.</li>
+            <li>push(a: [], val) - Puts an element at the end of the array, expanding its length by 1.</li>
+            </ul>
         </div>
 
         <hr>
