@@ -71,5 +71,7 @@ fn s_puts(vals: &[Value]) -> Value {
 #[wasm_bindgen]
 pub fn entry(src: &str) {
     let mut ctx = EvalContext::new();
+    ctx.set_fn("print", FuncDef::Native(&s_print));
+    ctx.set_fn("puts", FuncDef::Native(&s_puts));
     run(&source(src).unwrap().1, &mut ctx);
 }

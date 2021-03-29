@@ -1011,13 +1011,13 @@ fn s_push(vals: &[Value]) -> Value {
 }
 
 #[derive(Clone)]
-struct FuncCode<'src, 'ast> {
+pub struct FuncCode<'src, 'ast> {
     args: &'ast Vec<ArgDecl<'src>>,
     stmts: &'ast Vec<Statement<'src>>,
 }
 
 #[derive(Clone)]
-enum FuncDef<'src, 'ast, 'native> {
+pub enum FuncDef<'src, 'ast, 'native> {
     Code(FuncCode<'src, 'ast>),
     Native(&'native dyn Fn(&[Value]) -> Value),
 }
@@ -1058,6 +1058,10 @@ impl<'src, 'ast, 'native, 'ctx> EvalContext<'src, 'ast, 'native, 'ctx> {
             functions,
             super_context: None,
         }
+    }
+
+    pub fn set_fn(&mut self, name: &str, fun: FuncDef<'src, 'ast, 'native>) {
+        self.functions.insert(name.to_string(), fun);
     }
 
     fn push_stack(super_ctx: &'ctx Self) -> Self {
