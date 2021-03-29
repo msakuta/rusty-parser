@@ -35,7 +35,7 @@ enum Value {
     I64(i64),
     I32(i32),
     Str(String),
-    Array(TypeDecl, Vec<Value>),
+    Array(TypeDecl, Vec<Rc<RefCell<Value>>>),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -558,16 +558,16 @@ fn unwrap_deref(e: RunResult) -> RunResult {
             }
             ValueRef::ArrayElem(var, idx) => {
                 let bvar = var.borrow();
-                RunResult::Yield(
-                    Ref::map(bvar, |v| {
-                        if let Value::Array(_, a) = v {
-                            &a[idx as usize]
-                        } else {
-                            panic!("Referenced value is not an arary")
-                        }
-                    })
-                    .clone(),
-                )
+                let mut ret = None;
+                Ref::map(bvar, |v| {
+                    if let Value::Array(_, a) = v {
+                        ret = Some(a[idx as usize].borrow().clone());
+                        &()
+                    } else {
+                        panic!("Referenced value is not an arary")
+                    }
+                });
+                RunResult::Yield(ret.unwrap())
             }
         },
         RunResult::Break => return RunResult::Break,
@@ -668,7 +668,9 @@ fn coerce_var(value: &Value, target: &Value) -> Value {
                         inner_type.clone(),
                         value_inner
                             .iter()
-                            .map(|val| coerce_type(val, inner_type))
+                            .map(|val| {
+                                Rc::new(RefCell::new(coerce_type(&val.borrow(), inner_type)))
+                            })
                             .collect(),
                     )
                 } else {
@@ -693,7 +695,9 @@ fn coerce_type(value: &Value, target: &TypeDecl) -> Value {
                     (**inner).clone(),
                     value_inner
                         .iter()
-                        .map(|value_elem| coerce_type(value_elem, inner))
+                        .map(|value_elem| {
+                            Rc::new(RefCell::new(coerce_type(&value_elem.borrow(), inner)))
+                        })
                         .collect(),
                 )
             } else {
@@ -712,7 +716,7 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
             val.iter()
                 .map(|v| {
                     if let RunResult::Yield(y) = eval(v, ctx) {
-                        y
+                        Rc::new(RefCell::new(y))
                     } else {
                         panic!("Break in array literal not supported");
                     }
@@ -741,13 +745,14 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
                 }
                 ValueRef::ArrayElem(v, idx) => {
                     let mut borrowed = v.borrow_mut();
-                    let vr: &mut Vec<Value> = if let Value::Array(_, val) = &mut *borrowed {
-                        val
-                    } else {
-                        panic!("Array index operation should have array as first operand")
-                    };
+                    let vr: &mut Vec<Rc<RefCell<Value>>> =
+                        if let Value::Array(_, val) = &mut *borrowed {
+                            val
+                        } else {
+                            panic!("Array index operation should have array as first operand")
+                        };
                     let val = unwrap_run!(eval(rhs, ctx));
-                    vr[idx as usize] = val.clone();
+                    *vr[idx as usize].borrow_mut() = val.clone();
                     val
                 }
             };
@@ -809,23 +814,29 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
                 RunResult::YieldRef(vr) => {
                     match vr {
                         ValueRef::Variable(rc) => {
-                            ret = Some(RunResult::YieldRef(ValueRef::ArrayElem(rc, arg0 as u64)));
+                            Ref::map(rc.borrow(), |v| match v {
+                                Value::Array(_, a) => {
+                                    ret = Some(RunResult::YieldRef(ValueRef::Variable(a[arg0 as usize].clone())));
+                                    &()
+                                }
+                                _ => panic!("Indexing operator is only applicable to arrays")
+                            });
                         }
                         ValueRef::ArrayElem(rc, idx) => {
-                            // Ref::map(rc.borrow(), |v| match v {
-                                // Value::Array(_, a) => {
-                                    ret = Some(RunResult::YieldRef(ValueRef::ArrayElem(rc, arg0 as u64)));
-                                    // &()
-                                // }
-                            //     _ => panic!("Indexing operator is only applicable to arrays"),
-                            // });
+                            Ref::map(rc.borrow(), |v| match v {
+                                Value::Array(_, a) => {
+                                    ret = Some(RunResult::YieldRef(ValueRef::ArrayElem(a[idx as usize].clone(), arg0 as u64)));
+                                    &()
+                                }
+                                _ => panic!("Indexing operator is only applicable to arrays"),
+                            });
                         }
                     };
                 }
                 RunResult::Yield(v) => {
                     match v {
                         Value::Array(_, a) => {
-                            ret = Some(RunResult::Yield(a[arg0].clone()));
+                            ret = Some(RunResult::Yield(a[arg0].borrow().clone()));
                             &()
                         }
                         _ => panic!("Indexing operator is only applicable to arrays"),
@@ -923,7 +934,7 @@ fn s_print(vals: &[Value]) -> Value {
                 Value::Str(val) => print!(" {}", val),
                 Value::Array(_, val) => {
                     print!("[");
-                    print_inner(val);
+                    print_inner(&val.iter().map(|v| v.borrow().clone()).collect::<Vec<_>>());
                     print!("]");
                 }
             }
@@ -943,7 +954,9 @@ fn s_puts(vals: &[Value]) -> Value {
                 Value::I64(val) => print!("{}", val),
                 Value::I32(val) => print!("{}", val),
                 Value::Str(val) => print!("{}", val),
-                Value::Array(_, val) => puts_inner(val),
+                Value::Array(_, val) => {
+                    puts_inner(&val.iter().map(|v| v.borrow().clone()).collect::<Vec<_>>())
+                }
             }
         }
     }

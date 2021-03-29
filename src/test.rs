@@ -646,17 +646,23 @@ fn array_literal_test() {
 #[test]
 fn array_literal_eval_test() {
     use Value::*;
+    fn i64(i: i64) -> Rc<RefCell<Value>> {
+        Rc::new(RefCell::new(I64(i)))
+    }
+    fn f64(i: f64) -> Rc<RefCell<Value>> {
+        Rc::new(RefCell::new(F64(i)))
+    }
     assert_eq!(
         eval0(&full_expression("[1,3,5]").unwrap().1),
         // Right now array literals have "Any" internal type, but it should be decided somehow.
-        RunResult::Yield(Value::Array(TypeDecl::Any, vec![I64(1), I64(3), I64(5)]))
+        RunResult::Yield(Value::Array(TypeDecl::Any, vec![i64(1), i64(3), i64(5)]))
     );
 
     // Type coarsion through variable declaration
     assert_eq!(
         run0(&source("var v: [f64] = [1,3,5]; v").unwrap().1),
         Ok(RunResult::YieldRef(ValueRef::Variable(Rc::new(
-            RefCell::new(Value::Array(TypeDecl::F64, vec![F64(1.), F64(3.), F64(5.)]))
+            RefCell::new(Value::Array(TypeDecl::F64, vec![f64(1.), f64(3.), f64(5.)]))
         ))))
     );
 }
@@ -703,12 +709,24 @@ fn array_index_test() {
 fn array_index_eval_test() {
     use Value::*;
     let mut ctx = EvalContext::new();
+
+    // This is very verbose, but necessary to match against a variable in ctx.variables.
+    let ast = source("var a: [i32] = [1,3,5]; a[1]").unwrap().1;
+    let run_result = run(&ast, &mut ctx);
+    let a_ref = ctx.get_var_rc("a").unwrap();
+    let mut a_rc = None;
+    // Very ugly idiom to extract a clone of a variant in a RefCell
+    Ref::map(a_ref.borrow(), |v| match v {
+        Value::Array(_, a) => {
+            a_rc = Some(a[1].clone());
+            &()
+        }
+        _ => panic!("a must be an array"),
+    });
+
     assert_eq!(
-        run(&source("var a: [i32] = [1,3,5]; a[1]").unwrap().1, &mut ctx),
-        Ok(RunResult::YieldRef(ValueRef::ArrayElem(
-            ctx.get_var_rc("a").unwrap(),
-            1
-        )))
+        run_result,
+        Ok(RunResult::YieldRef(ValueRef::Variable(a_rc.unwrap())))
     );
     assert_eq!(
         run0(&source("[1,3,5][1]").unwrap().1),
