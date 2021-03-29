@@ -953,11 +953,11 @@ fn s_puts(vals: &[Value]) -> Value {
     fn puts_inner(vals: &[Value]) {
         for val in vals {
             match val {
-                Value::F64(val) => print!("{}", val),
-                Value::F32(val) => print!("{}", val),
-                Value::I64(val) => print!("{}", val),
-                Value::I32(val) => print!("{}", val),
-                Value::Str(val) => print!("{}", val),
+                Value::F64(val) => wasm_print(&format!("{}", val)),
+                Value::F32(val) => wasm_print(&format!("{}", val)),
+                Value::I64(val) => wasm_print(&format!("{}", val)),
+                Value::I32(val) => wasm_print(&format!("{}", val)),
+                Value::Str(val) => wasm_print(&format!("{}", val)),
                 Value::Array(_, val) => {
                     puts_inner(&val.iter().map(|v| v.borrow().clone()).collect::<Vec<_>>())
                 }
