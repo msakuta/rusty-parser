@@ -4,4 +4,4 @@ var y;
 x = 45.;
 y = 30;
 
-x * x + y * y;
+print(x * x + y * y);
