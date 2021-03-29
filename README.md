@@ -21,12 +21,13 @@ In ascending order of difficulty.
 * [x] Variable definition initializer
 * [x] Type declaration
 * [x] Primitive types (i32, u32, f32, f64)
-* [x] String types? (Optional?)
-* [x] Logical operators (||, &&)
+* [x] String type
+* [x] Logical operators (||, &&, !)
 * [ ] String manipulations
-* [ ] Array types
+* [x] Array types
 * [ ] Tuple types
-* [ ] Function types
+* [ ] Function types (first class function variables)
+* [ ] Lambda expressions
 * [ ] Mutability qualifiers
 * [ ] Array slice syntax
 * [ ] Array shape constraints
