@@ -55,6 +55,7 @@ In ascending order of difficulty.
 * [x] Array types
 * [x] WebAssembly build target
 * [ ] Function return types
+* [ ] Proper error handling
 * [ ] Tuple types
 * [ ] Multi-dimensional arrays
 * [ ] Function types (first class function variables)

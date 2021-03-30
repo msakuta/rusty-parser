@@ -1,12 +1,13 @@
-var array: [i32];
+var array: [i32] = [];
 var n = 100;
 
 for i in 0 .. n {
-    array[i] = 1;
+    push(array, 1);
 }
 
 fn sieve(array: [i32], prime: i32) {
-    var i = 1;
+    var i = 2;
+    print(prime, type(prime));
     while prime * i < n {
         array[prime * i] = 0;
         i = i + 1;
@@ -14,6 +15,20 @@ fn sieve(array: [i32], prime: i32) {
     array
 }
 
-array = sieve(array, 2);
+var nextPrime: i32 = 2;
+print(array[nextPrime]);
 
-print(array);
+while nextPrime < n {
+    if array[nextPrime] {
+        array = sieve(array, nextPrime);
+    };
+
+    nextPrime = nextPrime + 1;
+    print(nextPrime);
+}
+
+for i in 1 .. n {
+    if array[i] {
+        print(i, " is prime");
+    }
+}

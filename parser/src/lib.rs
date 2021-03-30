@@ -1146,7 +1146,7 @@ pub fn run<'src, 'ast>(
             Statement::While(cond, e) => loop {
                 match unwrap_deref(eval(cond, ctx)) {
                     RunResult::Yield(v) => {
-                        if truthy(&v) {
+                        if !truthy(&v) {
                             break;
                         }
                     }
