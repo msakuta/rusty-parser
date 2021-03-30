@@ -31,7 +31,7 @@ It can read a text file, parse it to an AST and run it.
 You can also build a wasm package and run the interpreter on the browser.
 
     cd wasm
-    wasm-pack --target web
+    wasm-pack build --target web
 
 To launch the application, you can use `npx`
 
@@ -54,6 +54,7 @@ In ascending order of difficulty.
 * [ ] String manipulations
 * [x] Array types
 * [x] WebAssembly build target
+* [ ] Function return types
 * [ ] Tuple types
 * [ ] Multi-dimensional arrays
 * [ ] Function types (first class function variables)
