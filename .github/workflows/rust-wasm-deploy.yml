@@ -23,10 +23,13 @@ jobs:
     - name: Build
       run:
         cd wasm && wasm-pack build --target web &&
-        cp -r ../scripts ./scripts &&
-        rm ./pkg/.gitignore # We don't want to ignore the products
+        mkdir dist &&
+        cp -r ../scripts ./dist/scripts &&
+        rm ./pkg/.gitignore &&
+        mv ./pkg ./dist/pkg &&
+        cp index.html *.js dist/
     - name: Deploy
       uses: peaceiris/actions-gh-pages@v3
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: ./wasm
+        publish_dir: ./wasm/dist
