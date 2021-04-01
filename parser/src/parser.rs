@@ -143,7 +143,7 @@ fn ident_space(input: &str) -> IResult<&str, &str> {
     delimited(multispace0, identifier, multispace0)(input)
 }
 
-fn var_ref(input: &str) -> IResult<&str, Expression> {
+pub(crate) fn var_ref(input: &str) -> IResult<&str, Expression> {
     let (r, res) = ident_space(input)?;
     Ok((r, Expression::Variable(res)))
 }
@@ -176,7 +176,7 @@ fn type_array(input: &str) -> IResult<&str, TypeDecl> {
     Ok((r, TypeDecl::Array(Box::new(arr))))
 }
 
-fn type_spec(input: &str) -> IResult<&str, TypeDecl> {
+pub(crate) fn type_spec(input: &str) -> IResult<&str, TypeDecl> {
     let (r, type_) = opt(delimited(
         delimited(multispace0, tag(":"), multispace0),
         alt((type_array, type_scalar)),
@@ -251,7 +251,7 @@ fn str_literal(input: &str) -> IResult<&str, Expression> {
     ))
 }
 
-fn array_literal(input: &str) -> IResult<&str, Expression> {
+pub(crate) fn array_literal(input: &str) -> IResult<&str, Expression> {
     let (r, (mut val, last)) = delimited(
         multispace0,
         delimited(
@@ -279,7 +279,7 @@ fn parens(i: &str) -> IResult<&str, Expression> {
     )(i)
 }
 
-fn func_invoke(i: &str) -> IResult<&str, Expression> {
+pub(crate) fn func_invoke(i: &str) -> IResult<&str, Expression> {
     let (r, ident) = delimited(multispace0, identifier, multispace0)(i)?;
     // println!("func_invoke ident: {}", ident);
     let (r, args) = delimited(
@@ -298,7 +298,7 @@ fn func_invoke(i: &str) -> IResult<&str, Expression> {
     Ok((r, Expression::FnInvoke(ident, args)))
 }
 
-fn array_index(i: &str) -> IResult<&str, Expression> {
+pub(crate) fn array_index(i: &str) -> IResult<&str, Expression> {
     let (r, (prim, indices)) = pair(
         primary_expression,
         many1(delimited(
@@ -323,7 +323,7 @@ fn array_index(i: &str) -> IResult<&str, Expression> {
     ))
 }
 
-fn primary_expression(i: &str) -> IResult<&str, Expression> {
+pub(crate) fn primary_expression(i: &str) -> IResult<&str, Expression> {
     alt((
         numeric_literal_expression,
         str_literal,
@@ -366,7 +366,7 @@ fn term(i: &str) -> IResult<&str, Expression> {
     )(i)
 }
 
-fn expr(i: &str) -> IResult<&str, Expression> {
+pub(crate) fn expr(i: &str) -> IResult<&str, Expression> {
     let (i, init) = term(i)?;
 
     fold_many0(
@@ -396,7 +396,7 @@ fn cmp(i: &str) -> IResult<&str, Expression> {
     ))
 }
 
-fn conditional(i: &str) -> IResult<&str, Expression> {
+pub(crate) fn conditional(i: &str) -> IResult<&str, Expression> {
     let (r, _) = delimited(multispace0, tag("if"), multispace0)(i)?;
     let (r, cond) = or_expr(r)?;
     let (r, true_branch) = delimited(
@@ -426,12 +426,12 @@ fn conditional(i: &str) -> IResult<&str, Expression> {
     ))
 }
 
-fn var_assign(input: &str) -> IResult<&str, Expression> {
+pub(crate) fn var_assign(input: &str) -> IResult<&str, Expression> {
     let (r, res) = tuple((cmp_expr, char('='), cmp_expr))(input)?;
     Ok((r, Expression::VarAssign(Box::new(res.0), Box::new(res.2))))
 }
 
-fn cmp_expr(i: &str) -> IResult<&str, Expression> {
+pub(crate) fn cmp_expr(i: &str) -> IResult<&str, Expression> {
     alt((cmp, expr))(i)
 }
 
@@ -461,7 +461,7 @@ fn assign_expr(i: &str) -> IResult<&str, Expression> {
     alt((var_assign, or_expr))(i)
 }
 
-fn conditional_expr(i: &str) -> IResult<&str, Expression> {
+pub(crate) fn conditional_expr(i: &str) -> IResult<&str, Expression> {
     alt((conditional, assign_expr))(i)
 }
 
@@ -474,7 +474,7 @@ fn brace_expr(input: &str) -> IResult<&str, Expression> {
     Ok((r, Expression::Brace(v)))
 }
 
-fn full_expression(input: &str) -> IResult<&str, Expression> {
+pub(crate) fn full_expression(input: &str) -> IResult<&str, Expression> {
     conditional_expr(input)
 }
 
@@ -483,7 +483,7 @@ fn expression_statement(input: &str) -> IResult<&str, Statement> {
     Ok((r, Statement::Expression(val)))
 }
 
-fn func_arg(input: &str) -> IResult<&str, ArgDecl> {
+pub(crate) fn func_arg(input: &str) -> IResult<&str, ArgDecl> {
     let (r, v) = pair(
         identifier,
         opt(delimited(multispace0, type_spec, multispace0)),
@@ -491,7 +491,7 @@ fn func_arg(input: &str) -> IResult<&str, ArgDecl> {
     Ok((r, ArgDecl(v.0, v.1.unwrap_or(TypeDecl::F64))))
 }
 
-fn func_decl(input: &str) -> IResult<&str, Statement> {
+pub(crate) fn func_decl(input: &str) -> IResult<&str, Statement> {
     let (r, _) = multispace1(tag("fn")(multispace0(input)?.0)?.0)?;
     let (r, ident) = identifier(r)?;
     let (r, args) = delimited(
@@ -579,11 +579,11 @@ fn general_statement<'a>(last: bool) -> impl Fn(&'a str) -> IResult<&'a str, Sta
     }
 }
 
-fn last_statement(input: &str) -> IResult<&str, Statement> {
+pub(crate) fn last_statement(input: &str) -> IResult<&str, Statement> {
     general_statement(true)(input)
 }
 
-fn statement(input: &str) -> IResult<&str, Statement> {
+pub(crate) fn statement(input: &str) -> IResult<&str, Statement> {
     general_statement(false)(input)
 }
 
@@ -595,3 +595,5 @@ pub fn source(input: &str) -> IResult<&str, Vec<Statement>> {
     }
     Ok((r, v))
 }
+
+mod test;

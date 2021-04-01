@@ -580,3 +580,5 @@ pub fn run<'src, 'ast>(
     }
     Ok(res)
 }
+
+mod test;
