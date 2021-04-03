@@ -43,14 +43,16 @@ and browse http://localhost:5000.
 
 In ascending order of difficulty.
 
+* [x] Arithmetic operators (+, -, *, /)
 * [x] Functions, recursive calls
-* [x] Loops
+* [x] Loops (for, while, loop)
 * [x] Proper expression statements (brace expressions)
 * [x] Variable definition initializer
 * [x] Type declaration
-* [x] Primitive types (i32, u32, f32, f64)
+* [x] Primitive types (i32, i64, f32, f64)
 * [x] String type
 * [x] Logical operators (||, &&, !)
+* [ ] Bitwise operators (|, &, ^, ~)
 * [ ] String manipulations
 * [x] Array types
 * [x] WebAssembly build target
@@ -60,6 +62,7 @@ In ascending order of difficulty.
 * [ ] Multi-dimensional arrays
 * [ ] Function types (first class function variables)
 * [ ] Lambda expressions
+* [ ] Static type checking (instead of runtime coercion)
 * [ ] Mutability qualifiers
 * [ ] Array slice syntax
 * [ ] Array shape constraints
