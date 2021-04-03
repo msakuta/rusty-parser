@@ -423,6 +423,19 @@ fn s_push(vals: &[Value]) -> Value {
     }
 }
 
+fn s_hex_string(vals: &[Value]) -> Value {
+    if let [val, ..] = vals {
+        match coerce_type(val, &TypeDecl::I64) {
+            Value::I64(i) => {
+                Value::Str(format!("{:02x}", i))
+            }
+            _ => panic!("hex_string() could not convert argument to i64"),
+        }
+    } else {
+        Value::Str("".to_string())
+    }
+}
+
 #[derive(Clone)]
 pub struct FuncCode<'src, 'ast> {
     args: &'ast Vec<ArgDecl<'src>>,
@@ -466,6 +479,7 @@ impl<'src, 'ast, 'native, 'ctx> EvalContext<'src, 'ast, 'native, 'ctx> {
         functions.insert("type".to_string(), FuncDef::Native(&s_type));
         functions.insert("len".to_string(), FuncDef::Native(&s_len));
         functions.insert("push".to_string(), FuncDef::Native(&s_push));
+        functions.insert("hex_string".to_string(), FuncDef::Native(&s_hex_string));
         Self {
             variables: RefCell::new(HashMap::new()),
             functions,

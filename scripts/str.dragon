@@ -11,3 +11,9 @@ print(s);
 var l: i64 = "some text\nhello";
 
 print(l);
+
+var hello = "Hello, ";
+var world = "world!";
+
+print(hello + world);
+
