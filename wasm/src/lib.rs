@@ -10,6 +10,8 @@ extern "C" {
 #[wasm_bindgen(module = "/wasm_api.js")]
 extern "C" {
     pub(crate) fn wasm_print(s: &str);
+    pub(crate) fn wasm_rectangle(x0: i32, y0: i32, x1: i32, y1: i32);
+    pub(crate) fn wasm_set_fill_style(s: &str);
 }
 
 fn s_print(vals: &[Value]) -> Value {
@@ -60,11 +62,36 @@ fn s_puts(vals: &[Value]) -> Value {
     Value::I32(0)
 }
 
+fn s_rectangle(vals: &[Value]) -> Value {
+    let mut i32vals = vals.iter().take(4).map(|val| {
+        if let Value::I32(v) = coerce_type(val, &TypeDecl::I32) {
+            v
+        } else {
+            panic!("wrong type!");
+        }
+    });
+    let x0 = i32vals.next().unwrap();
+    let y0 = i32vals.next().unwrap();
+    let x1 = i32vals.next().unwrap();
+    let y1 = i32vals.next().unwrap();
+    wasm_rectangle(x0, y0, x1, y1);
+    Value::I32(0)
+}
+
+fn s_set_fill_style(vals: &[Value]) -> Value {
+    if let [Value::Str(s), ..] = vals {
+        wasm_set_fill_style(s);
+    }
+    Value::I32(0)
+}
+
 #[wasm_bindgen]
 pub fn entry(src: &str) -> Result<(), JsValue> {
     let mut ctx = EvalContext::new();
     ctx.set_fn("print", FuncDef::Native(&s_print));
     ctx.set_fn("puts", FuncDef::Native(&s_puts));
+    ctx.set_fn("set_fill_style", FuncDef::Native(&s_set_fill_style));
+    ctx.set_fn("rectangle", FuncDef::Native(&s_rectangle));
     run(&source(src).unwrap().1, &mut ctx)
         .map_err(|e| JsValue::from_str(&format!("Error on execution: {:?}", e)))?;
     Ok(())

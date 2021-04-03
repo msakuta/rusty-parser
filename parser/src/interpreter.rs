@@ -121,7 +121,7 @@ fn _coerce_var(value: &Value, target: &Value) -> Value {
     }
 }
 
-fn coerce_type(value: &Value, target: &TypeDecl) -> Value {
+pub fn coerce_type(value: &Value, target: &TypeDecl) -> Value {
     match target {
         TypeDecl::Any => value.clone(),
         TypeDecl::F64 => Value::F64(coerce_f64(value)),

@@ -6,6 +6,9 @@ async function run() {
 
     // Clear output
     document.getElementById("output").value = "";
+    const canvas = document.getElementById("canvas");
+    const canvasRect = canvas.getBoundingClientRect();
+    canvas.getContext("2d").clearRect(0, 0, canvasRect.width, canvasRect.height);
 
     const source = document.getElementById("input").value;
     entry(source);
@@ -19,7 +22,7 @@ window.onload = () => {
 
     ["expr.dragon", "factorial.dragon", "fibonacci.dragon", "recurse.dragon", "mandel.dragon",
      "str.dragon", "type.dragon", "sieve.dragon",
-     "if.dragon", "for.dragon", "fn.dragon", "array.dragon", "array_reverse.dragon"]
+     "if.dragon", "for.dragon", "fn.dragon", "array.dragon", "array_reverse.dragon", "canvas.dragon"]
      .forEach(fileName => {
         const link = document.createElement("a");
         link.href = "#";
