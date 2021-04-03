@@ -19,7 +19,7 @@
             }
             .justify {
                 text-align: justify;
-                padding: 4em;
+                padding: 2em;
             }
         </style>
     </head>
@@ -52,6 +52,7 @@ print(fact(10));</textarea>
             <textarea  id="output" type="text" readonly cols="120"  rows="20" ></textarea>
         </div>
 
+        <h2>Canvas:</h2>
         <canvas id="canvas" width="320" height="240" style="border: solid 1px black"> </canvas>
 
         <div class="justify">
@@ -77,8 +78,11 @@ print(fact(10));</textarea>
             <ul>
             <li>print(s, ...) - Prints arguments to the output and a newline.</li>
             <li>puts(s, ...) - Prints arguments without a newline.</li>
+            <li>type(obj) - Returns a string representing type of given object.</li>
             <li>len(a: []) -> i64 - Returns length of a given array.</li>
             <li>push(a: [], val) - Puts an element at the end of the array, expanding its length by 1.</li>
+            <li>set_fill_style(style) - Sets style for painting on the canvas.</li>
+            <li>rectangle(x: i32, y: i32, width: i32, height: i32) - Draws a filled rectangle on the canvas.</li>
             </ul>
         </div>
 
