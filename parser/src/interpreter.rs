@@ -56,31 +56,34 @@ fn binary_op(
 }
 
 fn truthy(a: &Value) -> bool {
-    match *a {
-        Value::F64(v) => v != 0.,
-        Value::F32(v) => v != 0.,
-        Value::I64(v) => v != 0,
-        Value::I32(v) => v != 0,
+    match a {
+        Value::F64(v) => *v != 0.,
+        Value::F32(v) => *v != 0.,
+        Value::I64(v) => *v != 0,
+        Value::I32(v) => *v != 0,
+        Value::Ref(r) => truthy(&r.borrow()),
         _ => false,
     }
 }
 
 fn coerce_f64(a: &Value) -> f64 {
-    match *a {
-        Value::F64(v) => v as f64,
-        Value::F32(v) => v as f64,
-        Value::I64(v) => v as f64,
-        Value::I32(v) => v as f64,
+    match a {
+        Value::F64(v) => *v as f64,
+        Value::F32(v) => *v as f64,
+        Value::I64(v) => *v as f64,
+        Value::I32(v) => *v as f64,
+        Value::Ref(r) => coerce_f64(&r.borrow()),
         _ => 0.,
     }
 }
 
 fn coerce_i64(a: &Value) -> i64 {
-    match *a {
-        Value::F64(v) => v as i64,
-        Value::F32(v) => v as i64,
-        Value::I64(v) => v as i64,
-        Value::I32(v) => v as i64,
+    match a {
+        Value::F64(v) => *v as i64,
+        Value::F32(v) => *v as i64,
+        Value::I64(v) => *v as i64,
+        Value::I32(v) => *v as i64,
+        Value::Ref(r) => coerce_i64(&r.borrow()),
         _ => 0,
     }
 }
