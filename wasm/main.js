@@ -21,7 +21,7 @@ window.onload = () => {
     const samples = document.getElementById("samples");
 
     ["expr.dragon", "factorial.dragon", "fibonacci.dragon", "recurse.dragon", "mandel.dragon",
-     "str.dragon", "type.dragon", "sieve.dragon",
+    "mandel_canvas.dragon", "str.dragon", "type.dragon", "sieve.dragon",
      "if.dragon", "for.dragon", "fn.dragon", "array.dragon", "array_reverse.dragon", "canvas.dragon"]
      .forEach(fileName => {
         const link = document.createElement("a");
