@@ -22,11 +22,12 @@ macro_rules! unwrap_run {
     };
 }
 
-fn binary_op(
+fn binary_op_str(
     lhs: Value,
     rhs: Value,
     d: impl Fn(f64, f64) -> f64,
     i: impl Fn(i64, i64) -> i64,
+    s: impl Fn(&str, &str) -> String,
 ) -> Value {
     match (lhs.clone(), rhs.clone()) {
         (Value::F64(lhs), rhs) => Value::F64(d(lhs, coerce_f64(&rhs))),
@@ -37,11 +38,21 @@ fn binary_op(
         (Value::I64(lhs), Value::I32(rhs)) => Value::I64(i(lhs, rhs as i64)),
         (Value::I32(lhs), Value::I64(rhs)) => Value::I64(i(lhs as i64, rhs)),
         (Value::I32(lhs), Value::I32(rhs)) => Value::I32(i(lhs as i64, rhs as i64) as i32),
+        (Value::Str(lhs), Value::Str(rhs)) => Value::Str(s(&lhs, &rhs)),
         _ => panic!(format!(
             "Unsupported addition between {:?} and {:?}",
             lhs, rhs
         )),
     }
+}
+
+fn binary_op(
+    lhs: Value,
+    rhs: Value,
+    d: impl Fn(f64, f64) -> f64,
+    i: impl Fn(i64, i64) -> i64
+) -> Value {
+    binary_op_str(lhs, rhs, d, i, |_lhs, _rhs| panic!("This operator is not supported for strings"))
 }
 
 fn truthy(a: &Value) -> bool {
@@ -239,11 +250,12 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
             }))
         }
         Expression::Add(lhs, rhs) => {
-            let res = RunResult::Yield(binary_op(
+            let res = RunResult::Yield(binary_op_str(
                 unwrap_run!(eval(lhs, ctx)),
                 unwrap_run!(eval(rhs, ctx)),
                 |lhs, rhs| lhs + rhs,
                 |lhs, rhs| lhs + rhs,
+                |lhs: &str, rhs: &str| lhs.to_string() + rhs,
             ));
             res
         }
