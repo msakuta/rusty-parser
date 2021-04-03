@@ -25,6 +25,7 @@ jobs:
         cd wasm && wasm-pack build --target web &&
         mkdir dist &&
         cp -r ../scripts ./dist/scripts &&
+        cp -r ./scripts ./dist/scripts &&
         rm ./pkg/.gitignore &&
         mv ./pkg ./dist/pkg &&
         cp index.html *.js dist/
