@@ -213,7 +213,10 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
                     }
                     let run_result = run(func.stmts, &mut subctx).unwrap();
                     match unwrap_deref(run_result) {
-                        RunResult::Yield(v) => RunResult::Yield(v),
+                        RunResult::Yield(v) => match &func.ret_type {
+                            Some(ty) => RunResult::Yield(coerce_type(&v, ty)),
+                            None => RunResult::Yield(v),
+                        },
                         RunResult::Break => panic!("break in function toplevel"),
                     }
                 }
@@ -439,6 +442,7 @@ fn s_hex_string(vals: &[Value]) -> Value {
 #[derive(Clone)]
 pub struct FuncCode<'src, 'ast> {
     args: &'ast Vec<ArgDecl<'src>>,
+    ret_type: Option<TypeDecl>,
     stmts: &'ast Vec<Statement<'src>>,
 }
 
@@ -569,8 +573,14 @@ pub fn run<'src, 'ast>(
                 ret_type,
                 stmts,
             } => {
-                ctx.functions
-                    .insert(name.to_string(), FuncDef::Code(FuncCode { args, stmts }));
+                ctx.functions.insert(
+                    name.to_string(),
+                    FuncDef::Code(FuncCode {
+                        args,
+                        ret_type: ret_type.clone(),
+                        stmts,
+                    }),
+                );
             }
             Statement::Expression(e) => {
                 res = eval(&e, ctx);
