@@ -145,3 +145,68 @@ fn parens_test() {
         ))
     );
 }
+
+fn var_r(name: &str) -> Box<Expression> {
+    Box::new(Expression::Variable(name))
+}
+
+#[test]
+fn fn_decl_test() {
+    assert_eq!(
+        func_decl(
+            "fn f(a) {
+        x = 123;
+        x * a;
+    }"
+        ),
+        Ok((
+            "",
+            Statement::FnDecl {
+                name: "f",
+                args: vec![ArgDecl("a", TypeDecl::Any)],
+                ret_type: None,
+                stmts: vec![
+                    Statement::Expression(Expression::VarAssign(
+                        var_r("x"),
+                        Box::new(Expression::NumLiteral(Value::I64(123)))
+                    )),
+                    Statement::Expression(Expression::Mult(
+                        Box::new(Expression::Variable("x")),
+                        Box::new(Expression::Variable("a"))
+                    ))
+                ]
+            }
+        ))
+    );
+    assert_eq!(func_arg("a: i32"), Ok(("", ArgDecl("a", TypeDecl::I32))),);
+    assert_eq!(
+        func_decl("fn f(a: i32) { a * 2 }"),
+        Ok((
+            "",
+            Statement::FnDecl {
+                name: "f",
+                args: vec![ArgDecl("a", TypeDecl::I32)],
+                ret_type: None,
+                stmts: vec![Statement::Expression(Expression::Mult(
+                    Box::new(Expression::Variable("a")),
+                    Box::new(Expression::NumLiteral(Value::I64(2)))
+                ))]
+            }
+        ))
+    );
+    assert_eq!(
+        func_decl("fn f(a: i32) -> f64 { a * 2 }"),
+        Ok((
+            "",
+            Statement::FnDecl {
+                name: "f",
+                args: vec![ArgDecl("a", TypeDecl::I32)],
+                ret_type: Some(TypeDecl::F64),
+                stmts: vec![Statement::Expression(Expression::Mult(
+                    Box::new(Expression::Variable("a")),
+                    Box::new(Expression::NumLiteral(Value::I64(2)))
+                ))]
+            }
+        ))
+    );
+}

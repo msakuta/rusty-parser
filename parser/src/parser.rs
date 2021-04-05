@@ -93,7 +93,12 @@ pub struct ArgDecl<'a>(pub &'a str, pub TypeDecl);
 pub enum Statement<'a> {
     Comment(&'a str),
     VarDecl(&'a str, TypeDecl, Option<Expression<'a>>),
-    FnDecl(&'a str, Vec<ArgDecl<'a>>, Vec<Statement<'a>>),
+    FnDecl {
+        name: &'a str,
+        args: Vec<ArgDecl<'a>>,
+        ret_type: Option<TypeDecl>,
+        stmts: Vec<Statement<'a>>,
+    },
     Expression(Expression<'a>),
     Loop(Vec<Statement<'a>>),
     While(Expression<'a>, Vec<Statement<'a>>),
@@ -176,10 +181,14 @@ fn type_array(input: &str) -> IResult<&str, TypeDecl> {
     Ok((r, TypeDecl::Array(Box::new(arr))))
 }
 
+pub(crate) fn type_decl(input: &str) -> IResult<&str, TypeDecl> {
+    alt((type_array, type_scalar))(input)
+}
+
 pub(crate) fn type_spec(input: &str) -> IResult<&str, TypeDecl> {
     let (r, type_) = opt(delimited(
         delimited(multispace0, tag(":"), multispace0),
-        alt((type_array, type_scalar)),
+        type_decl,
         multispace0,
     ))(input)?;
     Ok((
@@ -493,7 +502,7 @@ pub(crate) fn func_arg(input: &str) -> IResult<&str, ArgDecl> {
 
 pub(crate) fn func_decl(input: &str) -> IResult<&str, Statement> {
     let (r, _) = multispace1(tag("fn")(multispace0(input)?.0)?.0)?;
-    let (r, ident) = identifier(r)?;
+    let (r, name) = identifier(r)?;
     let (r, args) = delimited(
         multispace0,
         delimited(
@@ -507,12 +516,24 @@ pub(crate) fn func_decl(input: &str) -> IResult<&str, Statement> {
         ),
         multispace0,
     )(r)?;
+    let (r, ret_type) = opt(preceded(
+        delimited(multispace0, tag("->"), multispace0),
+        type_decl,
+    ))(r)?;
     let (r, stmts) = delimited(
         delimited(multispace0, tag("{"), multispace0),
         source,
         delimited(multispace0, tag("}"), multispace0),
     )(r)?;
-    Ok((r, Statement::FnDecl(ident, args, stmts)))
+    Ok((
+        r,
+        Statement::FnDecl {
+            name,
+            args,
+            ret_type,
+            stmts,
+        },
+    ))
 }
 
 fn loop_stmt(input: &str) -> IResult<&str, Statement> {

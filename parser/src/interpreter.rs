@@ -50,9 +50,11 @@ fn binary_op(
     lhs: Value,
     rhs: Value,
     d: impl Fn(f64, f64) -> f64,
-    i: impl Fn(i64, i64) -> i64
+    i: impl Fn(i64, i64) -> i64,
 ) -> Value {
-    binary_op_str(lhs, rhs, d, i, |_lhs, _rhs| panic!("This operator is not supported for strings"))
+    binary_op_str(lhs, rhs, d, i, |_lhs, _rhs| {
+        panic!("This operator is not supported for strings")
+    })
 }
 
 fn truthy(a: &Value) -> bool {
@@ -426,9 +428,7 @@ fn s_push(vals: &[Value]) -> Value {
 fn s_hex_string(vals: &[Value]) -> Value {
     if let [val, ..] = vals {
         match coerce_type(val, &TypeDecl::I64) {
-            Value::I64(i) => {
-                Value::Str(format!("{:02x}", i))
-            }
+            Value::I64(i) => Value::Str(format!("{:02x}", i)),
             _ => panic!("hex_string() could not convert argument to i64"),
         }
     } else {
@@ -563,9 +563,14 @@ pub fn run<'src, 'ast>(
                     .borrow_mut()
                     .insert(*var, Rc::new(RefCell::new(init_val)));
             }
-            Statement::FnDecl(var, args, stmts) => {
+            Statement::FnDecl {
+                name,
+                args,
+                ret_type,
+                stmts,
+            } => {
                 ctx.functions
-                    .insert(var.to_string(), FuncDef::Code(FuncCode { args, stmts }));
+                    .insert(name.to_string(), FuncDef::Code(FuncCode { args, stmts }));
             }
             Statement::Expression(e) => {
                 res = eval(&e, ctx);

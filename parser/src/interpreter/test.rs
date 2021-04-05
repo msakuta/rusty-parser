@@ -87,50 +87,6 @@ fn var_assign_test() {
 }
 
 #[test]
-fn fn_decl_test() {
-    assert_eq!(
-        func_decl(
-            "fn f(a) {
-        x = 123;
-        x * a;
-    }"
-        ),
-        Ok((
-            "",
-            Statement::FnDecl(
-                "f",
-                vec![ArgDecl("a", TypeDecl::Any)],
-                vec![
-                    Statement::Expression(Expression::VarAssign(
-                        var_r("x"),
-                        Box::new(Expression::NumLiteral(Value::I64(123)))
-                    )),
-                    Statement::Expression(Expression::Mult(
-                        Box::new(Expression::Variable("x")),
-                        Box::new(Expression::Variable("a"))
-                    ))
-                ]
-            )
-        ))
-    );
-    assert_eq!(func_arg("a: i32"), Ok(("", ArgDecl("a", TypeDecl::I32))),);
-    assert_eq!(
-        func_decl("fn f(a: i32) { a * 2 }"),
-        Ok((
-            "",
-            Statement::FnDecl(
-                "f",
-                vec![ArgDecl("a", TypeDecl::I32)],
-                vec![Statement::Expression(Expression::Mult(
-                    Box::new(Expression::Variable("a")),
-                    Box::new(Expression::NumLiteral(Value::I64(2)))
-                ))]
-            )
-        ))
-    );
-}
-
-#[test]
 fn fn_invoke_test() {
     assert_eq!(
         source("f();"),
@@ -526,14 +482,15 @@ fn fn_array_decl_test() {
         func_decl("fn f(a: [i32]) { x = 123; }"),
         Ok((
             "",
-            Statement::FnDecl(
-                "f",
-                vec![ArgDecl("a", TypeDecl::Array(Box::new(TypeDecl::I32)))],
-                vec![Statement::Expression(Expression::VarAssign(
+            Statement::FnDecl {
+                name: "f",
+                args: vec![ArgDecl("a", TypeDecl::Array(Box::new(TypeDecl::I32)))],
+                ret_type: None,
+                stmts: vec![Statement::Expression(Expression::VarAssign(
                     var_r("x"),
                     Box::new(Expression::NumLiteral(Value::I64(123)))
                 ))]
-            )
+            }
         ))
     );
 }
