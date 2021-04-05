@@ -56,7 +56,7 @@ In ascending order of difficulty.
 * [ ] String manipulations
 * [x] Array types
 * [x] WebAssembly build target
-* [ ] Function return types
+* [x] Function return types
 * [ ] Proper error handling
 * [ ] Tuple types
 * [ ] Multi-dimensional arrays
