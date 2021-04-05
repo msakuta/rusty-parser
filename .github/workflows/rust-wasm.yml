@@ -24,4 +24,4 @@ jobs:
     - name: Build
       run: cd wasm && wasm-pack build --target web
     - name: Run tests
-      run: cd wasm && cargo test --verbose
+      run: cd parser && cargo test --verbose
