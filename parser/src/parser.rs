@@ -611,6 +611,7 @@ pub(crate) fn statement(input: &str) -> IResult<&str, Statement> {
 pub fn source(input: &str) -> IResult<&str, Vec<Statement>> {
     let (r, mut v) = many0(statement)(input)?;
     let (r, last) = opt(last_statement)(r)?;
+    let (r, _) = opt(multispace0)(r)?;
     if let Some(last) = last {
         v.push(last);
     }
