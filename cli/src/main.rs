@@ -4,9 +4,7 @@ use std::env;
 use std::fs::File;
 use std::io::prelude::*;
 
-fn main() -> std::io::Result<()> {
-    let args: Vec<String> = env::args().collect();
-
+fn main() -> Result<(), String> {
     let matches = App::new("rusty-parser")
         .version(crate_version!())
         .author(crate_authors!())
@@ -22,16 +20,19 @@ fn main() -> std::io::Result<()> {
         if 0 < matches.occurrences_of("e") {
             file
         } else if let Ok(mut file) = File::open(&file) {
-            file.read_to_string(&mut contents)?;
+            file.read_to_string(&mut contents)
+                .map_err(|e| e.to_string())?;
             &contents
         } else {
-            eprint!("Error: can't open file");
-            return Ok(());
+            return Err("Error: can't open file".to_string());
         }
     } else {
         return Ok(());
     };
     if let Ok(result) = source(code) {
+        if 0 < result.0.len() {
+            return Err(format!("Input has terminated unexpectedly: {:?}", result.0));
+        }
         println!("Match: {:?}", result.1);
         run(&result.1, &mut EvalContext::new()).expect("Error in run()");
     } else {
