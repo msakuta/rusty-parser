@@ -65,7 +65,7 @@ fn s_puts(vals: &[Value]) -> Value {
 
 fn s_rectangle(vals: &[Value]) -> Value {
     let mut i32vals = vals.iter().take(4).map(|val| {
-        if let Value::I32(v) = coerce_type(val, &TypeDecl::I32) {
+        if let Ok(Value::I32(v)) = coerce_type(val, &TypeDecl::I32) {
             v
         } else {
             panic!("wrong type!");
