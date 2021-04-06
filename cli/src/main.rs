@@ -13,6 +13,7 @@ fn main() -> Result<(), String> {
             "<INPUT>, 'Input source file name or one-linear program'",
         ))
         .arg(Arg::from_usage("-e, 'Evaluate one line program'"))
+        .arg(Arg::from_usage("-a, 'Show AST'"))
         .get_matches();
 
     let mut contents = String::new();
@@ -33,7 +34,9 @@ fn main() -> Result<(), String> {
         if 0 < result.0.len() {
             return Err(format!("Input has terminated unexpectedly: {:?}", result.0));
         }
-        println!("Match: {:?}", result.1);
+        if 0 < matches.occurrences_of("a") {
+            println!("Match: {:?}", result.1);
+        }
         run(&result.1, &mut EvalContext::new()).expect("Error in run()");
     } else {
         println!("failed");
