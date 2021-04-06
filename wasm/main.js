@@ -1,20 +1,30 @@
-import init, { entry } from "./pkg/rusty_parser_wasm.js";
+import init, { entry, parse_ast } from "./pkg/rusty_parser_wasm.js";
 
 
-async function run() {
+async function runCommon(process) {
     await init();
 
     // Clear output
-    document.getElementById("output").value = "";
+    const output = document.getElementById("output");
+    output.value = "";
     const canvas = document.getElementById("canvas");
     const canvasRect = canvas.getBoundingClientRect();
     canvas.getContext("2d").clearRect(0, 0, canvasRect.width, canvasRect.height);
 
     const source = document.getElementById("input").value;
-    entry(source);
+    try{
+        process(source);
+    }
+    catch(e){
+        output.value = e;
+    }
 }
 
-document.getElementById("run").addEventListener("click", run);
+document.getElementById("run").addEventListener("click", () => runCommon(entry));
+document.getElementById("parseAst").addEventListener("click", () => runCommon(source => {
+    const result = parse_ast(source);
+    document.getElementById("output").value = result;
+}));
 
 // Wait for the html to fully load before loading main.js, since it assumes static html elements exist.
 window.onload = () => {

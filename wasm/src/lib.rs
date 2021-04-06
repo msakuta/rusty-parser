@@ -1,3 +1,4 @@
+use nom::Finish;
 use parser::*;
 use wasm_bindgen::prelude::*;
 
@@ -92,7 +93,24 @@ pub fn entry(src: &str) -> Result<(), JsValue> {
     ctx.set_fn("puts", FuncDef::Native(&s_puts));
     ctx.set_fn("set_fill_style", FuncDef::Native(&s_set_fill_style));
     ctx.set_fn("rectangle", FuncDef::Native(&s_rectangle));
-    run(&source(src).unwrap().1, &mut ctx)
+    let parse_result = source(src)
+        .finish()
+        .map_err(|e| JsValue::from_str(&format!("Parse error: {:?}", e)))?;
+    if 0 < parse_result.0.len() {
+        return Err(JsValue::from_str(&format!(
+            "Unexpected end of input at: {:?}",
+            parse_result.0
+        )));
+    }
+    run(&parse_result.1, &mut ctx)
         .map_err(|e| JsValue::from_str(&format!("Error on execution: {:?}", e)))?;
     Ok(())
+}
+
+#[wasm_bindgen]
+pub fn parse_ast(src: &str) -> Result<String, JsValue> {
+    let parse_result = source(src)
+        .finish()
+        .map_err(|e| JsValue::from_str(&format!("Parse error: {:?}", e)))?;
+    Ok(format!("{:#?}", parse_result.1))
 }
