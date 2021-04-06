@@ -1,6 +1,14 @@
 use crate::parser::*;
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
+#[derive(Debug, PartialEq, Clone)]
+pub enum RunResult {
+    Yield(Value),
+    Break,
+}
+
+type EvalError = String;
+
 fn unwrap_deref(e: RunResult) -> RunResult {
     match &e {
         RunResult::Yield(Value::Ref(vref)) => {
@@ -17,7 +25,7 @@ macro_rules! unwrap_run {
     ($e:expr) => {
         match unwrap_deref($e) {
             RunResult::Yield(v) => v,
-            RunResult::Break => return RunResult::Break,
+            RunResult::Break => return Ok(RunResult::Break),
         }
     };
 }
@@ -163,46 +171,46 @@ pub fn coerce_type(value: &Value, target: &TypeDecl) -> Value {
     }
 }
 
-fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) -> RunResult {
-    match e {
+fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) -> Result<RunResult, EvalError> {
+    Ok(match e {
         Expression::NumLiteral(val) => RunResult::Yield(val.clone()),
         Expression::StrLiteral(val) => RunResult::Yield(Value::Str(val.clone())),
         Expression::ArrLiteral(val) => RunResult::Yield(Value::Array(
             TypeDecl::Any,
             val.iter()
                 .map(|v| {
-                    if let RunResult::Yield(y) = eval(v, ctx) {
-                        Rc::new(RefCell::new(y))
+                    if let RunResult::Yield(y) = eval(v, ctx)? {
+                        Ok(Rc::new(RefCell::new(y)))
                     } else {
-                        panic!("Break in array literal not supported");
+                        Err("Break in array literal not supported".to_string())
                     }
                 })
-                .collect(),
+                .collect::<Result<Vec<_>, _>>()?,
         )),
         Expression::Variable(str) => RunResult::Yield(Value::Ref(
             ctx.get_var_rc(str)
-                .expect(&format!("Variable {} not found in scope", str)),
+                .ok_or_else(|| format!("Variable {} not found in scope", str))?,
         )),
         Expression::VarAssign(lhs, rhs) => {
-            let lhs_value = eval(lhs, ctx);
-            let lhs_value = if let RunResult::Yield(Value::Ref(rc)) = lhs_value {
+            let lhs_result = eval(lhs, ctx)?;
+            let lhs_value = if let RunResult::Yield(Value::Ref(rc)) = lhs_result {
                 rc
             } else {
-                panic!(format!(
+                return Err(format!(
                     "We need variable reference on lhs to assign. Actually we got {:?}",
-                    lhs_value
-                ))
+                    lhs_result
+                ));
             };
-            let rhs_value = unwrap_run!(eval(rhs, ctx));
+            let rhs_value = unwrap_run!(eval(rhs, ctx)?);
             *lhs_value.borrow_mut() = rhs_value.clone();
             RunResult::Yield(rhs_value)
         }
         Expression::FnInvoke(str, args) => {
-            let args = args.iter().map(|v| eval(v, ctx)).collect::<Vec<_>>();
+            let args = args.iter().map(|v| eval(v, ctx)).collect::<Result<Vec<_>, _>>()?;
             let mut subctx = EvalContext::push_stack(ctx);
             let func = ctx
                 .get_fn(*str)
-                .expect(&format!("function {} is not defined.", str));
+                .ok_or_else(|| format!("function {} is not defined.", str))?;
             match func {
                 FuncDef::Code(func) => {
                     for (k, v) in func.args.iter().zip(&args) {
@@ -211,7 +219,7 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
                             Rc::new(RefCell::new(coerce_type(&unwrap_run!(v.clone()), &k.1))),
                         );
                     }
-                    let run_result = run(func.stmts, &mut subctx).unwrap();
+                    let run_result = run(func.stmts, &mut subctx)?;
                     match unwrap_deref(run_result) {
                         RunResult::Yield(v) => match &func.ret_type {
                             Some(ty) => RunResult::Yield(coerce_type(&v, ty)),
@@ -234,7 +242,7 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
             }
         }
         Expression::ArrIndex(ex, args) => {
-            let args = args.iter().map(|v| eval(v, ctx)).collect::<Vec<_>>();
+            let args = args.iter().map(|v| eval(v, ctx)).collect::<Result<Vec<_>, _>>()?;
             let arg0 = match unwrap_deref(args[0].clone()) {
                 RunResult::Yield(v) => {
                     if let Value::I64(idx) = coerce_type(&v, &TypeDecl::I64) {
@@ -244,14 +252,14 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
                     }
                 }
                 RunResult::Break => {
-                    return RunResult::Break;
+                    return Ok(RunResult::Break);
                 }
             };
-            let result = unwrap_run!(eval(ex, ctx));
+            let result = unwrap_run!(eval(ex, ctx)?);
             RunResult::Yield(result.array_get_ref(arg0))
         }
         Expression::Not(val) => {
-            RunResult::Yield(Value::I32(if truthy(&unwrap_run!(eval(val, ctx))) {
+            RunResult::Yield(Value::I32(if truthy(&unwrap_run!(eval(val, ctx)?)) {
                 0
             } else {
                 1
@@ -259,8 +267,8 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
         }
         Expression::Add(lhs, rhs) => {
             let res = RunResult::Yield(binary_op_str(
-                unwrap_run!(eval(lhs, ctx)),
-                unwrap_run!(eval(rhs, ctx)),
+                unwrap_run!(eval(lhs, ctx)?),
+                unwrap_run!(eval(rhs, ctx)?),
                 |lhs, rhs| lhs + rhs,
                 |lhs, rhs| lhs + rhs,
                 |lhs: &str, rhs: &str| lhs.to_string() + rhs,
@@ -268,63 +276,63 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
             res
         }
         Expression::Sub(lhs, rhs) => RunResult::Yield(binary_op(
-            unwrap_run!(eval(lhs, ctx)),
-            unwrap_run!(eval(rhs, ctx)),
+            unwrap_run!(eval(lhs, ctx)?),
+            unwrap_run!(eval(rhs, ctx)?),
             |lhs, rhs| lhs - rhs,
             |lhs, rhs| lhs - rhs,
         )),
         Expression::Mult(lhs, rhs) => RunResult::Yield(binary_op(
-            unwrap_run!(eval(lhs, ctx)),
-            unwrap_run!(eval(rhs, ctx)),
+            unwrap_run!(eval(lhs, ctx)?),
+            unwrap_run!(eval(rhs, ctx)?),
             |lhs, rhs| lhs * rhs,
             |lhs, rhs| lhs * rhs,
         )),
         Expression::Div(lhs, rhs) => RunResult::Yield(binary_op(
-            unwrap_run!(eval(lhs, ctx)),
-            unwrap_run!(eval(rhs, ctx)),
+            unwrap_run!(eval(lhs, ctx)?),
+            unwrap_run!(eval(rhs, ctx)?),
             |lhs, rhs| lhs / rhs,
             |lhs, rhs| lhs / rhs,
         )),
         Expression::LT(lhs, rhs) => RunResult::Yield(binary_op(
-            unwrap_run!(eval(lhs, ctx)),
-            unwrap_run!(eval(rhs, ctx)),
+            unwrap_run!(eval(lhs, ctx)?),
+            unwrap_run!(eval(rhs, ctx)?),
             |lhs, rhs| if lhs < rhs { 1. } else { 0. },
             |lhs, rhs| if lhs < rhs { 1 } else { 0 },
         )),
         Expression::GT(lhs, rhs) => RunResult::Yield(binary_op(
-            unwrap_run!(eval(lhs, ctx)),
-            unwrap_run!(eval(rhs, ctx)),
+            unwrap_run!(eval(lhs, ctx)?),
+            unwrap_run!(eval(rhs, ctx)?),
             |lhs, rhs| if lhs > rhs { 1. } else { 0. },
             |lhs, rhs| if lhs > rhs { 1 } else { 0 },
         )),
         Expression::And(lhs, rhs) => RunResult::Yield(Value::I32(
-            if truthy(&unwrap_run!(eval(lhs, ctx))) && truthy(&unwrap_run!(eval(rhs, ctx))) {
+            if truthy(&unwrap_run!(eval(lhs, ctx)?)) && truthy(&unwrap_run!(eval(rhs, ctx)?)) {
                 1
             } else {
                 0
             },
         )),
         Expression::Or(lhs, rhs) => RunResult::Yield(Value::I32(
-            if truthy(&unwrap_run!(eval(lhs, ctx))) || truthy(&unwrap_run!(eval(rhs, ctx))) {
+            if truthy(&unwrap_run!(eval(lhs, ctx)?)) || truthy(&unwrap_run!(eval(rhs, ctx)?)) {
                 1
             } else {
                 0
             },
         )),
         Expression::Conditional(cond, true_branch, false_branch) => {
-            if truthy(&unwrap_run!(eval(cond, ctx))) {
-                run(true_branch, ctx).unwrap()
+            if truthy(&unwrap_run!(eval(cond, ctx)?)) {
+                run(true_branch, ctx)?
             } else if let Some(ast) = false_branch {
-                run(ast, ctx).unwrap()
+                run(ast, ctx)?
             } else {
                 RunResult::Yield(Value::I32(0))
             }
         }
         Expression::Brace(stmts) => {
             let mut subctx = EvalContext::push_stack(ctx);
-            run(stmts, &mut subctx).unwrap()
+            run(stmts, &mut subctx)?
         }
-    }
+    })
 }
 
 fn s_print(vals: &[Value]) -> Value {
@@ -534,12 +542,6 @@ impl<'src, 'ast, 'native, 'ctx> EvalContext<'src, 'ast, 'native, 'ctx> {
     }
 }
 
-#[derive(Debug, PartialEq, Clone)]
-pub enum RunResult {
-    Yield(Value),
-    Break,
-}
-
 macro_rules! unwrap_break {
     ($e:expr) => {
         match unwrap_deref($e) {
@@ -552,13 +554,13 @@ macro_rules! unwrap_break {
 pub fn run<'src, 'ast>(
     stmts: &'ast Vec<Statement<'src>>,
     ctx: &mut EvalContext<'src, 'ast, '_, '_>,
-) -> Result<RunResult, ()> {
+) -> Result<RunResult, EvalError> {
     let mut res = RunResult::Yield(Value::I32(0));
     for stmt in stmts {
         match stmt {
             Statement::VarDecl(var, type_, initializer) => {
                 let init_val = if let Some(init_expr) = initializer {
-                    unwrap_break!(eval(init_expr, ctx))
+                    unwrap_break!(eval(init_expr, ctx)?)
                 } else {
                     Value::I32(0)
                 };
@@ -583,7 +585,7 @@ pub fn run<'src, 'ast>(
                 );
             }
             Statement::Expression(e) => {
-                res = eval(&e, ctx);
+                res = eval(&e, ctx)?;
                 if let RunResult::Break = res {
                     return Ok(res);
                 }
@@ -593,7 +595,7 @@ pub fn run<'src, 'ast>(
                 res = RunResult::Yield(unwrap_break!(run(e, ctx)?));
             },
             Statement::While(cond, e) => loop {
-                match unwrap_deref(eval(cond, ctx)) {
+                match unwrap_deref(eval(cond, ctx)?) {
                     RunResult::Yield(v) => {
                         if !truthy(&v) {
                             break;
@@ -607,8 +609,8 @@ pub fn run<'src, 'ast>(
                 };
             },
             Statement::For(iter, from, to, e) => {
-                let from_res = coerce_i64(&unwrap_break!(eval(from, ctx))) as i64;
-                let to_res = coerce_i64(&unwrap_break!(eval(to, ctx))) as i64;
+                let from_res = coerce_i64(&unwrap_break!(eval(from, ctx)?)) as i64;
+                let to_res = coerce_i64(&unwrap_break!(eval(to, ctx)?)) as i64;
                 for i in from_res..to_res {
                     ctx.variables
                         .borrow_mut()

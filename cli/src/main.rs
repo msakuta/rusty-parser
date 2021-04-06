@@ -30,16 +30,13 @@ fn main() -> Result<(), String> {
     } else {
         return Ok(());
     };
-    if let Ok(result) = source(code) {
-        if 0 < result.0.len() {
-            return Err(format!("Input has terminated unexpectedly: {:?}", result.0));
-        }
-        if 0 < matches.occurrences_of("a") {
-            println!("Match: {:?}", result.1);
-        }
-        run(&result.1, &mut EvalContext::new()).expect("Error in run()");
-    } else {
-        println!("failed");
+    let result = source(code).map_err(|e| e.to_string())?;
+    if 0 < result.0.len() {
+        return Err(format!("Input has terminated unexpectedly: {:?}", result.0));
     }
+    if 0 < matches.occurrences_of("a") {
+        println!("Match: {:?}", result.1);
+    }
+    run(&result.1, &mut EvalContext::new()).map_err(|e| format!("Error in run(): {:?}", e))?;
     Ok(())
 }
