@@ -35,9 +35,9 @@ fn binary_op_str(
     rhs: Value,
     d: impl Fn(f64, f64) -> f64,
     i: impl Fn(i64, i64) -> i64,
-    s: impl Fn(&str, &str) -> String,
-) -> Value {
-    match (lhs.clone(), rhs.clone()) {
+    s: impl Fn(&str, &str) -> Result<String, EvalError>,
+) -> Result<Value, EvalError> {
+    Ok(match (lhs.clone(), rhs.clone()) {
         (Value::F64(lhs), rhs) => Value::F64(d(lhs, coerce_f64(&rhs))),
         (lhs, Value::F64(rhs)) => Value::F64(d(coerce_f64(&lhs), rhs)),
         (Value::F32(lhs), rhs) => Value::F32(d(lhs as f64, coerce_f64(&rhs)) as f32),
@@ -46,12 +46,12 @@ fn binary_op_str(
         (Value::I64(lhs), Value::I32(rhs)) => Value::I64(i(lhs, rhs as i64)),
         (Value::I32(lhs), Value::I64(rhs)) => Value::I64(i(lhs as i64, rhs)),
         (Value::I32(lhs), Value::I32(rhs)) => Value::I32(i(lhs as i64, rhs as i64) as i32),
-        (Value::Str(lhs), Value::Str(rhs)) => Value::Str(s(&lhs, &rhs)),
-        _ => panic!(format!(
+        (Value::Str(lhs), Value::Str(rhs)) => Value::Str(s(&lhs, &rhs)?),
+        _ => return Err(format!(
             "Unsupported addition between {:?} and {:?}",
             lhs, rhs
         )),
-    }
+    })
 }
 
 fn binary_op(
@@ -59,9 +59,9 @@ fn binary_op(
     rhs: Value,
     d: impl Fn(f64, f64) -> f64,
     i: impl Fn(i64, i64) -> i64,
-) -> Value {
+) -> Result<Value, EvalError> {
     binary_op_str(lhs, rhs, d, i, |_lhs, _rhs| {
-        panic!("This operator is not supported for strings")
+        Err("This operator is not supported for strings".to_string())
     })
 }
 
@@ -271,8 +271,8 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
                 unwrap_run!(eval(rhs, ctx)?),
                 |lhs, rhs| lhs + rhs,
                 |lhs, rhs| lhs + rhs,
-                |lhs: &str, rhs: &str| lhs.to_string() + rhs,
-            ));
+                |lhs: &str, rhs: &str| Ok(lhs.to_string() + rhs),
+            )?);
             res
         }
         Expression::Sub(lhs, rhs) => RunResult::Yield(binary_op(
@@ -280,31 +280,31 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
             unwrap_run!(eval(rhs, ctx)?),
             |lhs, rhs| lhs - rhs,
             |lhs, rhs| lhs - rhs,
-        )),
+        )?),
         Expression::Mult(lhs, rhs) => RunResult::Yield(binary_op(
             unwrap_run!(eval(lhs, ctx)?),
             unwrap_run!(eval(rhs, ctx)?),
             |lhs, rhs| lhs * rhs,
             |lhs, rhs| lhs * rhs,
-        )),
+        )?),
         Expression::Div(lhs, rhs) => RunResult::Yield(binary_op(
             unwrap_run!(eval(lhs, ctx)?),
             unwrap_run!(eval(rhs, ctx)?),
             |lhs, rhs| lhs / rhs,
             |lhs, rhs| lhs / rhs,
-        )),
+        )?),
         Expression::LT(lhs, rhs) => RunResult::Yield(binary_op(
             unwrap_run!(eval(lhs, ctx)?),
             unwrap_run!(eval(rhs, ctx)?),
             |lhs, rhs| if lhs < rhs { 1. } else { 0. },
             |lhs, rhs| if lhs < rhs { 1 } else { 0 },
-        )),
+        )?),
         Expression::GT(lhs, rhs) => RunResult::Yield(binary_op(
             unwrap_run!(eval(lhs, ctx)?),
             unwrap_run!(eval(rhs, ctx)?),
             |lhs, rhs| if lhs > rhs { 1. } else { 0. },
             |lhs, rhs| if lhs > rhs { 1 } else { 0 },
-        )),
+        )?),
         Expression::And(lhs, rhs) => RunResult::Yield(Value::I32(
             if truthy(&unwrap_run!(eval(lhs, ctx)?)) && truthy(&unwrap_run!(eval(rhs, ctx)?)) {
                 1
