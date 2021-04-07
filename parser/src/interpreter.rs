@@ -7,7 +7,7 @@ pub enum RunResult {
     Break,
 }
 
-type EvalError = String;
+pub type EvalError = String;
 
 fn unwrap_deref(e: RunResult) -> RunResult {
     match &e {
@@ -276,7 +276,7 @@ fn eval<'a, 'b>(
                 }
             };
             let result = unwrap_run!(eval(ex, ctx)?);
-            RunResult::Yield(result.array_get_ref(arg0))
+            RunResult::Yield(result.array_get_ref(arg0)?)
         }
         Expression::Not(val) => {
             RunResult::Yield(Value::I32(if truthy(&unwrap_run!(eval(val, ctx)?)) {

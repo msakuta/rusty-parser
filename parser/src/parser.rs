@@ -1,3 +1,4 @@
+use super::interpreter::EvalError;
 use nom::{
     branch::alt,
     bytes::complete::{tag, take_until},
@@ -51,12 +52,12 @@ impl Value {
         }
     }
 
-    pub fn array_get_ref(&self, idx: u64) -> Value {
-        match self {
-            Value::Ref(rc) => rc.borrow().array_get_ref(idx),
+    pub fn array_get_ref(&self, idx: u64) -> Result<Value, EvalError> {
+        Ok(match self {
+            Value::Ref(rc) => rc.borrow().array_get_ref(idx)?,
             Value::Array(_, array) => Value::Ref(array[idx as usize].clone()),
-            _ => panic!("array index must be called for an array"),
-        }
+            _ => return Err("array index must be called for an array".to_string()),
+        })
     }
 
     pub fn array_push(&mut self, value: Value) {
