@@ -47,10 +47,12 @@ fn binary_op_str(
         (Value::I32(lhs), Value::I64(rhs)) => Value::I64(i(lhs as i64, rhs)),
         (Value::I32(lhs), Value::I32(rhs)) => Value::I32(i(lhs as i64, rhs as i64) as i32),
         (Value::Str(lhs), Value::Str(rhs)) => Value::Str(s(&lhs, &rhs)?),
-        _ => return Err(format!(
-            "Unsupported addition between {:?} and {:?}",
-            lhs, rhs
-        )),
+        _ => {
+            return Err(format!(
+                "Unsupported addition between {:?} and {:?}",
+                lhs, rhs
+            ))
+        }
     })
 }
 
@@ -87,15 +89,15 @@ fn coerce_f64(a: &Value) -> f64 {
     }
 }
 
-fn coerce_i64(a: &Value) -> i64 {
-    match a {
+fn coerce_i64(a: &Value) -> Result<i64, EvalError> {
+    Ok(match a {
         Value::F64(v) => *v as i64,
         Value::F32(v) => *v as i64,
         Value::I64(v) => *v as i64,
         Value::I32(v) => *v as i64,
-        Value::Ref(r) => coerce_i64(&r.borrow()),
+        Value::Ref(r) => coerce_i64(&r.borrow())?,
         _ => 0,
-    }
+    })
 }
 
 fn coerce_str(a: &Value) -> String {
@@ -109,18 +111,18 @@ fn coerce_str(a: &Value) -> String {
     }
 }
 
-fn _coerce_var(value: &Value, target: &Value) -> Value {
-    match target {
+fn _coerce_var(value: &Value, target: &Value) -> Result<Value, EvalError> {
+    Ok(match target {
         Value::F64(_) => Value::F64(coerce_f64(value)),
         Value::F32(_) => Value::F32(coerce_f64(value) as f32),
-        Value::I64(_) => Value::I64(coerce_i64(value)),
-        Value::I32(_) => Value::I32(coerce_i64(value) as i32),
+        Value::I64(_) => Value::I64(coerce_i64(value)?),
+        Value::I32(_) => Value::I32(coerce_i64(value)? as i32),
         Value::Str(_) => Value::Str(coerce_str(value)),
         Value::Array(inner_type, inner) => {
             if inner.len() == 0 {
                 if let Value::Array(_, value_inner) = value {
                     if value_inner.len() == 0 {
-                        return value.clone();
+                        return Ok(value.clone());
                     }
                 }
                 panic!("Cannot coerce type to empty array");
@@ -130,10 +132,13 @@ fn _coerce_var(value: &Value, target: &Value) -> Value {
                         inner_type.clone(),
                         value_inner
                             .iter()
-                            .map(|val| {
-                                Rc::new(RefCell::new(coerce_type(&val.borrow(), inner_type)))
+                            .map(|val| -> Result<_, String> {
+                                Ok(Rc::new(RefCell::new(coerce_type(
+                                    &val.borrow(),
+                                    inner_type,
+                                )?)))
                             })
-                            .collect(),
+                            .collect::<Result<_, _>>()?,
                     )
                 } else {
                     panic!("Cannot coerce scalar to array");
@@ -142,16 +147,16 @@ fn _coerce_var(value: &Value, target: &Value) -> Value {
         }
         // We usually don't care about coercion
         Value::Ref(_) => value.clone(),
-    }
+    })
 }
 
-pub fn coerce_type(value: &Value, target: &TypeDecl) -> Value {
-    match target {
+pub fn coerce_type(value: &Value, target: &TypeDecl) -> Result<Value, EvalError> {
+    Ok(match target {
         TypeDecl::Any => value.clone(),
         TypeDecl::F64 => Value::F64(coerce_f64(value)),
         TypeDecl::F32 => Value::F32(coerce_f64(value) as f32),
-        TypeDecl::I64 => Value::I64(coerce_i64(value)),
-        TypeDecl::I32 => Value::I32(coerce_i64(value) as i32),
+        TypeDecl::I64 => Value::I64(coerce_i64(value)?),
+        TypeDecl::I32 => Value::I32(coerce_i64(value)? as i32),
         TypeDecl::Str => Value::Str(coerce_str(value)),
         TypeDecl::Array(inner) => {
             if let Value::Array(_, value_inner) = value {
@@ -159,19 +164,25 @@ pub fn coerce_type(value: &Value, target: &TypeDecl) -> Value {
                     (**inner).clone(),
                     value_inner
                         .iter()
-                        .map(|value_elem| {
-                            Rc::new(RefCell::new(coerce_type(&value_elem.borrow(), inner)))
+                        .map(|value_elem| -> Result<_, EvalError> {
+                            Ok(Rc::new(RefCell::new(coerce_type(
+                                &value_elem.borrow(),
+                                inner,
+                            )?)))
                         })
-                        .collect(),
+                        .collect::<Result<Vec<_>, _>>()?,
                 )
             } else {
                 panic!(format!("Incompatible type to array! {:?}", value));
             }
         }
-    }
+    })
 }
 
-fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) -> Result<RunResult, EvalError> {
+fn eval<'a, 'b>(
+    e: &'b Expression<'a>,
+    ctx: &mut EvalContext<'a, 'b, '_, '_>,
+) -> Result<RunResult, EvalError> {
     Ok(match e {
         Expression::NumLiteral(val) => RunResult::Yield(val.clone()),
         Expression::StrLiteral(val) => RunResult::Yield(Value::Str(val.clone())),
@@ -206,7 +217,10 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
             RunResult::Yield(rhs_value)
         }
         Expression::FnInvoke(str, args) => {
-            let args = args.iter().map(|v| eval(v, ctx)).collect::<Result<Vec<_>, _>>()?;
+            let args = args
+                .iter()
+                .map(|v| eval(v, ctx))
+                .collect::<Result<Vec<_>, _>>()?;
             let mut subctx = EvalContext::push_stack(ctx);
             let func = ctx
                 .get_fn(*str)
@@ -216,13 +230,13 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
                     for (k, v) in func.args.iter().zip(&args) {
                         subctx.variables.borrow_mut().insert(
                             k.0,
-                            Rc::new(RefCell::new(coerce_type(&unwrap_run!(v.clone()), &k.1))),
+                            Rc::new(RefCell::new(coerce_type(&unwrap_run!(v.clone()), &k.1)?)),
                         );
                     }
                     let run_result = run(func.stmts, &mut subctx)?;
                     match unwrap_deref(run_result) {
                         RunResult::Yield(v) => match &func.ret_type {
-                            Some(ty) => RunResult::Yield(coerce_type(&v, ty)),
+                            Some(ty) => RunResult::Yield(coerce_type(&v, ty)?),
                             None => RunResult::Yield(v),
                         },
                         RunResult::Break => panic!("break in function toplevel"),
@@ -242,10 +256,13 @@ fn eval<'a, 'b>(e: &'b Expression<'a>, ctx: &mut EvalContext<'a, 'b, '_, '_>) ->
             }
         }
         Expression::ArrIndex(ex, args) => {
-            let args = args.iter().map(|v| eval(v, ctx)).collect::<Result<Vec<_>, _>>()?;
+            let args = args
+                .iter()
+                .map(|v| eval(v, ctx))
+                .collect::<Result<Vec<_>, _>>()?;
             let arg0 = match unwrap_deref(args[0].clone()) {
                 RunResult::Yield(v) => {
-                    if let Value::I64(idx) = coerce_type(&v, &TypeDecl::I64) {
+                    if let Value::I64(idx) = coerce_type(&v, &TypeDecl::I64)? {
                         idx as u64
                     } else {
                         panic!("Subscript type should be integer types");
@@ -438,7 +455,7 @@ fn s_push(vals: &[Value]) -> Value {
 
 fn s_hex_string(vals: &[Value]) -> Value {
     if let [val, ..] = vals {
-        match coerce_type(val, &TypeDecl::I64) {
+        match coerce_type(val, &TypeDecl::I64).unwrap() {
             Value::I64(i) => Value::Str(format!("{:02x}", i)),
             _ => panic!("hex_string() could not convert argument to i64"),
         }
@@ -564,7 +581,7 @@ pub fn run<'src, 'ast>(
                 } else {
                     Value::I32(0)
                 };
-                let init_val = coerce_type(&init_val, type_);
+                let init_val = coerce_type(&init_val, type_)?;
                 ctx.variables
                     .borrow_mut()
                     .insert(*var, Rc::new(RefCell::new(init_val)));
@@ -609,8 +626,8 @@ pub fn run<'src, 'ast>(
                 };
             },
             Statement::For(iter, from, to, e) => {
-                let from_res = coerce_i64(&unwrap_break!(eval(from, ctx)?)) as i64;
-                let to_res = coerce_i64(&unwrap_break!(eval(to, ctx)?)) as i64;
+                let from_res = coerce_i64(&unwrap_break!(eval(from, ctx)?))? as i64;
+                let to_res = coerce_i64(&unwrap_break!(eval(to, ctx)?))? as i64;
                 for i in from_res..to_res {
                     ctx.variables
                         .borrow_mut()
