@@ -28,9 +28,9 @@ jobs:
       run:
         cd wasm &&
         mkdir dist &&
+        npm ci && npm run build &&
         cp -r ../scripts ./dist/scripts &&
-        cp -r ./scripts/* ./dist/scripts/ &&
-        npm ci && npm run build
+        cp -r ./scripts/* ./dist/scripts/
     - name: Deploy
       uses: peaceiris/actions-gh-pages@v3
       with:
