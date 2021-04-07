@@ -1,12 +1,24 @@
 #![cfg(test)]
 
 use super::*;
+use nom::Finish;
 
 #[test]
 fn test_comments() {
     assert_eq!(
         Ok(("", Statement::Comment(" x * y "))),
         comment("/* x * y */")
+    );
+}
+
+#[test]
+fn test_comments_error() {
+    assert_eq!(
+        Err(nom::error::Error {
+            input: " x * y",
+            code: nom::error::ErrorKind::TakeUntil
+        }),
+        comment("/* x * y").finish()
     );
 }
 
