@@ -4,10 +4,10 @@ use super::*;
 
 fn eval0(s: &Expression) -> RunResult {
     let mut ctx = EvalContext::new();
-    eval(s, &mut ctx)
+    eval(s, &mut ctx).unwrap()
 }
 
-fn run0(s: &Vec<Statement>) -> Result<RunResult, ()> {
+fn run0(s: &Vec<Statement>) -> Result<RunResult, EvalError> {
     let mut ctx = EvalContext::new();
     run(s, &mut ctx)
 }
@@ -61,7 +61,7 @@ fn var_test() {
         .insert("x", Rc::new(RefCell::new(Value::F64(42.))));
     assert_eq!(
         eval(&expr(" x +  2 ").unwrap().1, &mut ctx),
-        RunResult::Yield(Value::F64(44.))
+        Ok(RunResult::Yield(Value::F64(44.)))
     );
 }
 
@@ -84,7 +84,7 @@ fn var_assign_test() {
     );
     assert_eq!(
         eval(&var_assign("x=12").unwrap().1, &mut ctx),
-        RunResult::Yield(Value::I64(12))
+        Ok(RunResult::Yield(Value::I64(12)))
     );
 }
 
