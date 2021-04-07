@@ -239,19 +239,22 @@ fn eval<'a, 'b>(
                             Some(ty) => RunResult::Yield(coerce_type(&v, ty)?),
                             None => RunResult::Yield(v),
                         },
-                        RunResult::Break => panic!("break in function toplevel"),
+                        RunResult::Break => return Err("break in function toplevel".to_string()),
                     }
                 }
                 FuncDef::Native(native) => RunResult::Yield(native(
                     &args
                         .into_iter()
-                        .map(|e| match e {
-                            RunResult::Yield(v) => v.clone(),
-                            RunResult::Break => {
-                                panic!("Break in function argument is not supported yet!")
-                            }
+                        .map(|e| {
+                            Ok(match e {
+                                RunResult::Yield(v) => v.clone(),
+                                RunResult::Break => {
+                                    return Err("Break in function argument is not supported yet!"
+                                        .to_string())
+                                }
+                            })
                         })
-                        .collect::<Vec<_>>(),
+                        .collect::<Result<Vec<_>, _>>()?,
                 )),
             }
         }
@@ -265,7 +268,7 @@ fn eval<'a, 'b>(
                     if let Value::I64(idx) = coerce_type(&v, &TypeDecl::I64)? {
                         idx as u64
                     } else {
-                        panic!("Subscript type should be integer types");
+                        return Err("Subscript type should be integer types".to_string());
                     }
                 }
                 RunResult::Break => {
