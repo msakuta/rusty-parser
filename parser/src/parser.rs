@@ -4,12 +4,16 @@ use nom::{
     bytes::complete::{tag, take_until},
     character::complete::{alpha1, alphanumeric1, char, multispace0, multispace1, none_of},
     combinator::{map_res, opt, recognize},
+    error::VerboseError,
     multi::{fold_many0, many0, many1},
     number::complete::recognize_float,
     sequence::{delimited, pair, preceded, terminated, tuple},
-    IResult,
 };
 use std::{cell::RefCell, rc::Rc};
+
+// Switch between simple error and verbose error
+// type IResult<I, O> = nom::IResult<I, O, nom::error::Error<I>>;
+type IResult<I, O> = nom::IResult<I, O, nom::error::VerboseError<I>>;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum TypeDecl {
@@ -216,6 +220,7 @@ fn var_decl(input: &str) -> IResult<&str, Statement> {
 }
 
 fn double_expr(input: &str) -> IResult<&str, Expression> {
+    use nom::error::ParseError;
     let (r, v) = recognize_float(input)?;
     // For now we have very simple conditinon to decide if it is a floating point literal
     // by a presense of a period.
@@ -223,18 +228,18 @@ fn double_expr(input: &str) -> IResult<&str, Expression> {
         r,
         Expression::NumLiteral(if v.contains('.') {
             let parsed = v.parse().map_err(|_| {
-                nom::Err::Error(nom::error::Error {
+                nom::Err::Error(VerboseError::from_error_kind(
                     input,
-                    code: nom::error::ErrorKind::Digit,
-                })
+                    nom::error::ErrorKind::Digit,
+                ))
             })?;
             Value::F64(parsed)
         } else {
             Value::I64(v.parse().map_err(|_| {
-                nom::Err::Error(nom::error::Error {
+                nom::Err::Error(VerboseError::from_error_kind(
                     input,
-                    code: nom::error::ErrorKind::Digit,
-                })
+                    nom::error::ErrorKind::Digit,
+                ))
             })?)
         }),
     ))
