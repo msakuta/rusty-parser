@@ -100,15 +100,15 @@ fn coerce_i64(a: &Value) -> Result<i64, EvalError> {
     })
 }
 
-fn coerce_str(a: &Value) -> String {
-    match a {
+fn coerce_str(a: &Value) -> Result<String, EvalError> {
+    Ok(match a {
         Value::F64(v) => v.to_string(),
         Value::F32(v) => v.to_string(),
         Value::I64(v) => v.to_string(),
         Value::I32(v) => v.to_string(),
         Value::Str(v) => v.clone(),
-        _ => panic!("Can't convert array to str"),
-    }
+        _ => return Err("Can't convert array to str".to_string()),
+    })
 }
 
 fn _coerce_var(value: &Value, target: &Value) -> Result<Value, EvalError> {
@@ -117,7 +117,7 @@ fn _coerce_var(value: &Value, target: &Value) -> Result<Value, EvalError> {
         Value::F32(_) => Value::F32(coerce_f64(value)? as f32),
         Value::I64(_) => Value::I64(coerce_i64(value)?),
         Value::I32(_) => Value::I32(coerce_i64(value)? as i32),
-        Value::Str(_) => Value::Str(coerce_str(value)),
+        Value::Str(_) => Value::Str(coerce_str(value)?),
         Value::Array(inner_type, inner) => {
             if inner.len() == 0 {
                 if let Value::Array(_, value_inner) = value {
@@ -125,7 +125,7 @@ fn _coerce_var(value: &Value, target: &Value) -> Result<Value, EvalError> {
                         return Ok(value.clone());
                     }
                 }
-                panic!("Cannot coerce type to empty array");
+                return Err("Cannot coerce type to empty array".to_string());
             } else {
                 if let Value::Array(_, value_inner) = value {
                     Value::Array(
@@ -141,7 +141,7 @@ fn _coerce_var(value: &Value, target: &Value) -> Result<Value, EvalError> {
                             .collect::<Result<_, _>>()?,
                     )
                 } else {
-                    panic!("Cannot coerce scalar to array");
+                    return Err("Cannot coerce scalar to array".to_string());
                 }
             }
         }
@@ -157,7 +157,7 @@ pub fn coerce_type(value: &Value, target: &TypeDecl) -> Result<Value, EvalError>
         TypeDecl::F32 => Value::F32(coerce_f64(value)? as f32),
         TypeDecl::I64 => Value::I64(coerce_i64(value)?),
         TypeDecl::I32 => Value::I32(coerce_i64(value)? as i32),
-        TypeDecl::Str => Value::Str(coerce_str(value)),
+        TypeDecl::Str => Value::Str(coerce_str(value)?),
         TypeDecl::Array(inner) => {
             if let Value::Array(_, value_inner) = value {
                 Value::Array(
@@ -173,7 +173,7 @@ pub fn coerce_type(value: &Value, target: &TypeDecl) -> Result<Value, EvalError>
                         .collect::<Result<Vec<_>, _>>()?,
                 )
             } else {
-                panic!(format!("Incompatible type to array! {:?}", value));
+                return Err(format!("Incompatible type to array! {:?}", value));
             }
         }
     })
