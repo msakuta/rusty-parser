@@ -38,10 +38,10 @@ fn binary_op_str(
     s: impl Fn(&str, &str) -> Result<String, EvalError>,
 ) -> Result<Value, EvalError> {
     Ok(match (lhs.clone(), rhs.clone()) {
-        (Value::F64(lhs), rhs) => Value::F64(d(lhs, coerce_f64(&rhs))),
-        (lhs, Value::F64(rhs)) => Value::F64(d(coerce_f64(&lhs), rhs)),
-        (Value::F32(lhs), rhs) => Value::F32(d(lhs as f64, coerce_f64(&rhs)) as f32),
-        (lhs, Value::F32(rhs)) => Value::F32(d(coerce_f64(&lhs), rhs as f64) as f32),
+        (Value::F64(lhs), rhs) => Value::F64(d(lhs, coerce_f64(&rhs)?)),
+        (lhs, Value::F64(rhs)) => Value::F64(d(coerce_f64(&lhs)?, rhs)),
+        (Value::F32(lhs), rhs) => Value::F32(d(lhs as f64, coerce_f64(&rhs)?) as f32),
+        (lhs, Value::F32(rhs)) => Value::F32(d(coerce_f64(&lhs)?, rhs as f64) as f32),
         (Value::I64(lhs), Value::I64(rhs)) => Value::I64(i(lhs, rhs)),
         (Value::I64(lhs), Value::I32(rhs)) => Value::I64(i(lhs, rhs as i64)),
         (Value::I32(lhs), Value::I64(rhs)) => Value::I64(i(lhs as i64, rhs)),
@@ -78,15 +78,15 @@ fn truthy(a: &Value) -> bool {
     }
 }
 
-fn coerce_f64(a: &Value) -> f64 {
-    match a {
+fn coerce_f64(a: &Value) -> Result<f64, EvalError> {
+    Ok(match a {
         Value::F64(v) => *v as f64,
         Value::F32(v) => *v as f64,
         Value::I64(v) => *v as f64,
         Value::I32(v) => *v as f64,
-        Value::Ref(r) => coerce_f64(&r.borrow()),
+        Value::Ref(r) => coerce_f64(&r.borrow())?,
         _ => 0.,
-    }
+    })
 }
 
 fn coerce_i64(a: &Value) -> Result<i64, EvalError> {
@@ -113,8 +113,8 @@ fn coerce_str(a: &Value) -> String {
 
 fn _coerce_var(value: &Value, target: &Value) -> Result<Value, EvalError> {
     Ok(match target {
-        Value::F64(_) => Value::F64(coerce_f64(value)),
-        Value::F32(_) => Value::F32(coerce_f64(value) as f32),
+        Value::F64(_) => Value::F64(coerce_f64(value)?),
+        Value::F32(_) => Value::F32(coerce_f64(value)? as f32),
         Value::I64(_) => Value::I64(coerce_i64(value)?),
         Value::I32(_) => Value::I32(coerce_i64(value)? as i32),
         Value::Str(_) => Value::Str(coerce_str(value)),
@@ -153,8 +153,8 @@ fn _coerce_var(value: &Value, target: &Value) -> Result<Value, EvalError> {
 pub fn coerce_type(value: &Value, target: &TypeDecl) -> Result<Value, EvalError> {
     Ok(match target {
         TypeDecl::Any => value.clone(),
-        TypeDecl::F64 => Value::F64(coerce_f64(value)),
-        TypeDecl::F32 => Value::F32(coerce_f64(value) as f32),
+        TypeDecl::F64 => Value::F64(coerce_f64(value)?),
+        TypeDecl::F32 => Value::F32(coerce_f64(value)? as f32),
         TypeDecl::I64 => Value::I64(coerce_i64(value)?),
         TypeDecl::I32 => Value::I32(coerce_i64(value)? as i32),
         TypeDecl::Str => Value::Str(coerce_str(value)),
