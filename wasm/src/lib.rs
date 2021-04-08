@@ -15,7 +15,7 @@ extern "C" {
     pub(crate) fn wasm_set_fill_style(s: &str);
 }
 
-fn s_print(vals: &[Value]) -> Value {
+fn s_print(vals: &[Value]) -> Result<Value, EvalError> {
     wasm_print("print:");
     fn print_inner(vals: &[Value]) {
         for val in vals {
@@ -40,10 +40,10 @@ fn s_print(vals: &[Value]) -> Value {
     }
     print_inner(vals);
     wasm_print(&format!("\n"));
-    Value::I32(0)
+    Ok(Value::I32(0))
 }
 
-fn s_puts(vals: &[Value]) -> Value {
+fn s_puts(vals: &[Value]) -> Result<Value, EvalError> {
     fn puts_inner(vals: &[Value]) {
         for val in vals {
             match val {
@@ -60,30 +60,31 @@ fn s_puts(vals: &[Value]) -> Value {
         }
     }
     puts_inner(vals);
-    Value::I32(0)
+    Ok(Value::I32(0))
 }
 
-fn s_rectangle(vals: &[Value]) -> Value {
+fn s_rectangle(vals: &[Value]) -> Result<Value, EvalError> {
     let mut i32vals = vals.iter().take(4).map(|val| {
         if let Ok(Value::I32(v)) = coerce_type(val, &TypeDecl::I32) {
-            v
+            Ok(v)
         } else {
-            panic!("wrong type!");
+            Err("wrong type!".to_string())
         }
     });
-    let x0 = i32vals.next().unwrap();
-    let y0 = i32vals.next().unwrap();
-    let x1 = i32vals.next().unwrap();
-    let y1 = i32vals.next().unwrap();
+    let short = || "Input needs to be more than 4 values".to_string();
+    let x0 = i32vals.next().ok_or_else(short)??;
+    let y0 = i32vals.next().ok_or_else(short)??;
+    let x1 = i32vals.next().ok_or_else(short)??;
+    let y1 = i32vals.next().ok_or_else(short)??;
     wasm_rectangle(x0, y0, x1, y1);
-    Value::I32(0)
+    Ok(Value::I32(0))
 }
 
-fn s_set_fill_style(vals: &[Value]) -> Value {
+fn s_set_fill_style(vals: &[Value]) -> Result<Value, EvalError> {
     if let [Value::Str(s), ..] = vals {
         wasm_set_fill_style(s);
     }
-    Value::I32(0)
+    Ok(Value::I32(0))
 }
 
 #[wasm_bindgen]

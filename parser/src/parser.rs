@@ -60,11 +60,12 @@ impl Value {
         })
     }
 
-    pub fn array_push(&mut self, value: Value) {
+    pub fn array_push(&mut self, value: Value) -> Result<(), EvalError> {
         if let Value::Array(_, array) = self {
             array.push(Rc::new(RefCell::new(value.deref())));
+            Ok(())
         } else {
-            panic!("push() must be called for an array")
+            Err("push() must be called for an array".to_string())
         }
     }
 

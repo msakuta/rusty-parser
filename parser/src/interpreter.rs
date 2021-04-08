@@ -255,7 +255,7 @@ fn eval<'a, 'b>(
                             })
                         })
                         .collect::<Result<Vec<_>, _>>()?,
-                )),
+                )?),
             }
         }
         Expression::ArrIndex(ex, args) => {
@@ -355,7 +355,7 @@ fn eval<'a, 'b>(
     })
 }
 
-fn s_print(vals: &[Value]) -> Value {
+fn s_print(vals: &[Value]) -> Result<Value, EvalError> {
     println!("print:");
     fn print_inner(vals: &[Value]) {
         for val in vals {
@@ -380,10 +380,10 @@ fn s_print(vals: &[Value]) -> Value {
     }
     print_inner(vals);
     print!("\n");
-    Value::I32(0)
+    Ok(Value::I32(0))
 }
 
-fn s_puts(vals: &[Value]) -> Value {
+fn s_puts(vals: &[Value]) -> Result<Value, EvalError> {
     fn puts_inner(vals: &[Value]) {
         for val in vals {
             match val {
@@ -400,7 +400,7 @@ fn s_puts(vals: &[Value]) -> Value {
         }
     }
     puts_inner(vals);
-    Value::I32(0)
+    Ok(Value::I32(0))
 }
 
 fn type_decl_to_str(t: &TypeDecl) -> String {
@@ -415,7 +415,7 @@ fn type_decl_to_str(t: &TypeDecl) -> String {
     }
 }
 
-fn s_type(vals: &[Value]) -> Value {
+fn s_type(vals: &[Value]) -> Result<Value, EvalError> {
     fn type_str(val: &Value) -> String {
         match val {
             Value::F64(_) => "f64".to_string(),
@@ -428,42 +428,42 @@ fn s_type(vals: &[Value]) -> Value {
         }
     }
     if let [val, ..] = vals {
-        Value::Str(type_str(val))
+        Ok(Value::Str(type_str(val)))
     } else {
-        Value::I32(0)
+        Ok(Value::I32(0))
     }
 }
 
-fn s_len(vals: &[Value]) -> Value {
+fn s_len(vals: &[Value]) -> Result<Value, EvalError> {
     if let [val, ..] = vals {
-        Value::I64(val.array_len() as i64)
+        Ok(Value::I64(val.array_len() as i64))
     } else {
-        Value::I32(0)
+        Ok(Value::I32(0))
     }
 }
 
-fn s_push(vals: &[Value]) -> Value {
+fn s_push(vals: &[Value]) -> Result<Value, EvalError> {
     if let [arr, val, ..] = vals {
         match arr {
             Value::Ref(rc) => {
-                rc.borrow_mut().array_push(val.clone());
-                Value::I32(0)
+                rc.borrow_mut().array_push(val.clone())?;
+                Ok(Value::I32(0))
             }
-            _ => panic!("len() not supported other than arrays"),
+            _ => Err("len() not supported other than arrays".to_string()),
         }
     } else {
-        Value::I32(0)
+        Ok(Value::I32(0))
     }
 }
 
-fn s_hex_string(vals: &[Value]) -> Value {
+fn s_hex_string(vals: &[Value]) -> Result<Value, EvalError> {
     if let [val, ..] = vals {
         match coerce_type(val, &TypeDecl::I64).unwrap() {
-            Value::I64(i) => Value::Str(format!("{:02x}", i)),
-            _ => panic!("hex_string() could not convert argument to i64"),
+            Value::I64(i) => Ok(Value::Str(format!("{:02x}", i))),
+            _ => Err("hex_string() could not convert argument to i64".to_string()),
         }
     } else {
-        Value::Str("".to_string())
+        Ok(Value::Str("".to_string()))
     }
 }
 
@@ -477,7 +477,7 @@ pub struct FuncCode<'src, 'ast> {
 #[derive(Clone)]
 pub enum FuncDef<'src, 'ast, 'native> {
     Code(FuncCode<'src, 'ast>),
-    Native(&'native dyn Fn(&[Value]) -> Value),
+    Native(&'native dyn Fn(&[Value]) -> Result<Value, EvalError>),
 }
 
 /// A context stat for evaluating a script.
