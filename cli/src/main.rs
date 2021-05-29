@@ -14,6 +14,7 @@ fn main() -> Result<(), String> {
         ))
         .arg(Arg::from_usage("-e, 'Evaluate one line program'"))
         .arg(Arg::from_usage("-a, 'Show AST'"))
+        .arg(Arg::from_usage("-A, 'Show AST in pretty format'"))
         .get_matches();
 
     let mut contents = String::new();
@@ -34,7 +35,10 @@ fn main() -> Result<(), String> {
     if 0 < result.0.len() {
         return Err(format!("Input has terminated unexpectedly: {:?}", result.0));
     }
-    if 0 < matches.occurrences_of("a") {
+    if 0 < matches.occurrences_of("A") {
+        println!("Match: {:#?}", result.1);
+    }
+    else if 0 < matches.occurrences_of("a") {
         println!("Match: {:?}", result.1);
     }
     run(&result.1, &mut EvalContext::new()).map_err(|e| format!("Error in run(): {:?}", e))?;
