@@ -1,0 +1,8 @@
+
+fn square(x) {
+    x * x;
+}
+
+square(10);
+square(100);
+square(square(10));

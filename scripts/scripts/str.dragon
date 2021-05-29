@@ -1,0 +1,19 @@
+
+var s: str = 123;
+
+print(s);
+print(type(s));
+
+s = "some text\nhello";
+
+print(s);
+
+var l: i64 = "some text\nhello";
+
+print(l);
+
+var hello = "Hello, ";
+var world = "world!";
+
+print(hello + world);
+
