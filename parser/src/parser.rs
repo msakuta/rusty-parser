@@ -438,7 +438,7 @@ pub(crate) fn conditional(i: &str) -> IResult<&str, Expression> {
 }
 
 pub(crate) fn var_assign(input: &str) -> IResult<&str, Expression> {
-    let (r, res) = tuple((cmp_expr, char('='), cmp_expr))(input)?;
+    let (r, res) = tuple((cmp_expr, char('='), assign_expr))(input)?;
     Ok((r, Expression::VarAssign(Box::new(res.0), Box::new(res.2))))
 }
 

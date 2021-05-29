@@ -9,9 +9,10 @@ print(f + f);
 print(l + i);
 print(i + i);
 
-l = 0.5;
+i = l = 0.5;
 
-print(l);
+print("i", i);
+print("l", l);
 print(type(l));
 
 fn coerce_i64(a: i64) {
