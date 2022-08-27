@@ -28,7 +28,7 @@ console_error_panic_hook = { version = "0.1.6", optional = true }
 # Unfortunately, `wee_alloc` requires nightly Rust when targeting wasm for now.
 wee_alloc = { version = "0.4.5", optional = true }
 
-js-sys = ""
+js-sys = "0.3.59"
 libm = "0.1.4"
 
 parser = { path = "../parser" }
