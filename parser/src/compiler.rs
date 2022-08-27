@@ -1,6 +1,6 @@
 use std::io::{Write, Read};
 
-use crate::{Statement, EvalContext, RunResult, EvalError, Expression, Value, ReadError};
+use crate::{Statement, Expression, Value, ReadError};
 
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
@@ -102,20 +102,38 @@ impl Bytecode {
 
 struct Target {
     literal: Option<usize>,
+    local: Option<usize>,
+}
+
+struct LocalVar {
+    name: String,
+    stack_idx: usize,
 }
 
 pub fn compile<'src, 'ast>(
     stmts: &'ast Vec<Statement<'src>>,
-) -> Result<Bytecode, EvalError> {
+) -> Result<Bytecode, String> {
     let mut ret = Bytecode {
         literals: vec![],
         instructions: vec![],
     };
     let mut target_stack = vec![];
+    let mut locals = vec![];
     for stmt in stmts {
         match stmt {
+            Statement::VarDecl(var, _type, initializer) => {
+                let init_val = if let Some(init_expr) = initializer {
+                    emit_expr(init_expr, &mut ret, &mut target_stack, &mut locals)?
+                } else {
+                    0
+                };
+                locals.push(LocalVar {
+                    name: var.to_string(),
+                    stack_idx: init_val,
+                });
+            }
             Statement::Expression(ref ex) => {
-                emit_expr(ex, &mut ret, &mut target_stack);
+                emit_expr(ex, &mut ret, &mut target_stack, &mut locals)?;
             }
             _ => todo!(),
         }
@@ -132,39 +150,46 @@ fn add_literal(val: Value, bytecode: &mut Bytecode, target_stack: &mut Vec<Targe
         arg0: literal as u8,
         arg1: target_idx as u16,
     });
-    target_stack.push(Target { literal: Some(literal) });
+    target_stack.push(Target { literal: Some(literal), local: None });
     target_idx
 }
 
-fn emit_expr(expr: &Expression, bytecode: &mut Bytecode, target_stack: &mut Vec<Target>) -> Option<usize> {
+fn emit_expr(expr: &Expression, bytecode: &mut Bytecode, target_stack: &mut Vec<Target>, locals: &mut Vec<LocalVar>) -> Result<usize, String> {
     match expr {
-        Expression::NumLiteral(val) => Some(add_literal(val.clone(), bytecode, target_stack)),
-        Expression::StrLiteral(val) => Some(add_literal(Value::Str(val.clone()), bytecode, target_stack)),
+        Expression::NumLiteral(val) => Ok(add_literal(val.clone(), bytecode, target_stack)),
+        Expression::StrLiteral(val) => Ok(add_literal(Value::Str(val.clone()), bytecode, target_stack)),
+        Expression::Variable(str) => {
+            if let Some(local) = locals.iter().find(|lo| lo.name == **str) {
+                return Ok(local.stack_idx);
+            } else {
+                return Err(format!("Variable {} not found in scope", str));
+            }
+        }
         Expression::Add(lhs, rhs) => {
-            Some(emit_binary_op(bytecode, target_stack, OpCode::Add, lhs, rhs))
+            Ok(emit_binary_op(bytecode, target_stack, OpCode::Add, lhs, rhs, locals))
         }
         Expression::Sub(lhs, rhs) => {
-            Some(emit_binary_op(bytecode, target_stack, OpCode::Sub, lhs, rhs))
+            Ok(emit_binary_op(bytecode, target_stack, OpCode::Sub, lhs, rhs, locals))
         }
         Expression::Mult(lhs, rhs) => {
-            Some(emit_binary_op(bytecode, target_stack, OpCode::Mul, lhs, rhs))
+            Ok(emit_binary_op(bytecode, target_stack, OpCode::Mul, lhs, rhs, locals))
         }
         Expression::Div(lhs, rhs) => {
-            Some(emit_binary_op(bytecode, target_stack, OpCode::Div, lhs, rhs))
+            Ok(emit_binary_op(bytecode, target_stack, OpCode::Div, lhs, rhs, locals))
         }
         _ => todo!(),
     }
 }
 
-fn emit_binary_op(bytecode: &mut Bytecode, target_stack: &mut Vec<Target>, op: OpCode, lhs: &Expression, rhs: &Expression) -> usize {
-    let lhs = emit_expr(&lhs, bytecode, target_stack).unwrap();
-    let rhs = emit_expr(&rhs, bytecode, target_stack).unwrap();
+fn emit_binary_op(bytecode: &mut Bytecode, target_stack: &mut Vec<Target>, op: OpCode, lhs: &Expression, rhs: &Expression, locals: &mut Vec<LocalVar>) -> usize {
+    let lhs = emit_expr(&lhs, bytecode, target_stack, locals).unwrap();
+    let rhs = emit_expr(&rhs, bytecode, target_stack, locals).unwrap();
     bytecode.instructions.push(Instruction {
         op,
         arg0: lhs as u8,
         arg1: rhs as u16,
     });
     let target_idx = target_stack.len();
-    target_stack.push(Target { literal: None });
+    target_stack.push(Target { literal: None, local: None });
     target_idx
 }

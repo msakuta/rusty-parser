@@ -1,4 +1,4 @@
-use crate::{Bytecode, Instruction, OpCode, binary_op_str, Value, EvalError, binary_op};
+use crate::{Bytecode, OpCode, binary_op_str, EvalError, binary_op};
 
 
 pub fn interpret(bytecode: &Bytecode) -> Result<(), EvalError> {
