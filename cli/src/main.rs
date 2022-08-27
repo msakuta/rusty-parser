@@ -2,7 +2,7 @@ use clap::Parser;
 use parser::*;
 
 use std::fs::File;
-use std::io::prelude::*;
+use std::io::{prelude::*, BufReader, BufWriter};
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about = "A CLI interpreter of dragon language")]
@@ -22,41 +22,60 @@ struct Args {
     compile: bool,
     #[clap(short = 'R', help = "Compile and run")]
     compile_and_run: bool,
+    #[clap(short, help = "Read from bytecode")]
+    bytecode: bool,
 }
 
 fn main() -> Result<(), String> {
     let args = Args::parse();
 
-    let code = {
-        if args.eval {
-            args.input.clone()
-        } else if let Ok(mut file) = File::open(&args.input) {
+    let parse_source = |code| -> Result<(), String> {
+        let result = source(code).map_err(|e| e.to_string())?;
+        if !result.0.is_empty() {
+            return Err(format!("Input has terminated unexpectedly: {:?}", result.0));
+        }
+        if args.ast_pretty {
+            println!("Match: {:#?}", result.1);
+        } else if args.ast {
+            println!("Match: {:?}", result.1);
+        }
+
+        if args.compile {
+            let bytecode =
+                compile(&result.1).map_err(|e| format!("Error in compile(): {:?}", e))?;
+            println!("bytecode: {:#?}", bytecode);
+            if let Ok(writer) = std::fs::File::create("out.cdragon") {
+                bytecode
+                    .write(&mut BufWriter::new(writer))
+                    .map_err(|s| s.to_string())?;
+            }
+            if args.compile_and_run {
+                interpret(&bytecode)?;
+            }
+        } else {
+            run(&result.1, &mut EvalContext::new())
+                .map_err(|e| format!("Error in run(): {:?}", e))?;
+        }
+
+        Ok(())
+    };
+
+    if args.eval {
+        parse_source(&args.input)?;
+    } else if let Ok(mut file) = File::open(&args.input) {
+        if args.bytecode {
+            let bytecode = Bytecode::read(&mut BufReader::new(file))?;
+            println!("bytecode: {:#?}", bytecode);
+            interpret(&bytecode)?;
+        } else {
             let mut contents = String::new();
             file.read_to_string(&mut contents)
                 .map_err(|e| e.to_string())?;
-            contents
-        } else {
-            return Err("Error: can't open file".to_string());
-        }
-    };
-    let result = source(&code).map_err(|e| e.to_string())?;
-    if !result.0.is_empty() {
-        return Err(format!("Input has terminated unexpectedly: {:?}", result.0));
-    }
-    if args.ast_pretty {
-        println!("Match: {:#?}", result.1);
-    } else if args.ast {
-        println!("Match: {:?}", result.1);
-    }
-    if args.compile {
-        let bytecode = compile(&result.1, &mut EvalContext::new())
-            .map_err(|e| format!("Error in compile(): {:?}", e))?;
-        println!("bytecode: {:#?}", bytecode);
-        if args.compile_and_run {
-            interpret(&bytecode)?;
+            parse_source(&contents)?;
         }
     } else {
-        run(&result.1, &mut EvalContext::new()).map_err(|e| format!("Error in run(): {:?}", e))?;
+        return Err("Error: can't open file".to_string());
     }
+
     Ok(())
 }
