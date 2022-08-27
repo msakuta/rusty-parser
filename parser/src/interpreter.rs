@@ -30,9 +30,9 @@ macro_rules! unwrap_run {
     };
 }
 
-fn binary_op_str(
-    lhs: Value,
-    rhs: Value,
+pub(crate) fn binary_op_str(
+    lhs: &Value,
+    rhs: &Value,
     d: impl Fn(f64, f64) -> f64,
     i: impl Fn(i64, i64) -> i64,
     s: impl Fn(&str, &str) -> Result<String, EvalError>,
@@ -56,9 +56,9 @@ fn binary_op_str(
     })
 }
 
-fn binary_op(
-    lhs: Value,
-    rhs: Value,
+pub(crate) fn binary_op(
+    lhs: &Value,
+    rhs: &Value,
     d: impl Fn(f64, f64) -> f64,
     i: impl Fn(i64, i64) -> i64,
 ) -> Result<Value, EvalError> {
@@ -287,8 +287,8 @@ fn eval<'a, 'b>(
         }
         Expression::Add(lhs, rhs) => {
             let res = RunResult::Yield(binary_op_str(
-                unwrap_run!(eval(lhs, ctx)?),
-                unwrap_run!(eval(rhs, ctx)?),
+                &unwrap_run!(eval(lhs, ctx)?),
+                &unwrap_run!(eval(rhs, ctx)?),
                 |lhs, rhs| lhs + rhs,
                 |lhs, rhs| lhs + rhs,
                 |lhs: &str, rhs: &str| Ok(lhs.to_string() + rhs),
@@ -296,32 +296,32 @@ fn eval<'a, 'b>(
             res
         }
         Expression::Sub(lhs, rhs) => RunResult::Yield(binary_op(
-            unwrap_run!(eval(lhs, ctx)?),
-            unwrap_run!(eval(rhs, ctx)?),
+            &unwrap_run!(eval(lhs, ctx)?),
+            &unwrap_run!(eval(rhs, ctx)?),
             |lhs, rhs| lhs - rhs,
             |lhs, rhs| lhs - rhs,
         )?),
         Expression::Mult(lhs, rhs) => RunResult::Yield(binary_op(
-            unwrap_run!(eval(lhs, ctx)?),
-            unwrap_run!(eval(rhs, ctx)?),
+            &unwrap_run!(eval(lhs, ctx)?),
+            &unwrap_run!(eval(rhs, ctx)?),
             |lhs, rhs| lhs * rhs,
             |lhs, rhs| lhs * rhs,
         )?),
         Expression::Div(lhs, rhs) => RunResult::Yield(binary_op(
-            unwrap_run!(eval(lhs, ctx)?),
-            unwrap_run!(eval(rhs, ctx)?),
+            &unwrap_run!(eval(lhs, ctx)?),
+            &unwrap_run!(eval(rhs, ctx)?),
             |lhs, rhs| lhs / rhs,
             |lhs, rhs| lhs / rhs,
         )?),
         Expression::LT(lhs, rhs) => RunResult::Yield(binary_op(
-            unwrap_run!(eval(lhs, ctx)?),
-            unwrap_run!(eval(rhs, ctx)?),
+            &unwrap_run!(eval(lhs, ctx)?),
+            &unwrap_run!(eval(rhs, ctx)?),
             |lhs, rhs| if lhs < rhs { 1. } else { 0. },
             |lhs, rhs| if lhs < rhs { 1 } else { 0 },
         )?),
         Expression::GT(lhs, rhs) => RunResult::Yield(binary_op(
-            unwrap_run!(eval(lhs, ctx)?),
-            unwrap_run!(eval(rhs, ctx)?),
+            &unwrap_run!(eval(lhs, ctx)?),
+            &unwrap_run!(eval(rhs, ctx)?),
             |lhs, rhs| if lhs > rhs { 1. } else { 0. },
             |lhs, rhs| if lhs > rhs { 1 } else { 0 },
         )?),

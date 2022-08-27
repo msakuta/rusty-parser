@@ -18,6 +18,10 @@ struct Args {
     ast: bool,
     #[clap(short = 'A', long, help = "Show AST in pretty format")]
     ast_pretty: bool,
+    #[clap(short, help = "Compile to bytecode")]
+    compile: bool,
+    #[clap(short = 'R', help = "Compile and run")]
+    compile_and_run: bool,
 }
 
 fn main() -> Result<(), String> {
@@ -44,6 +48,15 @@ fn main() -> Result<(), String> {
     } else if args.ast {
         println!("Match: {:?}", result.1);
     }
-    run(&result.1, &mut EvalContext::new()).map_err(|e| format!("Error in run(): {:?}", e))?;
+    if args.compile {
+        let bytecode = compile(&result.1, &mut EvalContext::new())
+            .map_err(|e| format!("Error in compile(): {:?}", e))?;
+        println!("bytecode: {:#?}", bytecode);
+        if args.compile_and_run {
+            interpret(&bytecode)?;
+        }
+    } else {
+        run(&result.1, &mut EvalContext::new()).map_err(|e| format!("Error in run(): {:?}", e))?;
+    }
     Ok(())
 }
