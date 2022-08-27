@@ -169,7 +169,7 @@ fn type_scalar(input: &str) -> IResult<&str, TypeDecl> {
             Some("i32") => TypeDecl::I32,
             Some("i64") => TypeDecl::I64,
             Some("str") => TypeDecl::Str,
-            Some(unknown) => panic!(format!("Unknown type: \"{}\"", unknown)),
+            Some(unknown) => panic!("Unknown type: \"{}\"", unknown),
         },
     ))
 }

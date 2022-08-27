@@ -8,6 +8,6 @@ edition = "2018"
 
 [dependencies]
 parser = { path = "../parser" }
-clap = "2.33.3"
+clap = { version = "3.2.17", features = ["derive"] }
 
 
