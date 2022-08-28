@@ -12,6 +12,9 @@ pub fn interpret(bytecode: &Bytecode) -> Result<(), EvalError> {
             OpCode::LoadLiteral => {
                 stack.push(bytecode.literals[inst.arg0 as usize].clone());
             }
+            OpCode::Move => {
+                stack[inst.arg1 as usize] = stack[inst.arg0 as usize].clone();
+            }
             OpCode::Add => {
                 let result = binary_op_str(&stack[inst.arg0 as usize], &stack[inst.arg1 as usize],
                     |lhs, rhs| lhs + rhs,

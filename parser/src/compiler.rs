@@ -6,6 +6,7 @@ use crate::{Statement, Expression, Value, ReadError};
 #[repr(u8)]
 pub enum OpCode {
     LoadLiteral,
+    Move,
     Add,
     Sub,
     Mul,
@@ -16,12 +17,14 @@ impl From<u8> for OpCode {
     #[allow(non_upper_case_globals)]
     fn from(o: u8) -> Self {
         const LoadLiteral: u8 = OpCode::LoadLiteral as u8;
+        const Move: u8 = OpCode::Move as u8;
         const Add: u8 = OpCode::Add as u8;
         const Sub: u8 = OpCode::Sub as u8;
         const Mul: u8 = OpCode::Mul as u8;
         const Div: u8 = OpCode::Div as u8;
         match o {
             LoadLiteral => Self::LoadLiteral,
+            Move => Self::Move,
             Add => Self::Add,
             Sub => Self::Sub,
             Mul => Self::Mul,
@@ -176,6 +179,16 @@ fn emit_expr(expr: &Expression, bytecode: &mut Bytecode, target_stack: &mut Vec<
         }
         Expression::Div(lhs, rhs) => {
             Ok(emit_binary_op(bytecode, target_stack, OpCode::Div, lhs, rhs, locals))
+        }
+        Expression::VarAssign(lhs, rhs) => {
+            let lhs_result = emit_expr(lhs, bytecode, target_stack, locals)?;
+            let rhs_result = emit_expr(rhs, bytecode, target_stack, locals)?;
+            bytecode.instructions.push(Instruction{
+                op: OpCode::Move,
+                arg0: rhs_result as u8,
+                arg1: lhs_result as u16,
+            });
+            Ok(lhs_result)
         }
         _ => todo!(),
     }
