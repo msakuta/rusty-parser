@@ -224,14 +224,23 @@ impl FnBytecode {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-struct Target {
-    literal: Option<usize>,
+#[derive(Debug, Clone, Copy)]
+enum Target {
+    None,
+    /// Literal value with literal index.
+    /// Right now whether the target is literal is not utilized, but we may use it for optimization.
+    Literal(usize),
     /// If it is an allocated stack slot for a local variable, it will contain the index
     /// into locals array. We use it to keep track of which is local variable so that
     /// we won't destroy it by accident.
     /// **NOTE** that it is not a stack index.
-    local: Option<usize>,
+    Local(usize),
+}
+
+impl Default for Target {
+    fn default() -> Target {
+        Self::None
+    }
 }
 
 #[derive(Debug)]
@@ -244,7 +253,6 @@ struct Compiler {
     functions: HashMap<String, FnProto>,
     bytecode: FnBytecode,
     target_stack: Vec<Target>,
-    stack_base: usize,
     locals: Vec<Vec<LocalVar>>,
 }
 
@@ -259,12 +267,14 @@ impl Compiler {
                 stack_size: 0,
             },
             target_stack: (0..args.len() + 1)
-                .map(|i| Target {
-                    local: if i == 0 { None } else { Some(i - 1) },
-                    literal: None,
+                .map(|i| {
+                    if i == 0 {
+                        Target::None
+                    } else {
+                        Target::Local(i - 1)
+                    }
                 })
                 .collect(),
-            stack_base: 0,
             locals: vec![args],
         }
     }
@@ -324,10 +334,7 @@ fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> Result<Option<usi
                 } else {
                     let locals = compiler.locals.last().unwrap();
                     let target = compiler.target_stack.len();
-                    compiler.target_stack.push(Target {
-                        local: Some(locals.len()),
-                        literal: None,
-                    });
+                    compiler.target_stack.push(Target::Local(locals.len()));
                     target
                 };
                 let locals = compiler.locals.last_mut().unwrap();
@@ -340,8 +347,8 @@ fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> Result<Option<usi
             Statement::FnDecl {
                 name,
                 args,
-                ret_type,
                 stmts,
+                ..
             } => {
                 println!("Args: {:?}", args);
                 let args = args
@@ -352,10 +359,7 @@ fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> Result<Option<usi
                             name: arg.0.to_owned(),
                             stack_idx: target,
                         };
-                        compiler.target_stack.push(Target {
-                            local: Some(target),
-                            literal: None,
-                        });
+                        compiler.target_stack.push(Target::Local(target));
                         local
                     })
                     .collect();
@@ -389,10 +393,7 @@ fn add_literal(val: Value, compiler: &mut Compiler) -> usize {
         literal as u8,
         target_idx as u16,
     ));
-    compiler.target_stack.push(Target {
-        literal: Some(literal),
-        local: None,
-    });
+    compiler.target_stack.push(Target::Literal(literal));
     target_idx
 }
 
@@ -442,10 +443,7 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
 
             let fname_target = compiler.target_stack.len();
             let fname_literal = compiler.bytecode.literals.len();
-            compiler.target_stack.push(Target {
-                literal: Some(fname_literal),
-                local: None,
-            });
+            compiler.target_stack.push(Target::Literal(fname_literal));
             compiler
                 .bytecode
                 .literals
@@ -459,10 +457,7 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
             // Align arguments to the stack to prepare a call.
             for arg in args {
                 let arg_target = compiler.target_stack.len();
-                compiler.target_stack.push(Target {
-                    literal: None,
-                    local: None,
-                });
+                compiler.target_stack.push(Target::None);
                 compiler.bytecode.instructions.push(Instruction::new(
                     OpCode::Move,
                     arg as u8,
@@ -480,10 +475,7 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
                 num_args as u8,
                 fname_target as u16,
             ));
-            compiler.target_stack.push(Target {
-                literal: None,
-                local: None,
-            });
+            compiler.target_stack.push(Target::None);
             Ok(fname_target)
         }
         Expression::LT(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Lt, lhs, rhs)),
@@ -549,17 +541,14 @@ fn emit_binary_op(
 ) -> usize {
     let lhs = emit_expr(&lhs, compiler).unwrap();
     let rhs = emit_expr(&rhs, compiler).unwrap();
-    let lhs = if compiler.target_stack[lhs].local.is_some() {
+    let lhs = if matches!(compiler.target_stack[lhs], Target::Local(_)) {
         // We move the local variable to anothe slot because our instructions are destructive
         let top = compiler.target_stack.len();
         compiler
             .bytecode
             .instructions
             .push(Instruction::new(OpCode::Move, lhs as u8, top as u16));
-        compiler.target_stack.push(Target {
-            literal: None,
-            local: None,
-        });
+        compiler.target_stack.push(Target::None);
         top
     } else {
         lhs
@@ -569,9 +558,5 @@ fn emit_binary_op(
         arg0: lhs as u8,
         arg1: rhs as u16,
     });
-    compiler.target_stack[lhs] = Target {
-        literal: None,
-        local: None,
-    };
     lhs
 }
