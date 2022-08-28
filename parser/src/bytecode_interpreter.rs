@@ -1,7 +1,7 @@
 use crate::{Bytecode, OpCode, binary_op_str, EvalError, binary_op, truthy, Value};
 
 
-pub fn interpret(bytecode: &Bytecode) -> Result<(), EvalError> {
+pub fn interpret(bytecode: &Bytecode) -> Result<Value, EvalError> {
     println!("size inst: {}", std::mem::size_of::<crate::Instruction>());
     println!("size value: {}", std::mem::size_of::<Value>());
     let mut stack = vec![Value::I64(0); bytecode.stack_size];
@@ -32,28 +32,28 @@ pub fn interpret(bytecode: &Bytecode) -> Result<(), EvalError> {
                     |lhs, rhs| lhs + rhs,
                     |lhs: &str, rhs: &str| Ok(lhs.to_string() + rhs),
                 )?;
-                stack.push(result);
+                stack[inst.arg0 as usize] = result;
             }
             OpCode::Sub => {
                 let result = binary_op(&stack[inst.arg0 as usize], &stack[inst.arg1 as usize],
                     |lhs, rhs| lhs - rhs,
                     |lhs, rhs| lhs - rhs,
                 )?;
-                stack.push(result);
+                stack[inst.arg0 as usize] = result;
             }
             OpCode::Mul => {
                 let result = binary_op(&stack[inst.arg0 as usize], &stack[inst.arg1 as usize],
                     |lhs, rhs| lhs * rhs,
                     |lhs, rhs| lhs * rhs,
                 )?;
-                stack.push(result);
+                stack[inst.arg0 as usize] = result;
             }
             OpCode::Div => {
                 let result = binary_op(&stack[inst.arg0 as usize], &stack[inst.arg1 as usize],
                     |lhs, rhs| lhs / rhs,
                     |lhs, rhs| lhs / rhs,
                 )?;
-                stack.push(result);
+                stack[inst.arg0 as usize] = result;
             }
             OpCode::Jmp => {
                 println!("[{ip}] Jumping by Jmp to {}", inst.arg1);
@@ -74,6 +74,9 @@ pub fn interpret(bytecode: &Bytecode) -> Result<(), EvalError> {
                     continue;
                 }
             }
+            OpCode::Ret => {
+                return Ok(stack[inst.arg1 as usize].clone());
+            }
         }
 
         dump_stack(&stack);
@@ -82,7 +85,7 @@ pub fn interpret(bytecode: &Bytecode) -> Result<(), EvalError> {
     }
 
     println!("Final stack: {:?}", stack);
-    Ok(())
+    Ok(Value::I64(0))
 }
 
 #[cfg(test)]

@@ -2,26 +2,28 @@ use super::*;
 use crate::{compile, expr, Statement};
 
 fn compile_expr(s: &str) -> Bytecode {
-    compile(&[Statement::Expression(expr(s).unwrap().1)]).unwrap()
+    let bytecode = compile(&[Statement::Expression(expr(s).unwrap().1)]).unwrap();
+    println!("bytecode: {:#?}", bytecode);
+    bytecode
 }
 
 #[test]
 fn eval_test() {
     assert_eq!(
         interpret(&compile_expr(" 1 +  2 ")),
-        Ok(())
+        Ok(Value::I64(3))
     );
     assert_eq!(
         interpret(&compile_expr(" 12 + 6 - 4+  3")),
-        Ok(())
+        Ok(Value::I64(17))
     );
     assert_eq!(
         interpret(&compile_expr(" 1 + 2*3 + 4")),
-        Ok(())
+        Ok(Value::I64(11))
     );
     assert_eq!(
         interpret(&compile_expr(" 1 +  2.5 ")),
-        Ok(())
+        Ok(Value::F64(3.5))
     );
 }
 
@@ -29,14 +31,14 @@ fn eval_test() {
 fn parens_eval_test() {
     assert_eq!(
         interpret(&compile_expr(" (  2 )")),
-        Ok(())
+        Ok(Value::I64(2))
     );
     assert_eq!(
         interpret(&compile_expr(" 2* (  3 + 4 ) ")),
-        Ok(())
+        Ok(Value::I64(14))
     );
     assert_eq!(
         interpret(&compile_expr("  2*2 / ( 5 - 1) + 3")),
-        Ok(())
+        Ok(Value::I64(4))
     );
 }

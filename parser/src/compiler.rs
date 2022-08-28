@@ -17,6 +17,8 @@ pub enum OpCode {
     Jt,
     /// Conditional jump. If arg0 is falthy, jump to arg1.
     Jf,
+    /// Returns from current call stack.
+    Ret,
 }
 
 impl From<u8> for OpCode {
@@ -145,7 +147,9 @@ pub fn compile<'src, 'ast>(
         target_stack: vec![],
         locals: vec![],
     };
-    emit_stmts(stmts, &mut compiler)?;
+    if let Some(last_target) = emit_stmts(stmts, &mut compiler)? {
+        compiler.bytecode.instructions.push(Instruction::new(OpCode::Ret, 0, last_target as u16));
+    }
     compiler.bytecode.stack_size = compiler.target_stack.len();
     Ok(compiler.bytecode)
 }
@@ -179,11 +183,7 @@ fn add_literal(val: Value, compiler: &mut Compiler) -> usize {
     let literal = bytecode.literals.len();
     let target_idx = compiler.target_stack.len();
     bytecode.literals.push(val.clone());
-    bytecode.instructions.push(Instruction {
-        op: OpCode::LoadLiteral,
-        arg0: literal as u8,
-        arg1: target_idx as u16,
-    });
+    bytecode.instructions.push(Instruction::new(OpCode::LoadLiteral, literal as u8, target_idx as u16));
     compiler.target_stack.push(Target { literal: Some(literal), local: None });
     target_idx
 }
@@ -251,7 +251,6 @@ fn emit_binary_op(compiler: &mut Compiler, op: OpCode, lhs: &Expression, rhs: &E
         arg0: lhs as u8,
         arg1: rhs as u16,
     });
-    let target_idx = compiler.target_stack.len();
-    compiler.target_stack.push(Target { literal: None, local: None });
-    target_idx
+    compiler.target_stack[lhs] = Target { literal: None, local: None };
+    lhs
 }
