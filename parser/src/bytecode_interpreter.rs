@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use crate::{
-    binary_op, binary_op_str, coerce_f64, truthy, Bytecode, EvalError, FnBytecode, FnProto, OpCode,
-    Value,
+    binary_op, binary_op_str, coerce_f64, truthy, Bytecode, CheckedIndex, EvalError, FnBytecode,
+    FnProto, OpCode, Value,
 };
 
 pub fn interpret(bytecode: &Bytecode) -> Result<Value, EvalError> {
@@ -90,7 +90,10 @@ fn interpret_fn(
 
         match inst.op {
             OpCode::LoadLiteral => {
-                vm.set(inst.arg1, ci.fun.literals[inst.arg0 as usize].clone());
+                vm.set(
+                    inst.arg1,
+                    ci.fun.literals[CheckedIndex::<0>(inst.arg0 as usize)].clone(),
+                );
             }
             OpCode::Move => {
                 let val = vm.get(inst.arg0);

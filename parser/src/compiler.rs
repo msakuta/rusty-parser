@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     io::{Read, Write},
+    ops::Index,
 };
 
 use crate::{Expression, ReadError, Statement, Value};
@@ -165,9 +166,42 @@ impl Bytecode {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct CheckedIndex<const A: u8>(pub usize);
+
+impl<const A: u8> From<usize> for CheckedIndex<A> {
+    fn from(i: usize) -> Self {
+        Self(i)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct CheckedVec<const A: u8, T>(pub Vec<T>);
+
+impl<const A: u8, T> Index<CheckedIndex<A>> for CheckedVec<A, T> {
+    type Output = T;
+    fn index(&self, idx: CheckedIndex<A>) -> &Self::Output {
+        &self.0[idx.0]
+    }
+}
+
+// impl<'a, const A: u8, T> IntoIterator for &'a CheckedVec<A, T> {
+//     type Item = &'a T;
+//     type IntoIter = ;
+//     fn into_iter(self) -> Self::IntoIter {
+//         self.0.into_iter()
+//     }
+// }
+
+impl<const A: u8, T> CheckedVec<A, T> {
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct FnBytecode {
-    pub(crate) literals: Vec<Value>,
+    pub(crate) literals: CheckedVec<0, Value>,
     pub(crate) args: Vec<String>,
     pub(crate) instructions: Vec<Instruction>,
     pub(crate) stack_size: usize,
@@ -177,7 +211,7 @@ impl FnBytecode {
     pub fn write(&self, writer: &mut impl Write) -> std::io::Result<()> {
         writer.write_all(&self.stack_size.to_le_bytes())?;
         writer.write_all(&self.literals.len().to_le_bytes())?;
-        for literal in &self.literals {
+        for literal in &self.literals.0 {
             literal.serialize(writer)?;
         }
         writer.write_all(&self.args.len().to_le_bytes())?;
@@ -216,7 +250,7 @@ impl FnBytecode {
             .map(|_| Instruction::deserialize(reader))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
-            literals,
+            literals: CheckedVec::<0, _>(literals),
             args,
             instructions,
             stack_size: usize::from_le_bytes(stack_size),
@@ -224,12 +258,13 @@ impl FnBytecode {
     }
 }
 
+/// A data structure to keep track of stack variable usage.
 #[derive(Debug, Clone, Copy)]
 enum Target {
     None,
     /// Literal value with literal index.
     /// Right now whether the target is literal is not utilized, but we may use it for optimization.
-    Literal(usize),
+    Literal(CheckedIndex<0>),
     /// If it is an allocated stack slot for a local variable, it will contain the index
     /// into locals array. We use it to keep track of which is local variable so that
     /// we won't destroy it by accident.
@@ -261,7 +296,7 @@ impl Compiler {
         Self {
             functions: HashMap::new(),
             bytecode: FnBytecode {
-                literals: vec![],
+                literals: CheckedVec::<0, _>(vec![]),
                 args: args.iter().map(|arg| arg.name.to_owned()).collect(),
                 instructions: vec![],
                 stack_size: 0,
@@ -345,10 +380,7 @@ fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> Result<Option<usi
                 println!("Locals: {:?}", compiler.locals);
             }
             Statement::FnDecl {
-                name,
-                args,
-                stmts,
-                ..
+                name, args, stmts, ..
             } => {
                 println!("Args: {:?}", args);
                 let args = args
@@ -387,13 +419,13 @@ fn add_literal(val: Value, compiler: &mut Compiler) -> usize {
     let bytecode = &mut compiler.bytecode;
     let literal = bytecode.literals.len();
     let target_idx = compiler.target_stack.len();
-    bytecode.literals.push(val.clone());
+    bytecode.literals.0.push(val.clone());
     bytecode.instructions.push(Instruction::new(
         OpCode::LoadLiteral,
         literal as u8,
         target_idx as u16,
     ));
-    compiler.target_stack.push(Target::Literal(literal));
+    compiler.target_stack.push(Target::Literal(literal.into()));
     target_idx
 }
 
@@ -443,10 +475,13 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
 
             let fname_target = compiler.target_stack.len();
             let fname_literal = compiler.bytecode.literals.len();
-            compiler.target_stack.push(Target::Literal(fname_literal));
+            compiler
+                .target_stack
+                .push(Target::Literal(fname_literal.into()));
             compiler
                 .bytecode
                 .literals
+                .0
                 .push(Value::Str(fname.to_string()));
             compiler.bytecode.instructions.push(Instruction::new(
                 OpCode::LoadLiteral,
