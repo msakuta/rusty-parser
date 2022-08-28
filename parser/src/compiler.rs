@@ -37,26 +37,40 @@ pub enum OpCode {
     Ret,
 }
 
-impl From<u8> for OpCode {
-    #[allow(non_upper_case_globals)]
-    fn from(o: u8) -> Self {
-        const LoadLiteral: u8 = OpCode::LoadLiteral as u8;
-        const Move: u8 = OpCode::Move as u8;
-        const Add: u8 = OpCode::Add as u8;
-        const Sub: u8 = OpCode::Sub as u8;
-        const Mul: u8 = OpCode::Mul as u8;
-        const Div: u8 = OpCode::Div as u8;
-        match o {
-            LoadLiteral => Self::LoadLiteral,
-            Move => Self::Move,
-            Add => Self::Add,
-            Sub => Self::Sub,
-            Mul => Self::Mul,
-            Div => Self::Div,
-            _ => panic!("Opcode unrecognized!"),
+macro_rules! impl_op_from {
+    ($($op:ident),*) => {
+        impl From<u8> for OpCode {
+            #[allow(non_upper_case_globals)]
+            fn from(o: u8) -> Self {
+                $(const $op: u8 = OpCode::$op as u8;)*
+
+                match o {
+                    $($op => Self::$op,)*
+                    _ => panic!("Opcode unrecognized!"),
+                }
+            }
         }
     }
 }
+
+impl_op_from!(
+    LoadLiteral,
+    Move,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    And,
+    Or,
+    Not,
+    Lt,
+    Gt,
+    Jmp,
+    Jt,
+    Jf,
+    Call,
+    Ret
+);
 
 #[derive(Debug, Clone, Copy)]
 pub struct Instruction {
@@ -135,13 +149,19 @@ impl Bytecode {
         let mut len = [0u8; std::mem::size_of::<usize>()];
         reader.read_exact(&mut len)?;
         let len = usize::from_le_bytes(len);
-        Ok(Bytecode {
+        let ret = Bytecode {
             functions: (0..len)
                 .map(|i| -> Result<(String, FnProto), ReadError> {
                     Ok((read_str(reader)?, FnProto::Code(FnBytecode::read(reader)?)))
                 })
                 .collect::<Result<HashMap<_, _>, ReadError>>()?,
-        })
+        };
+        println!("loaded {} functions", ret.functions.len());
+        let loaded_fn = ret.functions.iter().find(|(name, _)| *name == "").unwrap();
+        if let FnProto::Code(ref code) = loaded_fn.1 {
+            println!("instructions: {:#?}", code.instructions);
+        }
+        Ok(ret)
     }
 }
 
@@ -232,6 +252,7 @@ pub fn compile<'src, 'ast>(stmts: &'ast [Statement<'src>]) -> Result<Bytecode, S
             .instructions
             .push(Instruction::new(OpCode::Ret, 0, last_target as u16));
     }
+    println!("instructions: {:#?}", compiler.bytecode.instructions);
     compiler.bytecode.stack_size = compiler.target_stack.len();
     let mut functions = compiler.functions;
     functions.insert("".to_string(), FnProto::Code(compiler.bytecode));
