@@ -1,4 +1,7 @@
-use std::io::{Read, Write};
+use std::{
+    collections::HashMap,
+    io::{Read, Write},
+};
 
 use crate::{Expression, ReadError, Statement, Value};
 
@@ -6,6 +9,7 @@ use crate::{Expression, ReadError, Statement, Value};
 #[repr(u8)]
 pub enum OpCode {
     LoadLiteral,
+    /// Move values between stack elements, from arg0 to arg1.
     Move,
     Add,
     Sub,
@@ -27,6 +31,8 @@ pub enum OpCode {
     Jt,
     /// Conditional jump. If arg0 is falthy, jump to arg1.
     Jf,
+    /// Call a function with arg0 aruguments on the stack with index arg1.
+    Call,
     /// Returns from current call stack.
     Ret,
 }
@@ -85,14 +91,68 @@ impl Instruction {
     }
 }
 
-#[derive(Debug, Clone)]
+fn write_str(s: &str, writer: &mut impl Write) -> std::io::Result<()> {
+    writer.write_all(&s.len().to_le_bytes())?;
+    writer.write_all(&s.as_bytes())?;
+    Ok(())
+}
+
+fn read_str(reader: &mut impl Read) -> Result<String, ReadError> {
+    let mut len = [0u8; std::mem::size_of::<usize>()];
+    reader.read_exact(&mut len)?;
+    let len = usize::from_le_bytes(len);
+    let mut buf = vec![0u8; len];
+    reader.read_exact(&mut buf)?;
+    Ok(String::from_utf8(buf)?)
+}
+
+pub(crate) enum FnProto {
+    Code(FnBytecode),
+    Native(Box<dyn Fn(&[Value])>),
+}
+
 pub struct Bytecode {
+    pub(crate) functions: HashMap<String, FnProto>,
+}
+
+impl Bytecode {
+    pub fn add_ext_fn(&mut self, name: String, f: Box<dyn Fn(&[Value])>) {
+        self.functions.insert(name, FnProto::Native(f));
+    }
+
+    pub fn write(&self, writer: &mut impl Write) -> std::io::Result<()> {
+        writer.write_all(&self.functions.len().to_le_bytes())?;
+        for (fname, func) in self.functions.iter() {
+            if let FnProto::Code(func) = func {
+                write_str(fname, writer)?;
+                func.write(writer)?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn read(reader: &mut impl Read) -> Result<Self, ReadError> {
+        let mut len = [0u8; std::mem::size_of::<usize>()];
+        reader.read_exact(&mut len)?;
+        let len = usize::from_le_bytes(len);
+        Ok(Bytecode {
+            functions: (0..len)
+                .map(|i| -> Result<(String, FnProto), ReadError> {
+                    Ok((read_str(reader)?, FnProto::Code(FnBytecode::read(reader)?)))
+                })
+                .collect::<Result<HashMap<_, _>, ReadError>>()?,
+        })
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct FnBytecode {
     pub(crate) literals: Vec<Value>,
     pub(crate) instructions: Vec<Instruction>,
     pub(crate) stack_size: usize,
 }
 
-impl Bytecode {
+impl FnBytecode {
     pub fn write(&self, writer: &mut impl Write) -> std::io::Result<()> {
         writer.write_all(&self.stack_size.to_le_bytes())?;
         writer.write_all(&self.literals.len().to_le_bytes())?;
@@ -141,21 +201,31 @@ struct LocalVar {
 }
 
 struct Compiler {
-    bytecode: Bytecode,
+    functions: HashMap<String, FnProto>,
+    bytecode: FnBytecode,
     target_stack: Vec<Target>,
+    stack_base: usize,
     locals: Vec<Vec<LocalVar>>,
 }
 
+impl Compiler {
+    fn new() -> Self {
+        Self {
+            functions: HashMap::new(),
+            bytecode: FnBytecode {
+                literals: vec![],
+                instructions: vec![],
+                stack_size: 0,
+            },
+            target_stack: vec![],
+            stack_base: 0,
+            locals: vec![vec![]],
+        }
+    }
+}
+
 pub fn compile<'src, 'ast>(stmts: &'ast [Statement<'src>]) -> Result<Bytecode, String> {
-    let mut compiler = Compiler {
-        bytecode: Bytecode {
-            literals: vec![],
-            instructions: vec![],
-            stack_size: 0,
-        },
-        target_stack: vec![],
-        locals: vec![vec![]],
-    };
+    let mut compiler = Compiler::new();
     if let Some(last_target) = emit_stmts(stmts, &mut compiler)? {
         compiler
             .bytecode
@@ -163,7 +233,9 @@ pub fn compile<'src, 'ast>(stmts: &'ast [Statement<'src>]) -> Result<Bytecode, S
             .push(Instruction::new(OpCode::Ret, 0, last_target as u16));
     }
     compiler.bytecode.stack_size = compiler.target_stack.len();
-    Ok(compiler.bytecode)
+    let mut functions = compiler.functions;
+    functions.insert("".to_string(), FnProto::Code(compiler.bytecode));
+    Ok(Bytecode { functions })
 }
 
 fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> Result<Option<usize>, String> {
@@ -242,6 +314,60 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
                 arg1: lhs_result as u16,
             });
             Ok(lhs_result)
+        }
+        Expression::FnInvoke(fname, args) => {
+            let args = args
+                .iter()
+                .map(|v| emit_expr(v, compiler))
+                .collect::<Result<Vec<_>, _>>()?;
+
+            let num_args = args.len();
+
+            let fname_target = compiler.target_stack.len();
+            let fname_literal = compiler.bytecode.literals.len();
+            compiler.target_stack.push(Target {
+                literal: Some(fname_literal),
+                local: None,
+            });
+            compiler
+                .bytecode
+                .literals
+                .push(Value::Str(fname.to_string()));
+            compiler.bytecode.instructions.push(Instruction::new(
+                OpCode::LoadLiteral,
+                fname_literal as u8,
+                fname_target as u16,
+            ));
+
+            // Align arguments to the stack to prepare a call.
+            for arg in args {
+                let arg_target = compiler.target_stack.len();
+                compiler.target_stack.push(Target {
+                    literal: None,
+                    local: None,
+                });
+                compiler.bytecode.instructions.push(Instruction::new(
+                    OpCode::Move,
+                    arg as u8,
+                    arg_target as u16,
+                ));
+            }
+
+            // let func = compiler
+            //     .functions
+            //     .get(*str)
+            //     .ok_or_else(|| format!("function {} is not defined.", str))?;
+
+            compiler.bytecode.instructions.push(Instruction::new(
+                OpCode::Call,
+                num_args as u8,
+                fname_target as u16,
+            ));
+            compiler.target_stack.push(Target {
+                literal: None,
+                local: None,
+            });
+            Ok(fname_target + num_args + 1)
         }
         Expression::LT(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Lt, lhs, rhs)),
         Expression::GT(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Gt, lhs, rhs)),

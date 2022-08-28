@@ -26,6 +26,10 @@ struct Args {
     bytecode: bool,
 }
 
+fn print_fn(values: &[Value]) {
+    println!("Hello {values:?}");
+}
+
 fn main() -> Result<(), String> {
     let args = Args::parse();
 
@@ -41,15 +45,16 @@ fn main() -> Result<(), String> {
         }
 
         if args.compile {
-            let bytecode =
+            let mut bytecode =
                 compile(&result.1).map_err(|e| format!("Error in compile(): {:?}", e))?;
-            println!("bytecode: {:#?}", bytecode);
+            // println!("bytecode: {:#?}", bytecode);
             if let Ok(writer) = std::fs::File::create("out.cdragon") {
                 bytecode
                     .write(&mut BufWriter::new(writer))
                     .map_err(|s| s.to_string())?;
             }
             if args.compile_and_run {
+                bytecode.add_ext_fn("print".to_string(), Box::new(print_fn));
                 interpret(&bytecode)?;
             }
         } else {
@@ -64,8 +69,9 @@ fn main() -> Result<(), String> {
         parse_source(&args.input)?;
     } else if let Ok(mut file) = File::open(&args.input) {
         if args.bytecode {
-            let bytecode = Bytecode::read(&mut BufReader::new(file))?;
-            println!("bytecode: {:#?}", bytecode);
+            let mut bytecode = Bytecode::read(&mut BufReader::new(file))?;
+            // println!("bytecode: {:#?}", bytecode);
+            bytecode.add_ext_fn("print".to_string(), Box::new(print_fn));
             interpret(&bytecode)?;
         } else {
             let mut contents = String::new();

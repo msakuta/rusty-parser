@@ -1,11 +1,13 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{
+    cell::{Cell, RefCell},
+    rc::Rc,
+};
 
 use super::*;
 use crate::{compile, expr, source, Statement};
 
 fn compile_expr(s: &str) -> Bytecode {
     let bytecode = compile(&[Statement::Expression(expr(s).unwrap().1)]).unwrap();
-    println!("bytecode: {:#?}", bytecode);
     bytecode
 }
 
@@ -105,4 +107,16 @@ fn brace_shadowing_test() {
         compile_and_run(" var x = 0; { var x = 1; x = 2; }; x;"),
         Ok(Value::I64(0))
     );
+}
+
+#[test]
+fn ext_fn_call() {
+    let mut bytecode = compile(&source("print(1 + 2);").unwrap().1).unwrap();
+    bytecode.add_ext_fn(
+        "print".to_string(),
+        Box::new(|vals| {
+            assert_eq!(vals[0], Value::I64(3));
+        }),
+    );
+    assert_eq!(interpret(&bytecode), Ok(Value::I64(0)));
 }
