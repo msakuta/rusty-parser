@@ -59,6 +59,12 @@ pub enum Value {
     Ref(Rc<RefCell<Value>>),
 }
 
+impl Default for Value {
+    fn default() -> Self {
+        Self::I64(0)
+    }
+}
+
 const F64_TAG: u8 = 0;
 const F32_TAG: u8 = 1;
 const I64_TAG: u8 = 2;

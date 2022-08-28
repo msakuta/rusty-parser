@@ -1,3 +1,5 @@
+use std::{cell::RefCell, rc::Rc};
+
 use super::*;
 use crate::{compile, expr, source, Statement};
 
@@ -76,4 +78,15 @@ fn logic_eval_test() {
     assert_eq!(compile_and_run(" 1 && 0 || 1 "), Ok(Value::I32(1)));
     assert_eq!(compile_and_run(" 1 && 0 || 0 "), Ok(Value::I32(0)));
     assert_eq!(compile_and_run(" 1 && !0 "), Ok(Value::I32(1)));
+}
+
+#[test]
+fn brace_expr_eval_test() {
+    assert_eq!(compile_and_run(" { 1; } "), Ok(Value::I64(1)));
+    assert_eq!(compile_and_run(" { 1; 2 }"), Ok(Value::I64(2)));
+    assert_eq!(compile_and_run(" {1; 2;} "), Ok(Value::I64(2)));
+    assert_eq!(
+        compile_and_run("  { var x: i64 = 0; x = 1; x } "),
+        Ok(Value::I64(1))
+    );
 }

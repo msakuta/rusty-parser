@@ -355,7 +355,7 @@ fn brace_expr_eval_test() {
                 .unwrap()
                 .1
         ),
-        RunResult::Yield(Value::Ref(Rc::new(RefCell::new(Value::I64(1)))))
+        RunResult::Yield(Value::I64(1))
     );
 }
 

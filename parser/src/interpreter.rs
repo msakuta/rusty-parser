@@ -350,7 +350,13 @@ fn eval<'a, 'b>(
         }
         Expression::Brace(stmts) => {
             let mut subctx = EvalContext::push_stack(ctx);
-            run(stmts, &mut subctx)?
+            let res = run(stmts, &mut subctx)?;
+            if let RunResult::Yield(Value::Ref(res)) = res {
+                // "Dereference" if the result was a reference
+                RunResult::Yield(std::mem::take(&mut res.borrow_mut()))
+            } else {
+                res
+            }
         }
     })
 }

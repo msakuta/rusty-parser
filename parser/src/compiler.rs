@@ -276,6 +276,7 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
             }
             Ok(true_branch.unwrap_or(0))
         }
+        Expression::Brace(stmts) => Ok(emit_stmts(stmts, compiler)?.unwrap_or(0)),
         _ => todo!(),
     }
 }
