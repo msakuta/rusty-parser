@@ -1,6 +1,6 @@
-use std::io::{Write, Read};
+use std::io::{Read, Write};
 
-use crate::{Statement, Expression, Value, ReadError};
+use crate::{Expression, ReadError, Statement, Value};
 
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
@@ -11,6 +11,10 @@ pub enum OpCode {
     Sub,
     Mul,
     Div,
+    /// Logical and (&&)
+    And,
+    /// Logical or (||)
+    Or,
     /// Unconditional jump to arg1.
     Jmp,
     /// Conditional jump. If arg0 is truthy, jump to arg1.
@@ -51,7 +55,7 @@ pub struct Instruction {
 
 impl Instruction {
     fn new(op: OpCode, arg0: u8, arg1: u16) -> Self {
-        Self {op, arg0, arg1}
+        Self { op, arg0, arg1 }
     }
     fn serialize(&self, writer: &mut impl Write) -> std::io::Result<()> {
         writer.write_all(&(self.op as u8).to_le_bytes())?;
@@ -102,15 +106,15 @@ impl Bytecode {
         let mut literals = [0u8; std::mem::size_of::<usize>()];
         reader.read_exact(&mut literals)?;
         let literals = usize::from_le_bytes(literals);
-        let literals = (0..literals).map(|_| {
-            Value::deserialize(reader)
-        }).collect::<Result<Vec<_>, _>>()?;
+        let literals = (0..literals)
+            .map(|_| Value::deserialize(reader))
+            .collect::<Result<Vec<_>, _>>()?;
         let mut instructions = [0u8; std::mem::size_of::<usize>()];
         reader.read_exact(&mut instructions)?;
         let instructions = usize::from_le_bytes(instructions);
-        let instructions = (0..instructions).map(|_| {
-            Instruction::deserialize(reader)
-        }).collect::<Result<Vec<_>, _>>()?;
+        let instructions = (0..instructions)
+            .map(|_| Instruction::deserialize(reader))
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
             literals,
             instructions,
@@ -135,9 +139,7 @@ struct Compiler {
     locals: Vec<LocalVar>,
 }
 
-pub fn compile<'src, 'ast>(
-    stmts: &'ast [Statement<'src>],
-) -> Result<Bytecode, String> {
+pub fn compile<'src, 'ast>(stmts: &'ast [Statement<'src>]) -> Result<Bytecode, String> {
     let mut compiler = Compiler {
         bytecode: Bytecode {
             literals: vec![],
@@ -148,7 +150,10 @@ pub fn compile<'src, 'ast>(
         locals: vec![],
     };
     if let Some(last_target) = emit_stmts(stmts, &mut compiler)? {
-        compiler.bytecode.instructions.push(Instruction::new(OpCode::Ret, 0, last_target as u16));
+        compiler
+            .bytecode
+            .instructions
+            .push(Instruction::new(OpCode::Ret, 0, last_target as u16));
     }
     compiler.bytecode.stack_size = compiler.target_stack.len();
     Ok(compiler.bytecode)
@@ -183,8 +188,15 @@ fn add_literal(val: Value, compiler: &mut Compiler) -> usize {
     let literal = bytecode.literals.len();
     let target_idx = compiler.target_stack.len();
     bytecode.literals.push(val.clone());
-    bytecode.instructions.push(Instruction::new(OpCode::LoadLiteral, literal as u8, target_idx as u16));
-    compiler.target_stack.push(Target { literal: Some(literal), local: None });
+    bytecode.instructions.push(Instruction::new(
+        OpCode::LoadLiteral,
+        literal as u8,
+        target_idx as u16,
+    ));
+    compiler.target_stack.push(Target {
+        literal: Some(literal),
+        local: None,
+    });
     target_idx
 }
 
@@ -199,43 +211,52 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
                 return Err(format!("Variable {} not found in scope", str));
             }
         }
-        Expression::Add(lhs, rhs) => {
-            Ok(emit_binary_op(compiler, OpCode::Add, lhs, rhs))
-        }
-        Expression::Sub(lhs, rhs) => {
-            Ok(emit_binary_op(compiler, OpCode::Sub, lhs, rhs))
-        }
-        Expression::Mult(lhs, rhs) => {
-            Ok(emit_binary_op(compiler, OpCode::Mul, lhs, rhs))
-        }
-        Expression::Div(lhs, rhs) => {
-            Ok(emit_binary_op(compiler, OpCode::Div, lhs, rhs))
-        }
+        Expression::Add(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Add, lhs, rhs)),
+        Expression::Sub(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Sub, lhs, rhs)),
+        Expression::Mult(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Mul, lhs, rhs)),
+        Expression::Div(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Div, lhs, rhs)),
         Expression::VarAssign(lhs, rhs) => {
             let lhs_result = emit_expr(lhs, compiler)?;
             let rhs_result = emit_expr(rhs, compiler)?;
-            compiler.bytecode.instructions.push(Instruction{
+            compiler.bytecode.instructions.push(Instruction {
                 op: OpCode::Move,
                 arg0: rhs_result as u8,
                 arg1: lhs_result as u16,
             });
             Ok(lhs_result)
         }
+        Expression::And(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::And, lhs, rhs)),
+        Expression::Or(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Or, lhs, rhs)),
         Expression::Conditional(cond, true_branch, false_branch) => {
             let cond = emit_expr(cond, compiler)?;
             let cond_inst_idx = compiler.bytecode.instructions.len();
-            compiler.bytecode.instructions.push(Instruction::new(OpCode::Jf, cond as u8, 0));
+            compiler
+                .bytecode
+                .instructions
+                .push(Instruction::new(OpCode::Jf, cond as u8, 0));
             let true_branch = emit_stmts(true_branch, compiler)?;
             if let Some(false_branch) = false_branch {
                 let true_inst_idx = compiler.bytecode.instructions.len();
-                compiler.bytecode.instructions.push(Instruction::new(OpCode::Jmp, 0, 0));
-                compiler.bytecode.instructions[cond_inst_idx].arg1 = compiler.bytecode.instructions.len() as u16;
-                if let Some((false_branch, true_branch)) = emit_stmts(false_branch, compiler)?.zip(true_branch) {
-                    compiler.bytecode.instructions.push(Instruction::new(OpCode::Move, true_branch as u8, false_branch as u16));
+                compiler
+                    .bytecode
+                    .instructions
+                    .push(Instruction::new(OpCode::Jmp, 0, 0));
+                compiler.bytecode.instructions[cond_inst_idx].arg1 =
+                    compiler.bytecode.instructions.len() as u16;
+                if let Some((false_branch, true_branch)) =
+                    emit_stmts(false_branch, compiler)?.zip(true_branch)
+                {
+                    compiler.bytecode.instructions.push(Instruction::new(
+                        OpCode::Move,
+                        true_branch as u8,
+                        false_branch as u16,
+                    ));
                 }
-                compiler.bytecode.instructions[true_inst_idx].arg1 = compiler.bytecode.instructions.len() as u16;
+                compiler.bytecode.instructions[true_inst_idx].arg1 =
+                    compiler.bytecode.instructions.len() as u16;
             } else {
-                compiler.bytecode.instructions[cond_inst_idx].arg1 = compiler.bytecode.instructions.len() as u16;
+                compiler.bytecode.instructions[cond_inst_idx].arg1 =
+                    compiler.bytecode.instructions.len() as u16;
             }
             Ok(true_branch.unwrap_or(0))
         }
@@ -243,7 +264,12 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
     }
 }
 
-fn emit_binary_op(compiler: &mut Compiler, op: OpCode, lhs: &Expression, rhs: &Expression) -> usize {
+fn emit_binary_op(
+    compiler: &mut Compiler,
+    op: OpCode,
+    lhs: &Expression,
+    rhs: &Expression,
+) -> usize {
     let lhs = emit_expr(&lhs, compiler).unwrap();
     let rhs = emit_expr(&rhs, compiler).unwrap();
     compiler.bytecode.instructions.push(Instruction {
@@ -251,6 +277,9 @@ fn emit_binary_op(compiler: &mut Compiler, op: OpCode, lhs: &Expression, rhs: &E
         arg0: lhs as u8,
         arg1: rhs as u16,
     });
-    compiler.target_stack[lhs] = Target { literal: None, local: None };
+    compiler.target_stack[lhs] = Target {
+        literal: None,
+        local: None,
+    };
     lhs
 }

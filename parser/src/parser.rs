@@ -9,7 +9,12 @@ use nom::{
     sequence::{delimited, pair, preceded, terminated, tuple},
     IResult,
 };
-use std::{cell::RefCell, rc::Rc, io::{Write, Read}, string::FromUtf8Error};
+use std::{
+    cell::RefCell,
+    io::{Read, Write},
+    rc::Rc,
+    string::FromUtf8Error,
+};
 
 #[derive(Debug, PartialEq, Clone)]
 #[repr(u8)]
@@ -36,7 +41,7 @@ impl TypeDecl {
                 writer.write_all(&ARRAY_TAG.to_le_bytes())?;
                 inner.serialize(writer)?;
                 return Ok(());
-            },
+            }
         };
         writer.write_all(&tag.to_le_bytes())?;
         Ok(())
@@ -97,13 +102,16 @@ impl ToString for Value {
             Self::I64(v) => v.to_string(),
             Self::I32(v) => v.to_string(),
             Self::Str(v) => v.clone(),
-            Self::Array(_, v) => format!("[{}]", &v.iter().fold("".to_string(), |acc, cur| {
-                if acc.is_empty() {
-                    cur.borrow().to_string()
-                } else {
-                    acc + ", " + &cur.borrow().to_string()
-                }
-            })),
+            Self::Array(_, v) => format!(
+                "[{}]",
+                &v.iter().fold("".to_string(), |acc, cur| {
+                    if acc.is_empty() {
+                        cur.borrow().to_string()
+                    } else {
+                        acc + ", " + &cur.borrow().to_string()
+                    }
+                })
+            ),
             Self::Ref(v) => "&".to_string() + &v.borrow().to_string(),
         }
     }
@@ -111,13 +119,12 @@ impl ToString for Value {
 
 impl Value {
     pub(crate) fn serialize(&self, writer: &mut impl Write) -> std::io::Result<()> {
-
         macro_rules! serialize_with_tag {
             ($tag:ident, $val:expr) => {{
                 writer.write_all(&$tag.to_le_bytes())?;
                 writer.write_all(&$val.to_le_bytes())?;
                 Ok(())
-            }}
+            }};
         }
 
         match self {
@@ -145,8 +152,7 @@ impl Value {
         }
     }
 
-    pub(crate) fn deserialize(reader: &mut impl Read) -> Result<Self, ReadError>
-    {
+    pub(crate) fn deserialize(reader: &mut impl Read) -> Result<Self, ReadError> {
         let mut tag = [0u8; 1];
         reader.read_exact(&mut tag)?;
 
@@ -155,7 +161,7 @@ impl Value {
                 let mut buf = [0u8; std::mem::size_of::<$typ>()];
                 reader.read_exact(&mut buf)?;
                 <$typ>::from_le_bytes(buf)
-            }}
+            }};
         }
 
         Ok(match tag[0] {
