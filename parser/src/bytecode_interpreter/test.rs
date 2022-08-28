@@ -83,8 +83,8 @@ fn brace_expr_eval_test() {
     assert_eq!(compile_and_run(" { 1; 2 }"), Ok(Value::I64(2)));
     assert_eq!(compile_and_run(" {1; 2;} "), Ok(Value::I64(2)));
     assert_eq!(
-        compile_and_run("  { var x: i64 = 0; x = 1; x } "),
-        Ok(Value::I64(1))
+        compile_and_run("  { var x: i64 = 10; x = 20; x } "),
+        Ok(Value::I64(20))
     );
 }
 
@@ -104,41 +104,56 @@ fn brace_shadowing_test() {
     );
 }
 
+fn compile_and_run_with(src: &str, fun: impl Fn(&[Value]) + 'static) -> Result<Value, EvalError> {
+    let mut bytecode = compile(&source(src).unwrap().1).unwrap();
+    bytecode.add_ext_fn("print".to_string(), Box::new(fun));
+    interpret(&bytecode)
+}
+
 #[test]
 fn ext_fn_call() {
-    let mut bytecode = compile(&source("print(1 + 2);").unwrap().1).unwrap();
-    bytecode.add_ext_fn(
-        "print".to_string(),
-        Box::new(|vals| {
+    // The return value does not matter
+    assert!(matches!(
+        compile_and_run_with("print(1 + 2);", |vals| {
             assert_eq!(vals[0], Value::I64(3));
         }),
-    );
-    // The return value does not matter
-    // assert_eq!(interpret(&bytecode), Ok(Value::I64(0)));
+        Ok(_)
+    ));
 }
 
 #[test]
 fn define_func() {
-    let mut bytecode = compile(
-        &source(
-            r#"
+    let res = compile_and_run_with(
+        r#"
     fn f(x, y) {
         x * y;
     }
 
     print(f(5, 5));
     "#,
-        )
-        .unwrap()
-        .1,
-    )
-    .unwrap();
-    bytecode.add_ext_fn(
-        "print".to_string(),
-        Box::new(|vals| {
+        |vals| {
             assert_eq!(vals[0], Value::I64(25));
-        }),
+        },
     );
     // The return value does not matter
-    // assert_eq!(interpret(&bytecode), Ok(Value::Str("print".to_string())));
+    assert!(res.is_ok());
+}
+
+#[test]
+fn factorial() {
+    let res = compile_and_run_with(
+        r#"
+fn fact(n) {
+    if n < 1 {
+        1
+    } else {
+        n * fact(n - 1)
+    };
+}
+
+print(fact(10));
+"#,
+        |vals| assert_eq!(vals[0], Value::I64(3628800)),
+    );
+    assert!(res.is_ok());
 }

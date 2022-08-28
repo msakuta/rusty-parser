@@ -20,6 +20,12 @@ struct CallInfo<'a> {
     stack_base: usize,
 }
 
+impl<'a> CallInfo<'a> {
+    fn has_next_inst(&self) -> bool {
+        self.ip < self.fun.instructions.len()
+    }
+}
+
 struct Vm {
     stack: Vec<Value>,
     stack_base: usize,
@@ -75,7 +81,7 @@ fn interpret_fn(
         stack_base: vm.stack_base,
     }];
 
-    while call_stack.last().unwrap().ip < bytecode.instructions.len() {
+    while call_stack.last().unwrap().has_next_inst() {
         let ci = call_stack.last().unwrap();
         let ip = ci.ip;
         let inst = ci.fun.instructions[ip];
@@ -84,7 +90,7 @@ fn interpret_fn(
 
         match inst.op {
             OpCode::LoadLiteral => {
-                vm.set(inst.arg1, bytecode.literals[inst.arg0 as usize].clone());
+                vm.set(inst.arg1, ci.fun.literals[inst.arg0 as usize].clone());
             }
             OpCode::Move => {
                 let val = vm.get(inst.arg0);

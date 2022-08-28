@@ -227,6 +227,10 @@ impl FnBytecode {
 #[derive(Debug, Clone, Copy, Default)]
 struct Target {
     literal: Option<usize>,
+    /// If it is an allocated stack slot for a local variable, it will contain the index
+    /// into locals array. We use it to keep track of which is local variable so that
+    /// we won't destroy it by accident.
+    /// **NOTE** that it is not a stack index.
     local: Option<usize>,
 }
 
@@ -254,7 +258,12 @@ impl Compiler {
                 instructions: vec![],
                 stack_size: 0,
             },
-            target_stack: vec![Target::default(); args.len() + 1],
+            target_stack: (0..args.len() + 1)
+                .map(|i| Target {
+                    local: if i == 0 { None } else { Some(i - 1) },
+                    literal: None,
+                })
+                .collect(),
             stack_base: 0,
             locals: vec![args],
         }
@@ -313,9 +322,10 @@ fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> Result<Option<usi
                 let init_val = if let Some(init_expr) = initializer {
                     emit_expr(init_expr, compiler)?
                 } else {
+                    let locals = compiler.locals.last().unwrap();
                     let target = compiler.target_stack.len();
                     compiler.target_stack.push(Target {
-                        local: Some(target),
+                        local: Some(locals.len()),
                         literal: None,
                     });
                     target
@@ -509,8 +519,8 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
                 {
                     compiler.bytecode.instructions.push(Instruction::new(
                         OpCode::Move,
-                        true_branch as u8,
-                        false_branch as u16,
+                        false_branch as u8,
+                        true_branch as u16,
                     ));
                 }
                 compiler.bytecode.instructions[true_inst_idx].arg1 =
@@ -539,6 +549,21 @@ fn emit_binary_op(
 ) -> usize {
     let lhs = emit_expr(&lhs, compiler).unwrap();
     let rhs = emit_expr(&rhs, compiler).unwrap();
+    let lhs = if compiler.target_stack[lhs].local.is_some() {
+        // We move the local variable to anothe slot because our instructions are destructive
+        let top = compiler.target_stack.len();
+        compiler
+            .bytecode
+            .instructions
+            .push(Instruction::new(OpCode::Move, lhs as u8, top as u16));
+        compiler.target_stack.push(Target {
+            literal: None,
+            local: None,
+        });
+        top
+    } else {
+        lhs
+    };
     compiler.bytecode.instructions.push(Instruction {
         op,
         arg0: lhs as u8,
