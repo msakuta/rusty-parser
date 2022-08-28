@@ -1,10 +1,9 @@
-use std::cmp::Ordering;
-
 use crate::{binary_op, binary_op_str, coerce_f64, truthy, Bytecode, EvalError, OpCode, Value};
 
 pub fn interpret(bytecode: &Bytecode) -> Result<Value, EvalError> {
     println!("size inst: {}", std::mem::size_of::<crate::Instruction>());
     println!("size value: {}", std::mem::size_of::<Value>());
+    println!("literals: {:?}", bytecode.literals);
     let mut stack = vec![Value::I64(0); bytecode.stack_size];
     let mut ip = 0;
 
@@ -24,6 +23,9 @@ pub fn interpret(bytecode: &Bytecode) -> Result<Value, EvalError> {
 
     while ip < bytecode.instructions.len() {
         let inst = bytecode.instructions[ip];
+
+        println!("inst[{ip}]: {inst:?}");
+
         match inst.op {
             OpCode::LoadLiteral => {
                 stack[inst.arg1 as usize] = bytecode.literals[inst.arg0 as usize].clone();

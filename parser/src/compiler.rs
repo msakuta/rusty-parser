@@ -134,6 +134,7 @@ struct Target {
     local: Option<usize>,
 }
 
+#[derive(Debug)]
 struct LocalVar {
     name: String,
     stack_idx: usize,
@@ -142,7 +143,7 @@ struct LocalVar {
 struct Compiler {
     bytecode: Bytecode,
     target_stack: Vec<Target>,
-    locals: Vec<LocalVar>,
+    locals: Vec<Vec<LocalVar>>,
 }
 
 pub fn compile<'src, 'ast>(stmts: &'ast [Statement<'src>]) -> Result<Bytecode, String> {
@@ -153,7 +154,7 @@ pub fn compile<'src, 'ast>(stmts: &'ast [Statement<'src>]) -> Result<Bytecode, S
             stack_size: 0,
         },
         target_stack: vec![],
-        locals: vec![],
+        locals: vec![vec![]],
     };
     if let Some(last_target) = emit_stmts(stmts, &mut compiler)? {
         compiler
@@ -175,7 +176,7 @@ fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> Result<Option<usi
                 } else {
                     0
                 };
-                compiler.locals.push(LocalVar {
+                compiler.locals.last_mut().unwrap().push(LocalVar {
                     name: var.to_string(),
                     stack_idx: init_val,
                 });
@@ -211,7 +212,18 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
         Expression::NumLiteral(val) => Ok(add_literal(val.clone(), compiler)),
         Expression::StrLiteral(val) => Ok(add_literal(Value::Str(val.clone()), compiler)),
         Expression::Variable(str) => {
-            if let Some(local) = compiler.locals.iter().find(|lo| lo.name == **str) {
+            // if compiler.locals.len() >= 1 {
+            //     println!("locals: {:?}", compiler.locals);
+            // }
+            let local = compiler.locals.iter().rev().fold(None, |acc, rhs| {
+                if acc.is_some() {
+                    acc
+                } else {
+                    rhs.iter().rev().find(|lo| lo.name == **str)
+                }
+            });
+
+            if let Some(local) = local {
                 return Ok(local.stack_idx);
             } else {
                 return Err(format!("Variable {} not found in scope", str));
@@ -276,7 +288,12 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
             }
             Ok(true_branch.unwrap_or(0))
         }
-        Expression::Brace(stmts) => Ok(emit_stmts(stmts, compiler)?.unwrap_or(0)),
+        Expression::Brace(stmts) => {
+            compiler.locals.push(vec![]);
+            let res = emit_stmts(stmts, compiler)?.unwrap_or(0);
+            compiler.locals.pop();
+            Ok(res)
+        }
         _ => todo!(),
     }
 }

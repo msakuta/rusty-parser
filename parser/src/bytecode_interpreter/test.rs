@@ -90,3 +90,19 @@ fn brace_expr_eval_test() {
         Ok(Value::I64(1))
     );
 }
+
+#[test]
+fn brace_shadowing_test() {
+    assert_eq!(
+        compile_and_run(" var x = 0; { var x = 1; }; x;"),
+        Ok(Value::I64(0))
+    );
+    assert_eq!(
+        compile_and_run(" var x = 0; { var x = 1; x; };"),
+        Ok(Value::I64(1))
+    );
+    assert_eq!(
+        compile_and_run(" var x = 0; { var x = 1; x = 2; }; x;"),
+        Ok(Value::I64(0))
+    );
+}
