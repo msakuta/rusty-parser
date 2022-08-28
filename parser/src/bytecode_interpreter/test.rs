@@ -60,3 +60,20 @@ fn cond_test() {
         Ok(Value::I64(2))
     );
 }
+
+#[test]
+fn cmp_eval_test() {
+    assert_eq!(compile_and_run(" 1 <  2 "), Ok(Value::I64(1)));
+    assert_eq!(compile_and_run(" 1 > 2"), Ok(Value::I64(0)));
+    assert_eq!(compile_and_run(" 2 < 1"), Ok(Value::I64(0)));
+    assert_eq!(compile_and_run(" 2 > 1"), Ok(Value::I64(1)));
+}
+
+#[test]
+fn logic_eval_test() {
+    assert_eq!(compile_and_run(" 0 && 1 "), Ok(Value::I32(0)));
+    assert_eq!(compile_and_run(" 0 || 1 "), Ok(Value::I32(1)));
+    assert_eq!(compile_and_run(" 1 && 0 || 1 "), Ok(Value::I32(1)));
+    assert_eq!(compile_and_run(" 1 && 0 || 0 "), Ok(Value::I32(0)));
+    assert_eq!(compile_and_run(" 1 && !0 "), Ok(Value::I32(1)));
+}

@@ -15,6 +15,12 @@ pub enum OpCode {
     And,
     /// Logical or (||)
     Or,
+    /// Logical not (!)
+    Not,
+    /// Compare arg0 and arg1, sets result -1, 0 or 1 to arg0, meaning less, equal and more, respectively
+    // Cmp,
+    Lt,
+    Gt,
     /// Unconditional jump to arg1.
     Jmp,
     /// Conditional jump. If arg0 is truthy, jump to arg1.
@@ -224,6 +230,16 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
                 arg1: lhs_result as u16,
             });
             Ok(lhs_result)
+        }
+        Expression::LT(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Lt, lhs, rhs)),
+        Expression::GT(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Gt, lhs, rhs)),
+        Expression::Not(val) => {
+            let val = emit_expr(val, compiler)?;
+            compiler
+                .bytecode
+                .instructions
+                .push(Instruction::new(OpCode::Not, val as u8, 0));
+            Ok(val)
         }
         Expression::And(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::And, lhs, rhs)),
         Expression::Or(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Or, lhs, rhs)),

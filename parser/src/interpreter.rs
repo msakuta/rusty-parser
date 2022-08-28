@@ -78,7 +78,7 @@ pub(crate) fn truthy(a: &Value) -> bool {
     }
 }
 
-fn coerce_f64(a: &Value) -> Result<f64, EvalError> {
+pub(crate) fn coerce_f64(a: &Value) -> Result<f64, EvalError> {
     Ok(match a {
         Value::F64(v) => *v as f64,
         Value::F32(v) => *v as f64,
@@ -89,7 +89,7 @@ fn coerce_f64(a: &Value) -> Result<f64, EvalError> {
     })
 }
 
-fn coerce_i64(a: &Value) -> Result<i64, EvalError> {
+pub(crate) fn coerce_i64(a: &Value) -> Result<i64, EvalError> {
     Ok(match a {
         Value::F64(v) => *v as i64,
         Value::F32(v) => *v as i64,
