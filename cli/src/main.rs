@@ -27,7 +27,7 @@ struct Args {
 }
 
 fn print_fn(values: &[Value]) {
-    println!("Hello {values:?}");
+    println!("Print: {values:?}");
 }
 
 fn main() -> Result<(), String> {

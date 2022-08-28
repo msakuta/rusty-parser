@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ops::Range};
+use std::collections::HashMap;
 
 use crate::{
     binary_op, binary_op_str, coerce_f64, truthy, Bytecode, EvalError, FnBytecode, FnProto, OpCode,
@@ -175,8 +175,7 @@ fn interpret_fn(
                     return Err("Function can be only specified by a name (yet)".to_string());
                 };
                 let fun = functions.iter().find(|(fname, _)| *fname == arg_name);
-                println!("functions: {}", functions.len());
-                if let Some((fname, fun)) = fun {
+                if let Some((_, fun)) = fun {
                     match fun {
                         FnProto::Code(fun) => {
                             vm.stack_base += bytecode.stack_size;

@@ -246,12 +246,19 @@ fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> Result<Option<usi
                 let init_val = if let Some(init_expr) = initializer {
                     emit_expr(init_expr, compiler)?
                 } else {
-                    0
+                    let target = compiler.target_stack.len();
+                    compiler.target_stack.push(Target {
+                        local: Some(target),
+                        literal: None,
+                    });
+                    target
                 };
-                compiler.locals.last_mut().unwrap().push(LocalVar {
+                let locals = compiler.locals.last_mut().unwrap();
+                locals.push(LocalVar {
                     name: var.to_string(),
                     stack_idx: init_val,
                 });
+                println!("Locals: {:?}", compiler.locals);
             }
             Statement::Expression(ref ex) => {
                 last_target = Some(emit_expr(ex, compiler)?);
