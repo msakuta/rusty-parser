@@ -1,8 +1,3 @@
-use std::{
-    cell::{Cell, RefCell},
-    rc::Rc,
-};
-
 use super::*;
 use crate::{compile, expr, source, Statement};
 
@@ -118,5 +113,32 @@ fn ext_fn_call() {
             assert_eq!(vals[0], Value::I64(3));
         }),
     );
-    assert_eq!(interpret(&bytecode), Ok(Value::I64(0)));
+    // The return value does not matter
+    // assert_eq!(interpret(&bytecode), Ok(Value::I64(0)));
+}
+
+#[test]
+fn define_func() {
+    let mut bytecode = compile(
+        &source(
+            r#"
+    fn f(x, y) {
+        x * y;
+    }
+
+    print(f(5, 5));
+    "#,
+        )
+        .unwrap()
+        .1,
+    )
+    .unwrap();
+    bytecode.add_ext_fn(
+        "print".to_string(),
+        Box::new(|vals| {
+            assert_eq!(vals[0], Value::I64(25));
+        }),
+    );
+    // The return value does not matter
+    // assert_eq!(interpret(&bytecode), Ok(Value::Str("print".to_string())));
 }

@@ -16,6 +16,8 @@ pub fn interpret(bytecode: &Bytecode) -> Result<Value, EvalError> {
 struct CallInfo<'a> {
     fun: &'a FnBytecode,
     ip: usize,
+    stack_size: usize,
+    stack_base: usize,
 }
 
 struct Vm {
@@ -35,6 +37,23 @@ impl Vm {
     fn slice(&self, from: usize, to: usize) -> &[Value] {
         &self.stack[self.stack_base + from..self.stack_base + to]
     }
+
+    fn dump_stack(&self) {
+        println!(
+            "stack[{}..{}]: {}",
+            self.stack_base,
+            self.stack.len(),
+            self.stack[self.stack_base..]
+                .iter()
+                .fold("".to_string(), |acc, cur: &Value| {
+                    if acc.is_empty() {
+                        cur.to_string()
+                    } else {
+                        acc + ", " + &cur.to_string()
+                    }
+                })
+        );
+    }
 }
 
 fn interpret_fn(
@@ -43,6 +62,7 @@ fn interpret_fn(
 ) -> Result<Value, EvalError> {
     println!("size inst: {}", std::mem::size_of::<crate::Instruction>());
     println!("size value: {}", std::mem::size_of::<Value>());
+    println!("size callInfo: {}", std::mem::size_of::<CallInfo>());
     println!("literals: {:?}", bytecode.literals);
     let mut vm = Vm {
         stack: vec![Value::I64(0); bytecode.stack_size],
@@ -51,25 +71,14 @@ fn interpret_fn(
     let mut call_stack = vec![CallInfo {
         fun: &bytecode,
         ip: 0,
+        stack_size: vm.stack.len(),
+        stack_base: vm.stack_base,
     }];
 
-    let dump_stack = |stack: &[Value]| {
-        println!(
-            "stack[{}]: {}",
-            stack.len(),
-            stack.iter().fold("".to_string(), |acc, cur: &Value| {
-                if acc.is_empty() {
-                    cur.to_string()
-                } else {
-                    acc + ", " + &cur.to_string()
-                }
-            })
-        );
-    };
-
     while call_stack.last().unwrap().ip < bytecode.instructions.len() {
-        let ip = call_stack.last().unwrap().ip;
-        let inst = bytecode.instructions[ip];
+        let ci = call_stack.last().unwrap();
+        let ip = ci.ip;
+        let inst = ci.fun.instructions[ip];
 
         println!("inst[{ip}]: {inst:?}");
 
@@ -178,10 +187,20 @@ fn interpret_fn(
                 if let Some((_, fun)) = fun {
                     match fun {
                         FnProto::Code(fun) => {
-                            vm.stack_base += bytecode.stack_size;
-                            vm.stack
-                                .resize(vm.stack_base + fun.stack_size, Value::default());
-                            call_stack.push(CallInfo { fun, ip: 0 });
+                            println!("Calling code function with stack size (base:{}) + (fn: 1) + (params: {}) + (cur stack:{})", inst.arg1, inst.arg0, fun.stack_size);
+                            // +1 for function name and return slot
+                            vm.stack_base += inst.arg1 as usize;
+                            vm.stack.resize(
+                                vm.stack_base + inst.arg0 as usize + fun.stack_size + 1,
+                                Value::default(),
+                            );
+                            call_stack.push(CallInfo {
+                                fun,
+                                ip: 0,
+                                stack_size: vm.stack.len(),
+                                stack_base: vm.stack_base,
+                            });
+                            continue;
                         }
                         FnProto::Native(nat) => {
                             nat(&vm.slice(
@@ -195,10 +214,16 @@ fn interpret_fn(
                 }
             }
             OpCode::Ret => {
-                if let Some(ci) = call_stack.pop() {
+                let retval = vm.stack_base + inst.arg1 as usize;
+                if let Some(prev_ci) = call_stack.pop() {
                     if call_stack.is_empty() {
                         return Ok(vm.get(inst.arg1).clone());
                     } else {
+                        let ci = call_stack.last().unwrap();
+                        vm.stack_base = ci.stack_base;
+                        vm.stack.resize(ci.stack_size, Value::default());
+                        vm.stack[prev_ci.stack_base] = vm.stack[retval].clone();
+                        vm.dump_stack();
                     }
                 } else {
                     return Err("Call stack underflow!".to_string());
@@ -206,7 +231,7 @@ fn interpret_fn(
             }
         }
 
-        dump_stack(&vm.stack);
+        vm.dump_stack();
 
         call_stack.last_mut().unwrap().ip += 1;
     }

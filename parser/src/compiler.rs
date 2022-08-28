@@ -151,7 +151,7 @@ impl Bytecode {
         let len = usize::from_le_bytes(len);
         let ret = Bytecode {
             functions: (0..len)
-                .map(|i| -> Result<(String, FnProto), ReadError> {
+                .map(|_| -> Result<(String, FnProto), ReadError> {
                     Ok((read_str(reader)?, FnProto::Code(FnBytecode::read(reader)?)))
                 })
                 .collect::<Result<HashMap<_, _>, ReadError>>()?,
@@ -168,6 +168,7 @@ impl Bytecode {
 #[derive(Debug, Clone)]
 pub struct FnBytecode {
     pub(crate) literals: Vec<Value>,
+    pub(crate) args: Vec<String>,
     pub(crate) instructions: Vec<Instruction>,
     pub(crate) stack_size: usize,
 }
@@ -179,6 +180,10 @@ impl FnBytecode {
         for literal in &self.literals {
             literal.serialize(writer)?;
         }
+        writer.write_all(&self.args.len().to_le_bytes())?;
+        for literal in &self.args {
+            write_str(literal, writer)?;
+        }
         writer.write_all(&self.instructions.len().to_le_bytes())?;
         for inst in &self.instructions {
             inst.serialize(writer)?;
@@ -189,12 +194,21 @@ impl FnBytecode {
     pub fn read(reader: &mut impl Read) -> Result<Self, ReadError> {
         let mut stack_size = [0u8; std::mem::size_of::<usize>()];
         reader.read_exact(&mut stack_size)?;
+
         let mut literals = [0u8; std::mem::size_of::<usize>()];
         reader.read_exact(&mut literals)?;
         let literals = usize::from_le_bytes(literals);
         let literals = (0..literals)
             .map(|_| Value::deserialize(reader))
             .collect::<Result<Vec<_>, _>>()?;
+
+        let mut args = [0u8; std::mem::size_of::<usize>()];
+        reader.read_exact(&mut args)?;
+        let args = usize::from_le_bytes(args);
+        let args = (0..args)
+            .map(|_| read_str(reader))
+            .collect::<Result<Vec<_>, _>>()?;
+
         let mut instructions = [0u8; std::mem::size_of::<usize>()];
         reader.read_exact(&mut instructions)?;
         let instructions = usize::from_le_bytes(instructions);
@@ -203,12 +217,14 @@ impl FnBytecode {
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Self {
             literals,
+            args,
             instructions,
             stack_size: usize::from_le_bytes(stack_size),
         })
     }
 }
 
+#[derive(Debug, Clone, Copy, Default)]
 struct Target {
     literal: Option<usize>,
     local: Option<usize>,
@@ -229,31 +245,61 @@ struct Compiler {
 }
 
 impl Compiler {
-    fn new() -> Self {
+    fn new(args: Vec<LocalVar>) -> Self {
         Self {
             functions: HashMap::new(),
             bytecode: FnBytecode {
                 literals: vec![],
+                args: args.iter().map(|arg| arg.name.to_owned()).collect(),
                 instructions: vec![],
                 stack_size: 0,
             },
-            target_stack: vec![],
+            target_stack: vec![Target::default(); args.len() + 1],
             stack_base: 0,
-            locals: vec![vec![]],
+            locals: vec![args],
         }
     }
 }
 
 pub fn compile<'src, 'ast>(stmts: &'ast [Statement<'src>]) -> Result<Bytecode, String> {
-    let mut compiler = Compiler::new();
+    let mut compiler = Compiler::new(vec![]);
     if let Some(last_target) = emit_stmts(stmts, &mut compiler)? {
         compiler
             .bytecode
             .instructions
             .push(Instruction::new(OpCode::Ret, 0, last_target as u16));
     }
-    println!("instructions: {:#?}", compiler.bytecode.instructions);
     compiler.bytecode.stack_size = compiler.target_stack.len();
+
+    println!("compile stack: {:#?}", compiler.bytecode);
+
+    let mut functions = compiler.functions;
+    functions.insert("".to_string(), FnProto::Code(compiler.bytecode));
+
+    for fun in &functions {
+        match fun.1 {
+            FnProto::Code(code) => println!("fn {} -> {:?}", fun.0, code.instructions),
+            _ => println!("fn {} -> <Native>", fun.0),
+        }
+    }
+    Ok(Bytecode { functions })
+}
+
+fn compile_fn<'src, 'ast>(
+    stmts: &'ast [Statement<'src>],
+    args: Vec<LocalVar>,
+) -> Result<Bytecode, String> {
+    let mut compiler = Compiler::new(args);
+    if let Some(last_target) = emit_stmts(stmts, &mut compiler)? {
+        compiler
+            .bytecode
+            .instructions
+            .push(Instruction::new(OpCode::Ret, 0, last_target as u16));
+    }
+    compiler.bytecode.stack_size = compiler.target_stack.len();
+
+    println!("compile_fn stack: {:#?}", compiler.bytecode);
+
     let mut functions = compiler.functions;
     functions.insert("".to_string(), FnProto::Code(compiler.bytecode));
     Ok(Bytecode { functions })
@@ -280,6 +326,39 @@ fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> Result<Option<usi
                     stack_idx: init_val,
                 });
                 println!("Locals: {:?}", compiler.locals);
+            }
+            Statement::FnDecl {
+                name,
+                args,
+                ret_type,
+                stmts,
+            } => {
+                println!("Args: {:?}", args);
+                let args = args
+                    .iter()
+                    .map(|arg| {
+                        let target = compiler.target_stack.len();
+                        let local = LocalVar {
+                            name: arg.0.to_owned(),
+                            stack_idx: target,
+                        };
+                        compiler.target_stack.push(Target {
+                            local: Some(target),
+                            literal: None,
+                        });
+                        local
+                    })
+                    .collect();
+                println!("Locals: {:?}", args);
+                let fun = compile_fn(stmts, args)?;
+                compiler.functions.insert(
+                    name.to_string(),
+                    fun.functions
+                        .into_iter()
+                        .find(|(fname, _)| fname.is_empty())
+                        .unwrap()
+                        .1,
+                );
             }
             Statement::Expression(ref ex) => {
                 last_target = Some(emit_expr(ex, compiler)?);
@@ -395,7 +474,7 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
                 literal: None,
                 local: None,
             });
-            Ok(fname_target + num_args + 1)
+            Ok(fname_target)
         }
         Expression::LT(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Lt, lhs, rhs)),
         Expression::GT(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Gt, lhs, rhs)),

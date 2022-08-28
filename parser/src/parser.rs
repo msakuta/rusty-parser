@@ -141,6 +141,7 @@ impl Value {
             Self::Str(val) => {
                 writer.write_all(&STR_TAG.to_le_bytes())?;
                 writer.write_all(&(val.len() as u32).to_le_bytes())?;
+                writer.write_all(val.as_bytes())?;
                 Ok(())
             }
             Self::Array(decl, values) => {
