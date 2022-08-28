@@ -67,7 +67,7 @@ pub(crate) fn binary_op(
     })
 }
 
-fn truthy(a: &Value) -> bool {
+pub(crate) fn truthy(a: &Value) -> bool {
     match a {
         Value::F64(v) => *v != 0.,
         Value::F32(v) => *v != 0.,
@@ -647,4 +647,5 @@ pub fn run<'src, 'ast>(
     Ok(res)
 }
 
+#[cfg(test)]
 mod test;

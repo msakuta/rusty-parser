@@ -89,6 +89,26 @@ impl From<ReadError> for String {
     }
 }
 
+impl ToString for Value {
+    fn to_string(&self) -> String {
+        match self {
+            Self::F64(v) => v.to_string(),
+            Self::F32(v) => v.to_string(),
+            Self::I64(v) => v.to_string(),
+            Self::I32(v) => v.to_string(),
+            Self::Str(v) => v.clone(),
+            Self::Array(_, v) => format!("[{}]", &v.iter().fold("".to_string(), |acc, cur| {
+                if acc.is_empty() {
+                    cur.borrow().to_string()
+                } else {
+                    acc + ", " + &cur.borrow().to_string()
+                }
+            })),
+            Self::Ref(v) => "&".to_string() + &v.borrow().to_string(),
+        }
+    }
+}
+
 impl Value {
     pub(crate) fn serialize(&self, writer: &mut impl Write) -> std::io::Result<()> {
 
