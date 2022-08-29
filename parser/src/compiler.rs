@@ -11,6 +11,8 @@ pub enum OpCode {
     LoadLiteral,
     /// Move values between stack elements, from arg0 to arg1.
     Move,
+    /// Increment the operand arg0
+    Incr,
     Add,
     Sub,
     Mul,
@@ -56,6 +58,7 @@ macro_rules! impl_op_from {
 impl_op_from!(
     LoadLiteral,
     Move,
+    Incr,
     Add,
     Sub,
     Mul,
@@ -174,6 +177,12 @@ pub struct FnBytecode {
 }
 
 impl FnBytecode {
+    fn push_inst(&mut self, op: OpCode, arg0: u8, arg1: u16) -> usize {
+        let ret = self.instructions.len();
+        self.instructions.push(Instruction::new(op, arg0, arg1));
+        ret
+    }
+
     pub fn write(&self, writer: &mut impl Write) -> std::io::Result<()> {
         writer.write_all(&self.stack_size.to_le_bytes())?;
         writer.write_all(&self.literals.len().to_le_bytes())?;
@@ -379,11 +388,47 @@ fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> Result<Option<usi
             Statement::Loop(stmts) => {
                 let loop_start = compiler.bytecode.instructions.len();
                 last_target = emit_stmts(stmts, compiler)?;
-                compiler.bytecode.instructions.push(Instruction::new(
-                    OpCode::Jmp,
-                    0,
-                    loop_start as u16,
-                ));
+                compiler
+                    .bytecode
+                    .push_inst(OpCode::Jmp, 0, loop_start as u16);
+                let break_jmp_addr = compiler.bytecode.instructions.len();
+                for ip in &compiler.break_ips {
+                    compiler.bytecode.instructions[*ip].arg1 = break_jmp_addr as u16;
+                }
+                compiler.break_ips.clear();
+            }
+            Statement::For(iter, from, to, stmts) => {
+                let stk_from = emit_expr(from, compiler)?;
+                let stk_to = emit_expr(to, compiler)?;
+                let local_iter = compiler.locals.last().unwrap().len();
+                let stk_check = compiler.target_stack.len();
+
+                // stack: [stk_from, stk_to, stk_check]
+                //   where stk_from is the starting variable being incremented until stk_to,
+                //         stk_to is the end value
+                //     and stk_check is the value to store the result of comparison
+
+                let inst_loop_start = compiler.bytecode.instructions.len();
+                compiler.locals.last_mut().unwrap().push(LocalVar {
+                    name: iter.to_string(),
+                    stack_idx: stk_from,
+                });
+                compiler.target_stack[stk_from] = Target::Local(local_iter);
+                compiler.target_stack.push(Target::None);
+                compiler.bytecode.push_inst(OpCode::Incr, stk_from as u8, 0);
+                compiler
+                    .bytecode
+                    .push_inst(OpCode::Move, stk_from as u8, stk_check as u16);
+                compiler
+                    .bytecode
+                    .push_inst(OpCode::Lt, stk_check as u8, stk_to as u16);
+                let inst_break = compiler.bytecode.push_inst(OpCode::Jf, stk_check as u8, 0);
+                last_target = emit_stmts(stmts, compiler)?;
+                compiler
+                    .bytecode
+                    .push_inst(OpCode::Jmp, 0, inst_loop_start as u16);
+                compiler.bytecode.instructions[inst_break].arg1 =
+                    compiler.bytecode.instructions.len() as u16;
                 let break_jmp_addr = compiler.bytecode.instructions.len();
                 for ip in &compiler.break_ips {
                     compiler.bytecode.instructions[*ip].arg1 = break_jmp_addr as u16;
@@ -392,12 +437,10 @@ fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> Result<Option<usi
             }
             Statement::Break => {
                 let break_ip = compiler.bytecode.instructions.len();
-                compiler
-                    .bytecode
-                    .instructions
-                    .push(Instruction::new(OpCode::Jmp, 0, 0));
+                compiler.bytecode.push_inst(OpCode::Jmp, 0, 0);
                 compiler.break_ips.push(break_ip);
             }
+            Statement::Comment(_) => (),
             _ => todo!(),
         }
     }
@@ -469,21 +512,19 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
                 .bytecode
                 .literals
                 .push(Value::Str(fname.to_string()));
-            compiler.bytecode.instructions.push(Instruction::new(
+            compiler.bytecode.push_inst(
                 OpCode::LoadLiteral,
                 fname_literal as u8,
                 fname_target as u16,
-            ));
+            );
 
             // Align arguments to the stack to prepare a call.
             for arg in args {
                 let arg_target = compiler.target_stack.len();
                 compiler.target_stack.push(Target::None);
-                compiler.bytecode.instructions.push(Instruction::new(
-                    OpCode::Move,
-                    arg as u8,
-                    arg_target as u16,
-                ));
+                compiler
+                    .bytecode
+                    .push_inst(OpCode::Move, arg as u8, arg_target as u16);
             }
 
             // let func = compiler
@@ -491,11 +532,9 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
             //     .get(*str)
             //     .ok_or_else(|| format!("function {} is not defined.", str))?;
 
-            compiler.bytecode.instructions.push(Instruction::new(
-                OpCode::Call,
-                num_args as u8,
-                fname_target as u16,
-            ));
+            compiler
+                .bytecode
+                .push_inst(OpCode::Call, num_args as u8, fname_target as u16);
             compiler.target_stack.push(Target::None);
             Ok(fname_target)
         }
@@ -503,10 +542,7 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
         Expression::GT(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Gt, lhs, rhs)),
         Expression::Not(val) => {
             let val = emit_expr(val, compiler)?;
-            compiler
-                .bytecode
-                .instructions
-                .push(Instruction::new(OpCode::Not, val as u8, 0));
+            compiler.bytecode.push_inst(OpCode::Not, val as u8, 0);
             Ok(val)
         }
         Expression::And(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::And, lhs, rhs)),
@@ -514,27 +550,21 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
         Expression::Conditional(cond, true_branch, false_branch) => {
             let cond = emit_expr(cond, compiler)?;
             let cond_inst_idx = compiler.bytecode.instructions.len();
-            compiler
-                .bytecode
-                .instructions
-                .push(Instruction::new(OpCode::Jf, cond as u8, 0));
+            compiler.bytecode.push_inst(OpCode::Jf, cond as u8, 0);
             let true_branch = emit_stmts(true_branch, compiler)?;
             if let Some(false_branch) = false_branch {
                 let true_inst_idx = compiler.bytecode.instructions.len();
-                compiler
-                    .bytecode
-                    .instructions
-                    .push(Instruction::new(OpCode::Jmp, 0, 0));
+                compiler.bytecode.push_inst(OpCode::Jmp, 0, 0);
                 compiler.bytecode.instructions[cond_inst_idx].arg1 =
                     compiler.bytecode.instructions.len() as u16;
                 if let Some((false_branch, true_branch)) =
                     emit_stmts(false_branch, compiler)?.zip(true_branch)
                 {
-                    compiler.bytecode.instructions.push(Instruction::new(
+                    compiler.bytecode.push_inst(
                         OpCode::Move,
                         false_branch as u8,
                         true_branch as u16,
-                    ));
+                    );
                 }
                 compiler.bytecode.instructions[true_inst_idx].arg1 =
                     compiler.bytecode.instructions.len() as u16;

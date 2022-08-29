@@ -36,6 +36,10 @@ impl Vm {
         &self.stack[self.stack_base + idx.into()]
     }
 
+    fn get_mut(&mut self, idx: impl Into<usize>) -> &mut Value {
+        &mut self.stack[self.stack_base + idx.into()]
+    }
+
     fn set(&mut self, idx: impl Into<usize>, val: Value) {
         self.stack[self.stack_base + idx.into()] = val;
     }
@@ -95,6 +99,16 @@ fn interpret_fn(
             OpCode::Move => {
                 let val = vm.get(inst.arg0);
                 vm.set(inst.arg1, val.clone());
+            }
+            OpCode::Incr => {
+                let val = vm.get_mut(inst.arg0);
+                match val {
+                    Value::I64(i) => *i += 1,
+                    Value::I32(i) => *i += 1,
+                    Value::F64(i) => *i += 1.,
+                    Value::F32(i) => *i += 1.,
+                    _ => return Err("Attempt to increment non-numerical value".to_string()),
+                }
             }
             OpCode::Add => {
                 let result = binary_op_str(

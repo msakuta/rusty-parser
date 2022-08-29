@@ -178,3 +178,17 @@ print(accum);
     );
     assert!(res.is_ok());
 }
+
+#[test]
+fn for_test() {
+    let res = compile_and_run_with(
+        r#"var res = 0;
+for i in 0 .. 10 {
+    res = res + i;
+}
+print(res);
+"#,
+        |vals| assert_eq!(vals[0], Value::I64(45)),
+    );
+    assert!(res.is_ok());
+}
