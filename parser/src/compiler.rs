@@ -5,6 +5,13 @@ use std::{
 
 use crate::{Expression, ReadError, Statement, Value};
 
+macro_rules! dbg_println {
+    ($($rest:tt)*) => {{
+        #[cfg(debug_assertions)]
+        std::println!($($rest)*)
+    }}
+}
+
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
 pub enum OpCode {
@@ -159,10 +166,10 @@ impl Bytecode {
                 })
                 .collect::<Result<HashMap<_, _>, ReadError>>()?,
         };
-        println!("loaded {} functions", ret.functions.len());
+        dbg_println!("loaded {} functions", ret.functions.len());
         let loaded_fn = ret.functions.iter().find(|(name, _)| *name == "").unwrap();
-        if let FnProto::Code(ref code) = loaded_fn.1 {
-            println!("instructions: {:#?}", code.instructions);
+        if let FnProto::Code(ref _code) = loaded_fn.1 {
+            dbg_println!("instructions: {:#?}", _code.instructions);
         }
         Ok(ret)
     }
@@ -337,15 +344,16 @@ pub fn compile<'src, 'ast>(stmts: &'ast [Statement<'src>]) -> Result<Bytecode, S
     }
     compiler.bytecode.stack_size = compiler.target_stack.len();
 
-    println!("compile stack: {:#?}", compiler.bytecode);
+    dbg_println!("compile stack: {:#?}", compiler.bytecode);
 
     let mut functions = compiler.functions;
     functions.insert("".to_string(), FnProto::Code(compiler.bytecode));
 
+    #[cfg(debug_assertions)]
     for fun in &functions {
         match fun.1 {
-            FnProto::Code(code) => println!("fn {} -> {:?}", fun.0, code.instructions),
-            _ => println!("fn {} -> <Native>", fun.0),
+            FnProto::Code(code) => dbg_println!("fn {} -> {:?}", fun.0, code.instructions),
+            _ => dbg_println!("fn {} -> <Native>", fun.0),
         }
     }
     Ok(Bytecode { functions })
@@ -364,7 +372,7 @@ fn compile_fn<'src, 'ast>(
     }
     compiler.bytecode.stack_size = compiler.target_stack.len();
 
-    println!("compile_fn stack: {:#?}", compiler.bytecode);
+    dbg_println!("compile_fn stack: {:#?}", compiler.bytecode);
 
     let mut functions = compiler.functions;
     functions.insert("".to_string(), FnProto::Code(compiler.bytecode));
@@ -391,12 +399,12 @@ fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> Result<Option<usi
                     name: var.to_string(),
                     stack_idx: init_val,
                 });
-                println!("Locals: {:?}", compiler.locals);
+                dbg_println!("Locals: {:?}", compiler.locals);
             }
             Statement::FnDecl {
                 name, args, stmts, ..
             } => {
-                println!("Args: {:?}", args);
+                dbg_println!("Args: {:?}", args);
                 let args = args
                     .iter()
                     .map(|arg| {
@@ -409,7 +417,7 @@ fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> Result<Option<usi
                         local
                     })
                     .collect();
-                println!("Locals: {:?}", args);
+                dbg_println!("Locals: {:?}", args);
                 let fun = compile_fn(stmts, args)?;
                 compiler.functions.insert(
                     name.to_string(),

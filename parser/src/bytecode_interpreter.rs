@@ -5,6 +5,13 @@ use crate::{
     Value,
 };
 
+macro_rules! dbg_println {
+    ($($rest:tt)*) => {
+        #[cfg(debug_assertions)]
+        std::println!($($rest)*)
+    }
+}
+
 pub fn interpret(bytecode: &Bytecode) -> Result<Value, EvalError> {
     if let Some(FnProto::Code(main)) = bytecode.functions.get("") {
         interpret_fn(main, &bytecode.functions)
@@ -49,7 +56,7 @@ impl Vm {
     }
 
     fn dump_stack(&self) {
-        println!(
+        dbg_println!(
             "stack[{}..{}]: {}",
             self.stack_base,
             self.stack.len(),
@@ -70,10 +77,10 @@ fn interpret_fn(
     bytecode: &FnBytecode,
     functions: &HashMap<String, FnProto>,
 ) -> Result<Value, EvalError> {
-    println!("size inst: {}", std::mem::size_of::<crate::Instruction>());
-    println!("size value: {}", std::mem::size_of::<Value>());
-    println!("size callInfo: {}", std::mem::size_of::<CallInfo>());
-    println!("literals: {:?}", bytecode.literals);
+    dbg_println!("size inst: {}", std::mem::size_of::<crate::Instruction>());
+    dbg_println!("size value: {}", std::mem::size_of::<Value>());
+    dbg_println!("size callInfo: {}", std::mem::size_of::<CallInfo>());
+    dbg_println!("literals: {:?}", bytecode.literals);
     let mut vm = Vm {
         stack: vec![Value::I64(0); bytecode.stack_size],
         stack_base: 0,
@@ -90,7 +97,7 @@ fn interpret_fn(
         let ip = ci.ip;
         let inst = ci.fun.instructions[ip];
 
-        println!("inst[{ip}]: {inst:?}");
+        dbg_println!("inst[{ip}]: {inst:?}");
 
         match inst.op {
             OpCode::LoadLiteral => {
@@ -178,20 +185,20 @@ fn interpret_fn(
                 vm.set(inst.arg0, Value::I64(result as i64));
             }
             OpCode::Jmp => {
-                println!("[{ip}] Jumping by Jmp to {}", inst.arg1);
+                dbg_println!("[{ip}] Jumping by Jmp to {}", inst.arg1);
                 call_stack.last_mut().unwrap().ip = inst.arg1 as usize;
                 continue;
             }
             OpCode::Jt => {
                 if truthy(&vm.get(inst.arg0)) {
-                    println!("[{ip}] Jumping by Jt to {}", inst.arg1);
+                    dbg_println!("[{ip}] Jumping by Jt to {}", inst.arg1);
                     call_stack.last_mut().unwrap().ip = inst.arg1 as usize;
                     continue;
                 }
             }
             OpCode::Jf => {
                 if !truthy(&vm.get(inst.arg0)) {
-                    println!("[{ip}] Jumping by Jf to {}", inst.arg1);
+                    dbg_println!("[{ip}] Jumping by Jf to {}", inst.arg1);
                     call_stack.last_mut().unwrap().ip = inst.arg1 as usize;
                     continue;
                 }
@@ -207,7 +214,7 @@ fn interpret_fn(
                 if let Some((_, fun)) = fun {
                     match fun {
                         FnProto::Code(fun) => {
-                            println!("Calling code function with stack size (base:{}) + (fn: 1) + (params: {}) + (cur stack:{})", inst.arg1, inst.arg0, fun.stack_size);
+                            dbg_println!("Calling code function with stack size (base:{}) + (fn: 1) + (params: {}) + (cur stack:{})", inst.arg1, inst.arg0, fun.stack_size);
                             // +1 for function name and return slot
                             vm.stack_base += inst.arg1 as usize;
                             vm.stack.resize(
@@ -256,7 +263,7 @@ fn interpret_fn(
         call_stack.last_mut().unwrap().ip += 1;
     }
 
-    println!("Final stack: {:?}", vm.stack);
+    dbg_println!("Final stack: {:?}", vm.stack);
     Ok(Value::I64(0))
 }
 
