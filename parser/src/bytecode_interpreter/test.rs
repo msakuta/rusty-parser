@@ -192,3 +192,19 @@ print(res);
     );
     assert!(res.is_ok());
 }
+
+#[test]
+fn while_test() {
+    let res = compile_and_run_with(
+        r#"var i = 0;
+
+while i < 10 {
+    i = i + 1;
+}
+
+print(i);
+"#,
+        |vals| assert_eq!(vals[0], Value::I64(10)),
+    );
+    assert!(res.is_ok());
+}

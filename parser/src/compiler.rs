@@ -289,6 +289,16 @@ impl Compiler {
             break_ips: vec![],
         }
     }
+
+    /// Fixup the jump address for the break statements in the previous loop to current instruction pointer.
+    /// Call it just after leaving loop body.
+    fn fixup_breaks(&mut self) {
+        let break_jmp_addr = self.bytecode.instructions.len();
+        for ip in &self.break_ips {
+            self.bytecode.instructions[*ip].arg1 = break_jmp_addr as u16;
+        }
+        self.break_ips.clear();
+    }
 }
 
 pub fn compile<'src, 'ast>(stmts: &'ast [Statement<'src>]) -> Result<Bytecode, String> {
@@ -340,13 +350,15 @@ fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> Result<Option<usi
     for stmt in stmts {
         match stmt {
             Statement::VarDecl(var, _type, initializer) => {
+                let locals = compiler.locals.last().unwrap().len();
                 let init_val = if let Some(init_expr) = initializer {
-                    emit_expr(init_expr, compiler)?
+                    let stk_var = emit_expr(init_expr, compiler)?;
+                    compiler.target_stack[stk_var] = Target::Local(locals);
+                    stk_var
                 } else {
-                    let locals = compiler.locals.last().unwrap();
-                    let target = compiler.target_stack.len();
-                    compiler.target_stack.push(Target::Local(locals.len()));
-                    target
+                    let stk_var = compiler.target_stack.len();
+                    compiler.target_stack.push(Target::Local(locals));
+                    stk_var
                 };
                 let locals = compiler.locals.last_mut().unwrap();
                 locals.push(LocalVar {
@@ -386,16 +398,24 @@ fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> Result<Option<usi
                 last_target = Some(emit_expr(ex, compiler)?);
             }
             Statement::Loop(stmts) => {
-                let loop_start = compiler.bytecode.instructions.len();
+                let inst_loop_start = compiler.bytecode.instructions.len();
                 last_target = emit_stmts(stmts, compiler)?;
                 compiler
                     .bytecode
-                    .push_inst(OpCode::Jmp, 0, loop_start as u16);
-                let break_jmp_addr = compiler.bytecode.instructions.len();
-                for ip in &compiler.break_ips {
-                    compiler.bytecode.instructions[*ip].arg1 = break_jmp_addr as u16;
-                }
-                compiler.break_ips.clear();
+                    .push_inst(OpCode::Jmp, 0, inst_loop_start as u16);
+                compiler.fixup_breaks();
+            }
+            Statement::While(cond, stmts) => {
+                let inst_loop_start = compiler.bytecode.instructions.len();
+                let stk_cond = emit_expr(cond, compiler)?;
+                let inst_break = compiler.bytecode.push_inst(OpCode::Jf, stk_cond as u8, 0);
+                last_target = emit_stmts(stmts, compiler)?;
+                compiler
+                    .bytecode
+                    .push_inst(OpCode::Jmp, 0, inst_loop_start as u16);
+                compiler.bytecode.instructions[inst_break].arg1 =
+                    compiler.bytecode.instructions.len() as u16;
+                compiler.fixup_breaks();
             }
             Statement::For(iter, from, to, stmts) => {
                 let stk_from = emit_expr(from, compiler)?;
@@ -429,11 +449,7 @@ fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> Result<Option<usi
                     .push_inst(OpCode::Jmp, 0, inst_loop_start as u16);
                 compiler.bytecode.instructions[inst_break].arg1 =
                     compiler.bytecode.instructions.len() as u16;
-                let break_jmp_addr = compiler.bytecode.instructions.len();
-                for ip in &compiler.break_ips {
-                    compiler.bytecode.instructions[*ip].arg1 = break_jmp_addr as u16;
-                }
-                compiler.break_ips.clear();
+                compiler.fixup_breaks();
             }
             Statement::Break => {
                 let break_ip = compiler.bytecode.instructions.len();
@@ -441,7 +457,6 @@ fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> Result<Option<usi
                 compiler.break_ips.push(break_ip);
             }
             Statement::Comment(_) => (),
-            _ => todo!(),
         }
     }
     Ok(last_target)
@@ -593,12 +608,11 @@ fn emit_binary_op(
     let lhs = emit_expr(&lhs, compiler).unwrap();
     let rhs = emit_expr(&rhs, compiler).unwrap();
     let lhs = if matches!(compiler.target_stack[lhs], Target::Local(_)) {
-        // We move the local variable to anothe slot because our instructions are destructive
+        // We move the local variable to another slot because our instructions are destructive
         let top = compiler.target_stack.len();
         compiler
             .bytecode
-            .instructions
-            .push(Instruction::new(OpCode::Move, lhs as u8, top as u16));
+            .push_inst(OpCode::Move, lhs as u8, top as u16);
         compiler.target_stack.push(Target::None);
         top
     } else {
