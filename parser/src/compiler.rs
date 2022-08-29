@@ -299,6 +299,32 @@ impl Compiler {
         }
         self.break_ips.clear();
     }
+
+    /// Returns a stack index, removing potential duplicate values
+    fn find_or_create_literal(&mut self, value: &Value) -> usize {
+        let bytecode = &mut self.bytecode;
+        let literal = if let Some((i, _lit)) = bytecode
+            .literals
+            .iter()
+            .enumerate()
+            .find(|(_, lit)| *lit == value)
+        {
+            i
+        } else {
+            let literal = bytecode.literals.len();
+            bytecode.literals.push(value.clone());
+            literal
+        };
+
+        let stk_target = self.target_stack.len();
+        self.target_stack.push(Target::Literal(literal));
+        bytecode.instructions.push(Instruction::new(
+            OpCode::LoadLiteral,
+            literal as u8,
+            stk_target as u16,
+        ));
+        stk_target
+    }
 }
 
 pub fn compile<'src, 'ast>(stmts: &'ast [Statement<'src>]) -> Result<Bytecode, String> {
@@ -462,28 +488,13 @@ fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> Result<Option<usi
     Ok(last_target)
 }
 
-fn add_literal(val: Value, compiler: &mut Compiler) -> usize {
-    let bytecode = &mut compiler.bytecode;
-    let literal = bytecode.literals.len();
-    let target_idx = compiler.target_stack.len();
-    bytecode.literals.push(val.clone());
-    bytecode.instructions.push(Instruction::new(
-        OpCode::LoadLiteral,
-        literal as u8,
-        target_idx as u16,
-    ));
-    compiler.target_stack.push(Target::Literal(literal));
-    target_idx
-}
-
 fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String> {
     match expr {
-        Expression::NumLiteral(val) => Ok(add_literal(val.clone(), compiler)),
-        Expression::StrLiteral(val) => Ok(add_literal(Value::Str(val.clone()), compiler)),
+        Expression::NumLiteral(val) => Ok(compiler.find_or_create_literal(val)),
+        Expression::StrLiteral(val) => {
+            Ok(compiler.find_or_create_literal(&Value::Str(val.clone())))
+        }
         Expression::Variable(str) => {
-            // if compiler.locals.len() >= 1 {
-            //     println!("locals: {:?}", compiler.locals);
-            // }
             let local = compiler.locals.iter().rev().fold(None, |acc, rhs| {
                 if acc.is_some() {
                     acc
@@ -520,18 +531,7 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
 
             let num_args = args.len();
 
-            let fname_target = compiler.target_stack.len();
-            let fname_literal = compiler.bytecode.literals.len();
-            compiler.target_stack.push(Target::Literal(fname_literal));
-            compiler
-                .bytecode
-                .literals
-                .push(Value::Str(fname.to_string()));
-            compiler.bytecode.push_inst(
-                OpCode::LoadLiteral,
-                fname_literal as u8,
-                fname_target as u16,
-            );
+            let stk_fname = compiler.find_or_create_literal(&Value::Str(fname.to_string()));
 
             // Align arguments to the stack to prepare a call.
             for arg in args {
@@ -549,9 +549,9 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
 
             compiler
                 .bytecode
-                .push_inst(OpCode::Call, num_args as u8, fname_target as u16);
+                .push_inst(OpCode::Call, num_args as u8, stk_fname as u16);
             compiler.target_stack.push(Target::None);
-            Ok(fname_target)
+            Ok(stk_fname)
         }
         Expression::LT(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Lt, lhs, rhs)),
         Expression::GT(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Gt, lhs, rhs)),
