@@ -157,3 +157,24 @@ print(fact(10));
     );
     assert!(res.is_ok());
 }
+
+#[test]
+fn loop_test() {
+    let res = compile_and_run_with(
+        r#"var i = 0;
+var accum = 0;
+
+loop {
+    i = i + 1;
+    if 10 < i {
+        break;
+    };
+    accum = accum + i;
+}
+
+print(accum);
+"#,
+        |vals| assert_eq!(vals[0], Value::I64(55)),
+    );
+    assert!(res.is_ok());
+}

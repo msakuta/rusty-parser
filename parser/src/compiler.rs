@@ -254,6 +254,7 @@ struct Compiler {
     bytecode: FnBytecode,
     target_stack: Vec<Target>,
     locals: Vec<Vec<LocalVar>>,
+    break_ips: Vec<usize>,
 }
 
 impl Compiler {
@@ -276,6 +277,7 @@ impl Compiler {
                 })
                 .collect(),
             locals: vec![args],
+            break_ips: vec![],
         }
     }
 }
@@ -345,10 +347,7 @@ fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> Result<Option<usi
                 println!("Locals: {:?}", compiler.locals);
             }
             Statement::FnDecl {
-                name,
-                args,
-                stmts,
-                ..
+                name, args, stmts, ..
             } => {
                 println!("Args: {:?}", args);
                 let args = args
@@ -376,6 +375,28 @@ fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> Result<Option<usi
             }
             Statement::Expression(ref ex) => {
                 last_target = Some(emit_expr(ex, compiler)?);
+            }
+            Statement::Loop(stmts) => {
+                let loop_start = compiler.bytecode.instructions.len();
+                last_target = emit_stmts(stmts, compiler)?;
+                compiler.bytecode.instructions.push(Instruction::new(
+                    OpCode::Jmp,
+                    0,
+                    loop_start as u16,
+                ));
+                let break_jmp_addr = compiler.bytecode.instructions.len();
+                for ip in &compiler.break_ips {
+                    compiler.bytecode.instructions[*ip].arg1 = break_jmp_addr as u16;
+                }
+                compiler.break_ips.clear();
+            }
+            Statement::Break => {
+                let break_ip = compiler.bytecode.instructions.len();
+                compiler
+                    .bytecode
+                    .instructions
+                    .push(Instruction::new(OpCode::Jmp, 0, 0));
+                compiler.break_ips.push(break_ip);
             }
             _ => todo!(),
         }
