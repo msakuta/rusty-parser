@@ -221,3 +221,31 @@ fn array_init() {
     });
     assert!(res.is_ok());
 }
+
+#[test]
+fn array_index() {
+    let res = compile_and_run_with(
+        r#"
+var a = [1, 2, 3];
+print(a[1]);"#,
+        |vals| assert_eq!(vals[0], Value::Ref(Rc::new(RefCell::new(Value::I64(2))))),
+    );
+    assert!(res.is_ok());
+}
+
+#[test]
+fn array_assign_index() {
+    let res = compile_and_run_with(
+        r#"
+var a = [1 + 3];
+a[0] = 10;
+print(a);"#,
+        |vals| {
+            assert_eq!(
+                vals[0],
+                Value::Array(TypeDecl::Any, vec![Rc::new(RefCell::new(Value::I64(10)))])
+            )
+        },
+    );
+    assert!(res.is_ok());
+}

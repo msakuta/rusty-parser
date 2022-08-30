@@ -1,8 +1,8 @@
 use std::{cell::RefCell, collections::HashMap};
 
 use crate::{
-    binary_op, binary_op_str, coerce_f64, truthy, Bytecode, EvalError, FnBytecode, FnProto, OpCode,
-    Value,
+    binary_op, binary_op_str, coerce_f64, coerce_i64, truthy, Bytecode, EvalError, FnBytecode,
+    FnProto, OpCode, Value,
 };
 
 macro_rules! dbg_println {
@@ -108,8 +108,12 @@ fn interpret_fn(
                 vm.set(inst.arg1, ci.fun.literals[inst.arg0 as usize].clone());
             }
             OpCode::Move => {
-                let val = vm.get(inst.arg0);
-                vm.set(inst.arg1, val.clone());
+                let val = vm.get(inst.arg0).clone();
+                if let Value::Ref(vref) = vm.get_mut(inst.arg1) {
+                    vref.replace(val);
+                } else {
+                    vm.set(inst.arg1, val);
+                }
             }
             OpCode::Incr => {
                 let val = vm.get_mut(inst.arg0);
@@ -169,6 +173,22 @@ fn interpret_fn(
             OpCode::Not => {
                 let result = !truthy(&vm.get(inst.arg0));
                 vm.set(inst.arg0, Value::I32(result as i32));
+            }
+            OpCode::Get => {
+                let target_array = &vm.get(inst.arg0);
+                let target_index = &vm.get(inst.arg1);
+                match target_array {
+                    Value::Array(_, vec) => {
+                        let idx = coerce_i64(target_index)? as usize;
+                        vm.set(inst.arg1, Value::Ref(vec[idx].clone()));
+                    }
+                    _ => {
+                        return Err(
+                            "Array indexing operator \"[]\" needs an array as the first operand"
+                                .to_string(),
+                        )
+                    }
+                }
             }
             OpCode::Lt => {
                 let result = compare_op(

@@ -32,6 +32,9 @@ pub enum OpCode {
     Or,
     /// Logical not (!)
     Not,
+    /// Get an element of an array (or a table in the future) at arg0 with the key at arg1, and make a copy at arg1.
+    /// Array elements are always Rc wrapped, so the user can assign into it.
+    Get,
     /// Compare arg0 and arg1, sets result -1, 0 or 1 to arg0, meaning less, equal and more, respectively
     // Cmp,
     Lt,
@@ -75,6 +78,7 @@ impl_op_from!(
     And,
     Or,
     Not,
+    Get,
     Lt,
     Gt,
     Jmp,
@@ -579,6 +583,17 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
             compiler.target_stack.push(Target::None);
             Ok(stk_fname)
         }
+        Expression::ArrIndex(ex, args) => {
+            let stk_ex = emit_expr(ex, compiler)?;
+            let args = args
+                .iter()
+                .map(|v| emit_expr(v, compiler))
+                .collect::<Result<Vec<_>, _>>()?;
+            let val = compiler
+                .bytecode
+                .push_inst(OpCode::Get, stk_ex as u8, args[0] as u16);
+            Ok(val)
+        }
         Expression::LT(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Lt, lhs, rhs)),
         Expression::GT(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Gt, lhs, rhs)),
         Expression::Not(val) => {
@@ -621,7 +636,6 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
             compiler.locals.pop();
             Ok(res)
         }
-        _ => todo!(),
     }
 }
 
