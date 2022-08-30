@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap};
 
 use crate::{
     binary_op, binary_op_str, coerce_f64, truthy, Bytecode, EvalError, FnBytecode, FnProto, OpCode,
@@ -79,6 +79,10 @@ fn interpret_fn(
 ) -> Result<Value, EvalError> {
     dbg_println!("size inst: {}", std::mem::size_of::<crate::Instruction>());
     dbg_println!("size value: {}", std::mem::size_of::<Value>());
+    dbg_println!(
+        "size RefCell<Value>: {}",
+        std::mem::size_of::<RefCell<Value>>()
+    );
     dbg_println!("size callInfo: {}", std::mem::size_of::<CallInfo>());
     dbg_println!("literals: {:?}", bytecode.literals);
     let mut vm = Vm {

@@ -1,9 +1,11 @@
 use std::{
+    cell::RefCell,
     collections::HashMap,
     io::{Read, Write},
+    rc::Rc,
 };
 
-use crate::{Expression, ReadError, Statement, Value};
+use crate::{eval, EvalContext, Expression, ReadError, RunResult, Statement, TypeDecl, Value};
 
 macro_rules! dbg_println {
     ($($rest:tt)*) => {{
@@ -501,6 +503,22 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
         Expression::NumLiteral(val) => Ok(compiler.find_or_create_literal(val)),
         Expression::StrLiteral(val) => {
             Ok(compiler.find_or_create_literal(&Value::Str(val.clone())))
+        }
+        Expression::ArrLiteral(val) => {
+            let mut ctx = EvalContext::new();
+            let val = Value::Array(
+                TypeDecl::Any,
+                val.iter()
+                    .map(|v| {
+                        if let RunResult::Yield(y) = eval(v, &mut ctx)? {
+                            Ok(Rc::new(RefCell::new(y)))
+                        } else {
+                            Err("Break in array literal not supported".to_string())
+                        }
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
+            );
+            Ok(compiler.find_or_create_literal(&val))
         }
         Expression::Variable(str) => {
             let local = compiler.locals.iter().rev().fold(None, |acc, rhs| {

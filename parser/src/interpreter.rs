@@ -179,7 +179,7 @@ pub fn coerce_type(value: &Value, target: &TypeDecl) -> Result<Value, EvalError>
     })
 }
 
-fn eval<'a, 'b>(
+pub(crate) fn eval<'a, 'b>(
     e: &'b Expression<'a>,
     ctx: &mut EvalContext<'a, 'b, '_, '_>,
 ) -> Result<RunResult, EvalError> {

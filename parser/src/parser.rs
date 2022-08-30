@@ -46,6 +46,29 @@ impl TypeDecl {
         writer.write_all(&tag.to_le_bytes())?;
         Ok(())
     }
+
+    fn deserialize(reader: &mut impl Read) -> std::io::Result<Self> {
+        macro_rules! read {
+            ($ty:ty) => {{
+                let mut buf = [0u8; std::mem::size_of::<$ty>()];
+                reader.read_exact(&mut buf)?;
+                <$ty>::from_le_bytes(buf)
+            }};
+        }
+
+        let tag = read!(u8);
+        Ok(match tag {
+            0xff => Self::Any,
+            F64_TAG => Self::F64,
+            F32_TAG => Self::F32,
+            I64_TAG => Self::I64,
+            I32_TAG => Self::I32,
+            STR_TAG => Self::Str,
+            ARRAY_TAG => Self::Array(Box::new(Self::deserialize(reader)?)),
+            REF_TAG => todo!(),
+            _ => unreachable!(),
+        })
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -145,6 +168,8 @@ impl Value {
                 Ok(())
             }
             Self::Array(decl, values) => {
+                writer.write_all(&ARRAY_TAG.to_le_bytes())?;
+                writer.write_all(&values.len().to_le_bytes())?;
                 decl.serialize(writer)?;
                 for value in values {
                     value.borrow().serialize(writer)?;
@@ -182,6 +207,14 @@ impl Value {
                 reader.read_exact(&mut buf)?;
                 String::from_utf8(buf)?
             }),
+            ARRAY_TAG => {
+                let value_count = parse!(usize);
+                let decl = TypeDecl::deserialize(reader)?;
+                let values = (0..value_count)
+                    .map(|_| Value::deserialize(reader).map(RefCell::new).map(Rc::new))
+                    .collect::<Result<_, _>>()?;
+                Self::Array(decl, values)
+            }
             _ => todo!(),
         })
     }
