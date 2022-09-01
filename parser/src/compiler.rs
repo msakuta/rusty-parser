@@ -138,7 +138,7 @@ fn read_str(reader: &mut impl Read) -> Result<String, ReadError> {
 
 pub(crate) enum FnProto {
     Code(FnBytecode),
-    Native(Box<dyn Fn(&[Value])>),
+    Native(Box<dyn Fn(&[Value]) -> Value>),
 }
 
 pub struct Bytecode {
@@ -146,7 +146,7 @@ pub struct Bytecode {
 }
 
 impl Bytecode {
-    pub fn add_ext_fn(&mut self, name: String, f: Box<dyn Fn(&[Value])>) {
+    pub fn add_ext_fn(&mut self, name: String, f: Box<dyn Fn(&[Value]) -> Value>) {
         self.functions.insert(name, FnProto::Native(f));
     }
 

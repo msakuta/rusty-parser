@@ -254,14 +254,15 @@ fn interpret_fn(
                             continue;
                         }
                         FnProto::Native(nat) => {
-                            nat(&vm.slice(
+                            let ret = nat(&vm.slice(
                                 inst.arg1 as usize + 1,
                                 inst.arg1 as usize + 1 + inst.arg0 as usize,
                             ));
+                            vm.set(inst.arg1, ret);
                         }
                     }
                 } else {
-                    return Err("Unknown function called".to_string());
+                    return Err(format!("Unknown function called: {:?}", arg_name));
                 }
             }
             OpCode::Ret => {

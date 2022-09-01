@@ -108,7 +108,13 @@ fn brace_shadowing_test() {
 
 fn compile_and_run_with(src: &str, fun: impl Fn(&[Value]) + 'static) -> Result<Value, EvalError> {
     let mut bytecode = compile(&source(src).unwrap().1).unwrap();
-    bytecode.add_ext_fn("print".to_string(), Box::new(fun));
+    bytecode.add_ext_fn(
+        "print".to_string(),
+        Box::new(move |vals| {
+            fun(vals);
+            Value::I64(0)
+        }),
+    );
     interpret(&bytecode)
 }
 

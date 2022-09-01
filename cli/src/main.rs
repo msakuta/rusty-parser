@@ -26,8 +26,9 @@ struct Args {
     bytecode: bool,
 }
 
-fn print_fn(values: &[Value]) {
+fn print_fn(values: &[Value]) -> Value {
     println!("Print: {values:?}");
+    Value::I64(0)
 }
 
 fn main() -> Result<(), String> {
@@ -55,6 +56,16 @@ fn main() -> Result<(), String> {
             }
             if args.compile_and_run {
                 bytecode.add_ext_fn("print".to_string(), Box::new(print_fn));
+                bytecode.add_ext_fn(
+                    "len".to_string(),
+                    Box::new(|val| {
+                        Value::I64(if let Value::Array(_, ref arr) = val[0] {
+                            arr.len() as i64
+                        } else {
+                            0
+                        })
+                    }),
+                );
                 interpret(&bytecode)?;
             }
         } else {
