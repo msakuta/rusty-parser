@@ -1,3 +1,5 @@
+//! Bytecode interpreter, aka a Virtual Machine.
+
 use std::{cell::RefCell, collections::HashMap};
 
 use crate::{
