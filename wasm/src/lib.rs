@@ -25,9 +25,15 @@ fn s_print(vals: &[Value]) -> Result<Value, EvalError> {
                 Value::I64(val) => wasm_print(&format!(" {}", val)),
                 Value::I32(val) => wasm_print(&format!(" {}", val)),
                 Value::Str(val) => wasm_print(&format!(" {}", val)),
-                Value::Array(_, val) => {
+                Value::Array(val) => {
                     wasm_print("[");
-                    print_inner(&val.iter().map(|v| v.borrow().clone()).collect::<Vec<_>>());
+                    print_inner(
+                        &val.borrow()
+                            .values()
+                            .iter()
+                            .map(|v| v.borrow().clone())
+                            .collect::<Vec<_>>(),
+                    );
                     wasm_print("]");
                 }
                 Value::Ref(r) => {
@@ -52,9 +58,13 @@ fn s_puts(vals: &[Value]) -> Result<Value, EvalError> {
                 Value::I64(val) => wasm_print(&format!("{}", val)),
                 Value::I32(val) => wasm_print(&format!("{}", val)),
                 Value::Str(val) => wasm_print(&format!("{}", val)),
-                Value::Array(_, val) => {
-                    puts_inner(&val.iter().map(|v| v.borrow().clone()).collect::<Vec<_>>())
-                }
+                Value::Array(val) => puts_inner(
+                    &val.borrow()
+                        .values()
+                        .iter()
+                        .map(|v| v.borrow().clone())
+                        .collect::<Vec<_>>(),
+                ),
                 Value::Ref(r) => puts_inner(&[r.borrow().clone()]),
             }
         }

@@ -81,6 +81,10 @@ impl ArrayInt {
     pub(crate) fn new(type_decl: TypeDecl, values: Vec<Rc<RefCell<Value>>>) -> Rc<RefCell<Self>> {
         Rc::new(RefCell::new(Self { type_decl, values }))
     }
+
+    pub fn values(&self) -> &[Rc<RefCell<Value>>] {
+        &self.values
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
