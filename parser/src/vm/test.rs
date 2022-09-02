@@ -1,7 +1,10 @@
 use std::rc::Rc;
 
 use super::*;
-use crate::{compile, expr, source, Statement, TypeDecl};
+use crate::{
+    compile,
+    parser::{expr, source, ArrayInt, Statement, TypeDecl},
+};
 
 fn compile_expr(s: &str) -> Bytecode {
     let bytecode = compile(&[Statement::Expression(expr(s).unwrap().1)]).unwrap();
@@ -222,7 +225,10 @@ fn array_init() {
     let res = compile_and_run_with("var a: [i32] = [1 + 3]; print(a); ", |vals| {
         assert_eq!(
             vals[0],
-            Value::Array(TypeDecl::Any, vec![Rc::new(RefCell::new(Value::I64(4)))])
+            Value::Array(ArrayInt::new(
+                TypeDecl::Any,
+                vec![Rc::new(RefCell::new(Value::I64(4)))]
+            ))
         )
     });
     assert!(res.is_ok());
@@ -249,7 +255,10 @@ print(a);"#,
         |vals| {
             assert_eq!(
                 vals[0],
-                Value::Array(TypeDecl::Any, vec![Rc::new(RefCell::new(Value::I64(10)))])
+                Value::Array(ArrayInt::new(
+                    TypeDecl::Any,
+                    vec![Rc::new(RefCell::new(Value::I64(10)))]
+                ))
             )
         },
     );

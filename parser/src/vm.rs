@@ -180,9 +180,10 @@ fn interpret_fn(
                 let target_array = &vm.get(inst.arg0);
                 let target_index = &vm.get(inst.arg1);
                 match target_array {
-                    Value::Array(_, vec) => {
+                    Value::Array(vec) => {
                         let idx = coerce_i64(target_index)? as usize;
-                        vm.set(inst.arg1, Value::Ref(vec[idx].clone()));
+                        let new_value = vec.borrow().values[idx].clone();
+                        vm.set(inst.arg1, Value::Ref(new_value));
                     }
                     _ => {
                         return Err(

@@ -453,8 +453,10 @@ fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> Result<Option<usi
                 dbg_println!("Args: {:?}", args);
                 let args = args
                     .iter()
-                    .map(|arg| {
-                        let target = compiler.target_stack.len();
+                    .enumerate()
+                    .map(|(idx, arg)| {
+                        // The 0th index is used for function name / return value, so the args start with 1.
+                        let target = idx + 1;
                         let local = LocalVar {
                             name: arg.0.to_owned(),
                             stack_idx: target,
@@ -550,9 +552,10 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
         }
         Expression::ArrLiteral(val) => {
             let mut ctx = EvalContext::new();
-            let val = Value::Array(
-                TypeDecl::Any,
-                val.iter()
+            let val = Value::Array(Rc::new(RefCell::new(ArrayInt {
+                type_decl: TypeDecl::Any,
+                values: val
+                    .iter()
                     .map(|v| {
                         if let RunResult::Yield(y) = eval(v, &mut ctx)? {
                             Ok(Rc::new(RefCell::new(y)))
@@ -561,7 +564,7 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
                         }
                     })
                     .collect::<Result<Vec<_>, _>>()?,
-            );
+            })));
             Ok(compiler.find_or_create_literal(&val))
         }
         Expression::Variable(str) => {

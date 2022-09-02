@@ -37,16 +37,19 @@ pub(crate) fn binary_op_str(
     i: impl Fn(i64, i64) -> i64,
     s: impl Fn(&str, &str) -> Result<String, EvalError>,
 ) -> Result<Value, EvalError> {
-    Ok(match (lhs.clone(), rhs.clone()) {
-        (Value::F64(lhs), rhs) => Value::F64(d(lhs, coerce_f64(&rhs)?)),
-        (lhs, Value::F64(rhs)) => Value::F64(d(coerce_f64(&lhs)?, rhs)),
-        (Value::F32(lhs), rhs) => Value::F32(d(lhs as f64, coerce_f64(&rhs)?) as f32),
-        (lhs, Value::F32(rhs)) => Value::F32(d(coerce_f64(&lhs)?, rhs as f64) as f32),
-        (Value::I64(lhs), Value::I64(rhs)) => Value::I64(i(lhs, rhs)),
-        (Value::I64(lhs), Value::I32(rhs)) => Value::I64(i(lhs, rhs as i64)),
-        (Value::I32(lhs), Value::I64(rhs)) => Value::I64(i(lhs as i64, rhs)),
-        (Value::I32(lhs), Value::I32(rhs)) => Value::I32(i(lhs as i64, rhs as i64) as i32),
-        (Value::Str(lhs), Value::Str(rhs)) => Value::Str(s(&lhs, &rhs)?),
+    Ok(match (lhs, rhs) {
+        // "Deref" the references before binary
+        (Value::Ref(lhs), ref rhs) => binary_op_str(&lhs.borrow(), rhs, d, i, s)?,
+        (ref lhs, Value::Ref(rhs)) => binary_op_str(lhs, &rhs.borrow(), d, i, s)?,
+        (Value::F64(lhs), rhs) => Value::F64(d(*lhs, coerce_f64(&rhs)?)),
+        (lhs, Value::F64(rhs)) => Value::F64(d(coerce_f64(&lhs)?, *rhs)),
+        (Value::F32(lhs), rhs) => Value::F32(d(*lhs as f64, coerce_f64(&rhs)?) as f32),
+        (lhs, Value::F32(rhs)) => Value::F32(d(coerce_f64(&lhs)?, *rhs as f64) as f32),
+        (Value::I64(lhs), Value::I64(rhs)) => Value::I64(i(*lhs, *rhs)),
+        (Value::I64(lhs), Value::I32(rhs)) => Value::I64(i(*lhs, *rhs as i64)),
+        (Value::I32(lhs), Value::I64(rhs)) => Value::I64(i(*lhs as i64, *rhs)),
+        (Value::I32(lhs), Value::I32(rhs)) => Value::I32(i(*lhs as i64, *rhs as i64) as i32),
+        (Value::Str(lhs), Value::Str(rhs)) => Value::Str(s(lhs, rhs)?),
         _ => {
             return Err(format!(
                 "Unsupported addition between {:?} and {:?}",
@@ -118,19 +121,25 @@ fn _coerce_var(value: &Value, target: &Value) -> Result<Value, EvalError> {
         Value::I64(_) => Value::I64(coerce_i64(value)?),
         Value::I32(_) => Value::I32(coerce_i64(value)? as i32),
         Value::Str(_) => Value::Str(coerce_str(value)?),
-        Value::Array(inner_type, inner) => {
+        Value::Array(array) => {
+            let ArrayInt {
+                type_decl: inner_type,
+                values: inner,
+            } = &array.borrow() as &ArrayInt;
             if inner.len() == 0 {
-                if let Value::Array(_, value_inner) = value {
-                    if value_inner.len() == 0 {
+                if let Value::Array(array) = value {
+                    if array.borrow().values.len() == 0 {
                         return Ok(value.clone());
                     }
                 }
                 return Err("Cannot coerce type to empty array".to_string());
             } else {
-                if let Value::Array(_, value_inner) = value {
-                    Value::Array(
+                if let Value::Array(array) = value {
+                    Value::Array(ArrayInt::new(
                         inner_type.clone(),
-                        value_inner
+                        array
+                            .borrow()
+                            .values
                             .iter()
                             .map(|val| -> Result<_, String> {
                                 Ok(Rc::new(RefCell::new(coerce_type(
@@ -139,7 +148,7 @@ fn _coerce_var(value: &Value, target: &Value) -> Result<Value, EvalError> {
                                 )?)))
                             })
                             .collect::<Result<_, _>>()?,
-                    )
+                    ))
                 } else {
                     return Err("Cannot coerce scalar to array".to_string());
                 }
@@ -159,10 +168,12 @@ pub fn coerce_type(value: &Value, target: &TypeDecl) -> Result<Value, EvalError>
         TypeDecl::I32 => Value::I32(coerce_i64(value)? as i32),
         TypeDecl::Str => Value::Str(coerce_str(value)?),
         TypeDecl::Array(inner) => {
-            if let Value::Array(_, value_inner) = value {
-                Value::Array(
+            if let Value::Array(array) = value {
+                Value::Array(ArrayInt::new(
                     (**inner).clone(),
-                    value_inner
+                    array
+                        .borrow()
+                        .values
                         .iter()
                         .map(|value_elem| -> Result<_, EvalError> {
                             Ok(Rc::new(RefCell::new(coerce_type(
@@ -171,7 +182,7 @@ pub fn coerce_type(value: &Value, target: &TypeDecl) -> Result<Value, EvalError>
                             )?)))
                         })
                         .collect::<Result<Vec<_>, _>>()?,
-                )
+                ))
             } else {
                 return Err(format!("Incompatible type to array! {:?}", value));
             }
@@ -186,7 +197,7 @@ pub(crate) fn eval<'a, 'b>(
     Ok(match e {
         Expression::NumLiteral(val) => RunResult::Yield(val.clone()),
         Expression::StrLiteral(val) => RunResult::Yield(Value::Str(val.clone())),
-        Expression::ArrLiteral(val) => RunResult::Yield(Value::Array(
+        Expression::ArrLiteral(val) => RunResult::Yield(Value::Array(ArrayInt::new(
             TypeDecl::Any,
             val.iter()
                 .map(|v| {
@@ -197,7 +208,7 @@ pub(crate) fn eval<'a, 'b>(
                     }
                 })
                 .collect::<Result<Vec<_>, _>>()?,
-        )),
+        ))),
         Expression::Variable(str) => RunResult::Yield(Value::Ref(
             ctx.get_var_rc(str)
                 .ok_or_else(|| format!("Variable {} not found in scope", str))?,
@@ -371,9 +382,15 @@ fn s_print(vals: &[Value]) -> Result<Value, EvalError> {
                 Value::I64(val) => println!(" {}", val),
                 Value::I32(val) => println!(" {}", val),
                 Value::Str(val) => println!(" {}", val),
-                Value::Array(_, val) => {
+                Value::Array(val) => {
                     print!("[");
-                    print_inner(&val.iter().map(|v| v.borrow().clone()).collect::<Vec<_>>());
+                    print_inner(
+                        &val.borrow()
+                            .values
+                            .iter()
+                            .map(|v| v.borrow().clone())
+                            .collect::<Vec<_>>(),
+                    );
                     print!("]");
                 }
                 Value::Ref(r) => {
@@ -398,9 +415,13 @@ fn s_puts(vals: &[Value]) -> Result<Value, EvalError> {
                 Value::I64(val) => print!("{}", val),
                 Value::I32(val) => print!("{}", val),
                 Value::Str(val) => print!("{}", val),
-                Value::Array(_, val) => {
-                    puts_inner(&val.iter().map(|v| v.borrow().clone()).collect::<Vec<_>>())
-                }
+                Value::Array(val) => puts_inner(
+                    &val.borrow()
+                        .values
+                        .iter()
+                        .map(|v| v.borrow().clone())
+                        .collect::<Vec<_>>(),
+                ),
                 Value::Ref(r) => puts_inner(&[r.borrow().clone()]),
             }
         }
@@ -429,7 +450,7 @@ fn s_type(vals: &[Value]) -> Result<Value, EvalError> {
             Value::I64(_) => "i64".to_string(),
             Value::I32(_) => "i32".to_string(),
             Value::Str(_) => "str".to_string(),
-            Value::Array(inner, _) => format!("[{}]", type_decl_to_str(inner)),
+            Value::Array(inner) => format!("[{}]", type_decl_to_str(&inner.borrow().type_decl)),
             Value::Ref(r) => format!("ref[{}]", type_str(&r.borrow())),
         }
     }

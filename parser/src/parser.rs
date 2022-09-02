@@ -72,13 +72,25 @@ impl TypeDecl {
 }
 
 #[derive(Debug, PartialEq, Clone)]
+pub struct ArrayInt {
+    pub(crate) type_decl: TypeDecl,
+    pub(crate) values: Vec<Rc<RefCell<Value>>>,
+}
+
+impl ArrayInt {
+    pub(crate) fn new(type_decl: TypeDecl, values: Vec<Rc<RefCell<Value>>>) -> Rc<RefCell<Self>> {
+        Rc::new(RefCell::new(Self { type_decl, values }))
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub enum Value {
     F64(f64),
     F32(f32),
     I64(i64),
     I32(i32),
     Str(String),
-    Array(TypeDecl, Vec<Rc<RefCell<Value>>>),
+    Array(Rc<RefCell<ArrayInt>>),
     Ref(Rc<RefCell<Value>>),
 }
 
@@ -131,9 +143,9 @@ impl ToString for Value {
             Self::I64(v) => v.to_string(),
             Self::I32(v) => v.to_string(),
             Self::Str(v) => v.clone(),
-            Self::Array(_, v) => format!(
+            Self::Array(v) => format!(
                 "[{}]",
-                &v.iter().fold("".to_string(), |acc, cur| {
+                &v.borrow().values.iter().fold("".to_string(), |acc, cur| {
                     if acc.is_empty() {
                         cur.borrow().to_string()
                     } else {
@@ -167,7 +179,11 @@ impl Value {
                 writer.write_all(val.as_bytes())?;
                 Ok(())
             }
-            Self::Array(decl, values) => {
+            Self::Array(rc) => {
+                let ArrayInt {
+                    type_decl: decl,
+                    values,
+                } = &rc.borrow() as &ArrayInt;
                 writer.write_all(&ARRAY_TAG.to_le_bytes())?;
                 writer.write_all(&values.len().to_le_bytes())?;
                 decl.serialize(writer)?;
@@ -213,7 +229,7 @@ impl Value {
                 let values = (0..value_count)
                     .map(|_| Value::deserialize(reader).map(RefCell::new).map(Rc::new))
                     .collect::<Result<_, _>>()?;
-                Self::Array(decl, values)
+                Self::Array(ArrayInt::new(decl, values))
             }
             _ => todo!(),
         })
@@ -222,8 +238,8 @@ impl Value {
     /// We don't really need assignment operation for an array (yet), because
     /// array index will return a reference.
     fn _array_assign(&mut self, idx: usize, value: Value) {
-        if let Value::Array(_, array) = self {
-            array[idx] = Rc::new(RefCell::new(value.deref()));
+        if let Value::Array(array) = self {
+            array.borrow_mut().values[idx] = Rc::new(RefCell::new(value.deref()));
         } else {
             panic!("assign_array must be called for an array")
         }
@@ -232,7 +248,7 @@ impl Value {
     fn _array_get(&self, idx: u64) -> Value {
         match self {
             Value::Ref(rc) => rc.borrow()._array_get(idx),
-            Value::Array(_, array) => array[idx as usize].borrow().clone(),
+            Value::Array(array) => array.borrow_mut().values[idx as usize].borrow().clone(),
             _ => panic!("array index must be called for an array"),
         }
     }
@@ -240,14 +256,17 @@ impl Value {
     pub fn array_get_ref(&self, idx: u64) -> Result<Value, EvalError> {
         Ok(match self {
             Value::Ref(rc) => rc.borrow().array_get_ref(idx)?,
-            Value::Array(_, array) => Value::Ref(array[idx as usize].clone()),
+            Value::Array(array) => Value::Ref(array.borrow().values[idx as usize].clone()),
             _ => return Err("array index must be called for an array".to_string()),
         })
     }
 
     pub fn array_push(&mut self, value: Value) -> Result<(), EvalError> {
-        if let Value::Array(_, array) = self {
-            array.push(Rc::new(RefCell::new(value.deref())));
+        if let Value::Array(array) = self {
+            array
+                .borrow_mut()
+                .values
+                .push(Rc::new(RefCell::new(value.deref())));
             Ok(())
         } else {
             Err("push() must be called for an array".to_string())
@@ -258,7 +277,7 @@ impl Value {
     pub fn array_len(&self) -> usize {
         match self {
             Value::Ref(rc) => rc.borrow().array_len(),
-            Value::Array(_, array) => array.len(),
+            Value::Array(array) => array.borrow().values.len(),
             _ => panic!("len() must be called for an array"),
         }
     }
