@@ -26,11 +26,6 @@ struct Args {
     bytecode: bool,
 }
 
-fn print_fn(values: &[Value]) -> Value {
-    println!("Print: {values:?}");
-    Value::I64(0)
-}
-
 fn main() -> Result<(), String> {
     let args = Args::parse();
 
@@ -55,17 +50,7 @@ fn main() -> Result<(), String> {
                     .map_err(|s| s.to_string())?;
             }
             if args.compile_and_run {
-                bytecode.add_ext_fn("print".to_string(), Box::new(print_fn));
-                bytecode.add_ext_fn(
-                    "len".to_string(),
-                    Box::new(|val| {
-                        Value::I64(if let Value::Array(_, ref arr) = val[0] {
-                            arr.len() as i64
-                        } else {
-                            0
-                        })
-                    }),
-                );
+                bytecode.add_std_fn();
                 interpret(&bytecode)?;
             }
         } else {
@@ -82,7 +67,7 @@ fn main() -> Result<(), String> {
         if args.bytecode {
             let mut bytecode = Bytecode::read(&mut BufReader::new(file))?;
             // println!("bytecode: {:#?}", bytecode);
-            bytecode.add_ext_fn("print".to_string(), Box::new(print_fn));
+            bytecode.add_std_fn();
             interpret(&bytecode)?;
         } else {
             let mut contents = String::new();

@@ -5,7 +5,11 @@ use std::{
     rc::Rc,
 };
 
-use crate::{eval, EvalContext, Expression, ReadError, RunResult, Statement, TypeDecl, Value};
+use crate::{
+    eval,
+    parser::{ArrayInt, Expression, ReadError, Statement, TypeDecl, Value},
+    EvalContext, RunResult,
+};
 
 macro_rules! dbg_println {
     ($($rest:tt)*) => {{
@@ -146,8 +150,44 @@ pub struct Bytecode {
 }
 
 impl Bytecode {
+    /// Add a user-application provided native function to this bytecode.
     pub fn add_ext_fn(&mut self, name: String, f: Box<dyn Fn(&[Value]) -> Value>) {
         self.functions.insert(name, FnProto::Native(f));
+    }
+
+    /// Add standard common functions, such as `print`, `len` and `push`, to this bytecode.
+    pub fn add_std_fn(&mut self) {
+        self.add_ext_fn(
+            "print".to_string(),
+            Box::new(|values: &[Value]| -> Value {
+                println!(
+                    "Print: {}",
+                    values.iter().fold("".to_string(), |acc, cur: &Value| {
+                        if acc.is_empty() {
+                            cur.to_string()
+                        } else {
+                            acc + " " + &cur.to_string()
+                        }
+                    })
+                );
+                Value::I64(0)
+            }),
+        );
+        self.add_ext_fn(
+            "len".to_string(),
+            Box::new(|val| Value::I64(val[0].array_len() as i64)),
+        );
+        self.add_ext_fn(
+            "push".to_string(),
+            Box::new(|val| {
+                if let Value::Array(ref arr) = val[0] {
+                    arr.borrow_mut()
+                        .values
+                        .push(Rc::new(RefCell::new(val[1].clone())));
+                }
+                Value::I64(0)
+            }),
+        );
     }
 
     pub fn write(&self, writer: &mut impl Write) -> std::io::Result<()> {
