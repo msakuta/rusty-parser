@@ -23,7 +23,23 @@ One is for native command line application.
 It can read a text file, parse it to an AST and run it.
 
     cd cli
-    cargo run --release <script-file>.dragon
+    cargo run --release -- <script-file>.dragon
+
+Now we have our own bytecode format that you can compile.
+
+    cargo run --release -- -c <script-file>.dragon
+
+It will create an output file "out.cdragon" which is a pre-compiled bytecode
+that can run faster than AST interpreter.
+It is similart to ".pyc" file against ".py" in Python.
+
+You can also compile and run at the same time.
+
+    cargo run --release -- -cR <script-file>.dragon
+
+If you have a pre-compiled bytecode file, you can just run it without compiling as:
+
+    cargo run --release -- -b <bytecode>.cdragon
 
 
 ## WebAssembly browser application
@@ -68,8 +84,8 @@ In ascending order of difficulty.
 * [ ] Array shape constraints
 * [ ] Broadcasting operators
 * [ ] Custom operators
-* [ ] Run on VM (not directly on AST)
-* [ ] Compile to bytecode (via serde?)
+* [x] Run on VM (not directly on AST)
+* [x] Compile to bytecode
 
 ## Ideas
 

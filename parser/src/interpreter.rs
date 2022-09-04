@@ -30,23 +30,26 @@ macro_rules! unwrap_run {
     };
 }
 
-fn binary_op_str(
-    lhs: Value,
-    rhs: Value,
+pub(crate) fn binary_op_str(
+    lhs: &Value,
+    rhs: &Value,
     d: impl Fn(f64, f64) -> f64,
     i: impl Fn(i64, i64) -> i64,
     s: impl Fn(&str, &str) -> Result<String, EvalError>,
 ) -> Result<Value, EvalError> {
-    Ok(match (lhs.clone(), rhs.clone()) {
-        (Value::F64(lhs), rhs) => Value::F64(d(lhs, coerce_f64(&rhs)?)),
-        (lhs, Value::F64(rhs)) => Value::F64(d(coerce_f64(&lhs)?, rhs)),
-        (Value::F32(lhs), rhs) => Value::F32(d(lhs as f64, coerce_f64(&rhs)?) as f32),
-        (lhs, Value::F32(rhs)) => Value::F32(d(coerce_f64(&lhs)?, rhs as f64) as f32),
-        (Value::I64(lhs), Value::I64(rhs)) => Value::I64(i(lhs, rhs)),
-        (Value::I64(lhs), Value::I32(rhs)) => Value::I64(i(lhs, rhs as i64)),
-        (Value::I32(lhs), Value::I64(rhs)) => Value::I64(i(lhs as i64, rhs)),
-        (Value::I32(lhs), Value::I32(rhs)) => Value::I32(i(lhs as i64, rhs as i64) as i32),
-        (Value::Str(lhs), Value::Str(rhs)) => Value::Str(s(&lhs, &rhs)?),
+    Ok(match (lhs, rhs) {
+        // "Deref" the references before binary
+        (Value::Ref(lhs), ref rhs) => binary_op_str(&lhs.borrow(), rhs, d, i, s)?,
+        (ref lhs, Value::Ref(rhs)) => binary_op_str(lhs, &rhs.borrow(), d, i, s)?,
+        (Value::F64(lhs), rhs) => Value::F64(d(*lhs, coerce_f64(&rhs)?)),
+        (lhs, Value::F64(rhs)) => Value::F64(d(coerce_f64(&lhs)?, *rhs)),
+        (Value::F32(lhs), rhs) => Value::F32(d(*lhs as f64, coerce_f64(&rhs)?) as f32),
+        (lhs, Value::F32(rhs)) => Value::F32(d(coerce_f64(&lhs)?, *rhs as f64) as f32),
+        (Value::I64(lhs), Value::I64(rhs)) => Value::I64(i(*lhs, *rhs)),
+        (Value::I64(lhs), Value::I32(rhs)) => Value::I64(i(*lhs, *rhs as i64)),
+        (Value::I32(lhs), Value::I64(rhs)) => Value::I64(i(*lhs as i64, *rhs)),
+        (Value::I32(lhs), Value::I32(rhs)) => Value::I32(i(*lhs as i64, *rhs as i64) as i32),
+        (Value::Str(lhs), Value::Str(rhs)) => Value::Str(s(lhs, rhs)?),
         _ => {
             return Err(format!(
                 "Unsupported addition between {:?} and {:?}",
@@ -56,9 +59,9 @@ fn binary_op_str(
     })
 }
 
-fn binary_op(
-    lhs: Value,
-    rhs: Value,
+pub(crate) fn binary_op(
+    lhs: &Value,
+    rhs: &Value,
     d: impl Fn(f64, f64) -> f64,
     i: impl Fn(i64, i64) -> i64,
 ) -> Result<Value, EvalError> {
@@ -67,7 +70,7 @@ fn binary_op(
     })
 }
 
-fn truthy(a: &Value) -> bool {
+pub(crate) fn truthy(a: &Value) -> bool {
     match a {
         Value::F64(v) => *v != 0.,
         Value::F32(v) => *v != 0.,
@@ -78,7 +81,7 @@ fn truthy(a: &Value) -> bool {
     }
 }
 
-fn coerce_f64(a: &Value) -> Result<f64, EvalError> {
+pub(crate) fn coerce_f64(a: &Value) -> Result<f64, EvalError> {
     Ok(match a {
         Value::F64(v) => *v as f64,
         Value::F32(v) => *v as f64,
@@ -89,7 +92,7 @@ fn coerce_f64(a: &Value) -> Result<f64, EvalError> {
     })
 }
 
-fn coerce_i64(a: &Value) -> Result<i64, EvalError> {
+pub(crate) fn coerce_i64(a: &Value) -> Result<i64, EvalError> {
     Ok(match a {
         Value::F64(v) => *v as i64,
         Value::F32(v) => *v as i64,
@@ -118,19 +121,25 @@ fn _coerce_var(value: &Value, target: &Value) -> Result<Value, EvalError> {
         Value::I64(_) => Value::I64(coerce_i64(value)?),
         Value::I32(_) => Value::I32(coerce_i64(value)? as i32),
         Value::Str(_) => Value::Str(coerce_str(value)?),
-        Value::Array(inner_type, inner) => {
+        Value::Array(array) => {
+            let ArrayInt {
+                type_decl: inner_type,
+                values: inner,
+            } = &array.borrow() as &ArrayInt;
             if inner.len() == 0 {
-                if let Value::Array(_, value_inner) = value {
-                    if value_inner.len() == 0 {
+                if let Value::Array(array) = value {
+                    if array.borrow().values.len() == 0 {
                         return Ok(value.clone());
                     }
                 }
                 return Err("Cannot coerce type to empty array".to_string());
             } else {
-                if let Value::Array(_, value_inner) = value {
-                    Value::Array(
+                if let Value::Array(array) = value {
+                    Value::Array(ArrayInt::new(
                         inner_type.clone(),
-                        value_inner
+                        array
+                            .borrow()
+                            .values
                             .iter()
                             .map(|val| -> Result<_, String> {
                                 Ok(Rc::new(RefCell::new(coerce_type(
@@ -139,7 +148,7 @@ fn _coerce_var(value: &Value, target: &Value) -> Result<Value, EvalError> {
                                 )?)))
                             })
                             .collect::<Result<_, _>>()?,
-                    )
+                    ))
                 } else {
                     return Err("Cannot coerce scalar to array".to_string());
                 }
@@ -159,10 +168,12 @@ pub fn coerce_type(value: &Value, target: &TypeDecl) -> Result<Value, EvalError>
         TypeDecl::I32 => Value::I32(coerce_i64(value)? as i32),
         TypeDecl::Str => Value::Str(coerce_str(value)?),
         TypeDecl::Array(inner) => {
-            if let Value::Array(_, value_inner) = value {
-                Value::Array(
+            if let Value::Array(array) = value {
+                Value::Array(ArrayInt::new(
                     (**inner).clone(),
-                    value_inner
+                    array
+                        .borrow()
+                        .values
                         .iter()
                         .map(|value_elem| -> Result<_, EvalError> {
                             Ok(Rc::new(RefCell::new(coerce_type(
@@ -171,7 +182,7 @@ pub fn coerce_type(value: &Value, target: &TypeDecl) -> Result<Value, EvalError>
                             )?)))
                         })
                         .collect::<Result<Vec<_>, _>>()?,
-                )
+                ))
             } else {
                 return Err(format!("Incompatible type to array! {:?}", value));
             }
@@ -179,14 +190,14 @@ pub fn coerce_type(value: &Value, target: &TypeDecl) -> Result<Value, EvalError>
     })
 }
 
-fn eval<'a, 'b>(
+pub(crate) fn eval<'a, 'b>(
     e: &'b Expression<'a>,
     ctx: &mut EvalContext<'a, 'b, '_, '_>,
 ) -> Result<RunResult, EvalError> {
     Ok(match e {
         Expression::NumLiteral(val) => RunResult::Yield(val.clone()),
         Expression::StrLiteral(val) => RunResult::Yield(Value::Str(val.clone())),
-        Expression::ArrLiteral(val) => RunResult::Yield(Value::Array(
+        Expression::ArrLiteral(val) => RunResult::Yield(Value::Array(ArrayInt::new(
             TypeDecl::Any,
             val.iter()
                 .map(|v| {
@@ -197,7 +208,7 @@ fn eval<'a, 'b>(
                     }
                 })
                 .collect::<Result<Vec<_>, _>>()?,
-        )),
+        ))),
         Expression::Variable(str) => RunResult::Yield(Value::Ref(
             ctx.get_var_rc(str)
                 .ok_or_else(|| format!("Variable {} not found in scope", str))?,
@@ -287,8 +298,8 @@ fn eval<'a, 'b>(
         }
         Expression::Add(lhs, rhs) => {
             let res = RunResult::Yield(binary_op_str(
-                unwrap_run!(eval(lhs, ctx)?),
-                unwrap_run!(eval(rhs, ctx)?),
+                &unwrap_run!(eval(lhs, ctx)?),
+                &unwrap_run!(eval(rhs, ctx)?),
                 |lhs, rhs| lhs + rhs,
                 |lhs, rhs| lhs + rhs,
                 |lhs: &str, rhs: &str| Ok(lhs.to_string() + rhs),
@@ -296,32 +307,32 @@ fn eval<'a, 'b>(
             res
         }
         Expression::Sub(lhs, rhs) => RunResult::Yield(binary_op(
-            unwrap_run!(eval(lhs, ctx)?),
-            unwrap_run!(eval(rhs, ctx)?),
+            &unwrap_run!(eval(lhs, ctx)?),
+            &unwrap_run!(eval(rhs, ctx)?),
             |lhs, rhs| lhs - rhs,
             |lhs, rhs| lhs - rhs,
         )?),
         Expression::Mult(lhs, rhs) => RunResult::Yield(binary_op(
-            unwrap_run!(eval(lhs, ctx)?),
-            unwrap_run!(eval(rhs, ctx)?),
+            &unwrap_run!(eval(lhs, ctx)?),
+            &unwrap_run!(eval(rhs, ctx)?),
             |lhs, rhs| lhs * rhs,
             |lhs, rhs| lhs * rhs,
         )?),
         Expression::Div(lhs, rhs) => RunResult::Yield(binary_op(
-            unwrap_run!(eval(lhs, ctx)?),
-            unwrap_run!(eval(rhs, ctx)?),
+            &unwrap_run!(eval(lhs, ctx)?),
+            &unwrap_run!(eval(rhs, ctx)?),
             |lhs, rhs| lhs / rhs,
             |lhs, rhs| lhs / rhs,
         )?),
         Expression::LT(lhs, rhs) => RunResult::Yield(binary_op(
-            unwrap_run!(eval(lhs, ctx)?),
-            unwrap_run!(eval(rhs, ctx)?),
+            &unwrap_run!(eval(lhs, ctx)?),
+            &unwrap_run!(eval(rhs, ctx)?),
             |lhs, rhs| if lhs < rhs { 1. } else { 0. },
             |lhs, rhs| if lhs < rhs { 1 } else { 0 },
         )?),
         Expression::GT(lhs, rhs) => RunResult::Yield(binary_op(
-            unwrap_run!(eval(lhs, ctx)?),
-            unwrap_run!(eval(rhs, ctx)?),
+            &unwrap_run!(eval(lhs, ctx)?),
+            &unwrap_run!(eval(rhs, ctx)?),
             |lhs, rhs| if lhs > rhs { 1. } else { 0. },
             |lhs, rhs| if lhs > rhs { 1 } else { 0 },
         )?),
@@ -350,7 +361,13 @@ fn eval<'a, 'b>(
         }
         Expression::Brace(stmts) => {
             let mut subctx = EvalContext::push_stack(ctx);
-            run(stmts, &mut subctx)?
+            let res = run(stmts, &mut subctx)?;
+            if let RunResult::Yield(Value::Ref(res)) = res {
+                // "Dereference" if the result was a reference
+                RunResult::Yield(std::mem::take(&mut res.borrow_mut()))
+            } else {
+                res
+            }
         }
     })
 }
@@ -365,9 +382,15 @@ fn s_print(vals: &[Value]) -> Result<Value, EvalError> {
                 Value::I64(val) => println!(" {}", val),
                 Value::I32(val) => println!(" {}", val),
                 Value::Str(val) => println!(" {}", val),
-                Value::Array(_, val) => {
+                Value::Array(val) => {
                     print!("[");
-                    print_inner(&val.iter().map(|v| v.borrow().clone()).collect::<Vec<_>>());
+                    print_inner(
+                        &val.borrow()
+                            .values
+                            .iter()
+                            .map(|v| v.borrow().clone())
+                            .collect::<Vec<_>>(),
+                    );
                     print!("]");
                 }
                 Value::Ref(r) => {
@@ -392,9 +415,13 @@ fn s_puts(vals: &[Value]) -> Result<Value, EvalError> {
                 Value::I64(val) => print!("{}", val),
                 Value::I32(val) => print!("{}", val),
                 Value::Str(val) => print!("{}", val),
-                Value::Array(_, val) => {
-                    puts_inner(&val.iter().map(|v| v.borrow().clone()).collect::<Vec<_>>())
-                }
+                Value::Array(val) => puts_inner(
+                    &val.borrow()
+                        .values
+                        .iter()
+                        .map(|v| v.borrow().clone())
+                        .collect::<Vec<_>>(),
+                ),
                 Value::Ref(r) => puts_inner(&[r.borrow().clone()]),
             }
         }
@@ -423,7 +450,7 @@ fn s_type(vals: &[Value]) -> Result<Value, EvalError> {
             Value::I64(_) => "i64".to_string(),
             Value::I32(_) => "i32".to_string(),
             Value::Str(_) => "str".to_string(),
-            Value::Array(inner, _) => format!("[{}]", type_decl_to_str(inner)),
+            Value::Array(inner) => format!("[{}]", type_decl_to_str(&inner.borrow().type_decl)),
             Value::Ref(r) => format!("ref[{}]", type_str(&r.borrow())),
         }
     }
@@ -456,7 +483,7 @@ fn s_push(vals: &[Value]) -> Result<Value, EvalError> {
     }
 }
 
-fn s_hex_string(vals: &[Value]) -> Result<Value, EvalError> {
+pub(crate) fn s_hex_string(vals: &[Value]) -> Result<Value, EvalError> {
     if let [val, ..] = vals {
         match coerce_type(val, &TypeDecl::I64).unwrap() {
             Value::I64(i) => Ok(Value::Str(format!("{:02x}", i))),
@@ -647,4 +674,5 @@ pub fn run<'src, 'ast>(
     Ok(res)
 }
 
+#[cfg(test)]
 mod test;

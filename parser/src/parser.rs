@@ -9,9 +9,15 @@ use nom::{
     sequence::{delimited, pair, preceded, terminated, tuple},
     IResult,
 };
-use std::{cell::RefCell, rc::Rc};
+use std::{
+    cell::RefCell,
+    io::{Read, Write},
+    rc::Rc,
+    string::FromUtf8Error,
+};
 
 #[derive(Debug, PartialEq, Clone)]
+#[repr(u8)]
 pub enum TypeDecl {
     Any,
     F64,
@@ -22,6 +28,65 @@ pub enum TypeDecl {
     Array(Box<TypeDecl>),
 }
 
+impl TypeDecl {
+    fn serialize(&self, writer: &mut impl Write) -> std::io::Result<()> {
+        let tag = match self {
+            Self::Any => 0xff,
+            Self::F64 => F64_TAG,
+            Self::F32 => F32_TAG,
+            Self::I64 => I64_TAG,
+            Self::I32 => I32_TAG,
+            Self::Str => STR_TAG,
+            Self::Array(inner) => {
+                writer.write_all(&ARRAY_TAG.to_le_bytes())?;
+                inner.serialize(writer)?;
+                return Ok(());
+            }
+        };
+        writer.write_all(&tag.to_le_bytes())?;
+        Ok(())
+    }
+
+    fn deserialize(reader: &mut impl Read) -> std::io::Result<Self> {
+        macro_rules! read {
+            ($ty:ty) => {{
+                let mut buf = [0u8; std::mem::size_of::<$ty>()];
+                reader.read_exact(&mut buf)?;
+                <$ty>::from_le_bytes(buf)
+            }};
+        }
+
+        let tag = read!(u8);
+        Ok(match tag {
+            0xff => Self::Any,
+            F64_TAG => Self::F64,
+            F32_TAG => Self::F32,
+            I64_TAG => Self::I64,
+            I32_TAG => Self::I32,
+            STR_TAG => Self::Str,
+            ARRAY_TAG => Self::Array(Box::new(Self::deserialize(reader)?)),
+            REF_TAG => todo!(),
+            _ => unreachable!(),
+        })
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct ArrayInt {
+    pub(crate) type_decl: TypeDecl,
+    pub(crate) values: Vec<Rc<RefCell<Value>>>,
+}
+
+impl ArrayInt {
+    pub(crate) fn new(type_decl: TypeDecl, values: Vec<Rc<RefCell<Value>>>) -> Rc<RefCell<Self>> {
+        Rc::new(RefCell::new(Self { type_decl, values }))
+    }
+
+    pub fn values(&self) -> &[Rc<RefCell<Value>>] {
+        &self.values
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum Value {
     F64(f64),
@@ -29,16 +94,156 @@ pub enum Value {
     I64(i64),
     I32(i32),
     Str(String),
-    Array(TypeDecl, Vec<Rc<RefCell<Value>>>),
+    Array(Rc<RefCell<ArrayInt>>),
     Ref(Rc<RefCell<Value>>),
 }
 
+impl Default for Value {
+    fn default() -> Self {
+        Self::I64(0)
+    }
+}
+
+const F64_TAG: u8 = 0;
+const F32_TAG: u8 = 1;
+const I64_TAG: u8 = 2;
+const I32_TAG: u8 = 3;
+const STR_TAG: u8 = 4;
+const ARRAY_TAG: u8 = 5;
+const REF_TAG: u8 = 6;
+
+#[derive(Debug)]
+pub enum ReadError {
+    IO(std::io::Error),
+    FromUtf8(FromUtf8Error),
+}
+
+impl From<std::io::Error> for ReadError {
+    fn from(e: std::io::Error) -> Self {
+        ReadError::IO(e)
+    }
+}
+
+impl From<FromUtf8Error> for ReadError {
+    fn from(e: FromUtf8Error) -> Self {
+        ReadError::FromUtf8(e)
+    }
+}
+
+impl From<ReadError> for String {
+    fn from(e: ReadError) -> Self {
+        match e {
+            ReadError::IO(e) => e.to_string(),
+            ReadError::FromUtf8(e) => e.to_string(),
+        }
+    }
+}
+
+impl ToString for Value {
+    fn to_string(&self) -> String {
+        match self {
+            Self::F64(v) => v.to_string(),
+            Self::F32(v) => v.to_string(),
+            Self::I64(v) => v.to_string(),
+            Self::I32(v) => v.to_string(),
+            Self::Str(v) => v.clone(),
+            Self::Array(v) => format!(
+                "[{}]",
+                &v.borrow().values.iter().fold("".to_string(), |acc, cur| {
+                    if acc.is_empty() {
+                        cur.borrow().to_string()
+                    } else {
+                        acc + ", " + &cur.borrow().to_string()
+                    }
+                })
+            ),
+            Self::Ref(v) => "&".to_string() + &v.borrow().to_string(),
+        }
+    }
+}
+
 impl Value {
+    pub(crate) fn serialize(&self, writer: &mut impl Write) -> std::io::Result<()> {
+        macro_rules! serialize_with_tag {
+            ($tag:ident, $val:expr) => {{
+                writer.write_all(&$tag.to_le_bytes())?;
+                writer.write_all(&$val.to_le_bytes())?;
+                Ok(())
+            }};
+        }
+
+        match self {
+            Self::F64(val) => serialize_with_tag!(F64_TAG, val),
+            Self::F32(val) => serialize_with_tag!(F32_TAG, val),
+            Self::I64(val) => serialize_with_tag!(I64_TAG, val),
+            Self::I32(val) => serialize_with_tag!(I32_TAG, val),
+            Self::Str(val) => {
+                writer.write_all(&STR_TAG.to_le_bytes())?;
+                writer.write_all(&(val.len() as u32).to_le_bytes())?;
+                writer.write_all(val.as_bytes())?;
+                Ok(())
+            }
+            Self::Array(rc) => {
+                let ArrayInt {
+                    type_decl: decl,
+                    values,
+                } = &rc.borrow() as &ArrayInt;
+                writer.write_all(&ARRAY_TAG.to_le_bytes())?;
+                writer.write_all(&values.len().to_le_bytes())?;
+                decl.serialize(writer)?;
+                for value in values {
+                    value.borrow().serialize(writer)?;
+                }
+                Ok(())
+            }
+            Self::Ref(val) => {
+                writer.write_all(&REF_TAG.to_le_bytes())?;
+                val.borrow().serialize(writer)?;
+                Ok(())
+            }
+        }
+    }
+
+    pub(crate) fn deserialize(reader: &mut impl Read) -> Result<Self, ReadError> {
+        let mut tag = [0u8; 1];
+        reader.read_exact(&mut tag)?;
+
+        macro_rules! parse {
+            ($typ:ty) => {{
+                let mut buf = [0u8; std::mem::size_of::<$typ>()];
+                reader.read_exact(&mut buf)?;
+                <$typ>::from_le_bytes(buf)
+            }};
+        }
+
+        Ok(match tag[0] {
+            F64_TAG => Value::F64(parse!(f64)),
+            F32_TAG => Value::F32(parse!(f32)),
+            I64_TAG => Value::I64(parse!(i64)),
+            I32_TAG => Value::I32(parse!(i32)),
+            STR_TAG => Value::Str({
+                let len = parse!(u32);
+                let mut buf = vec![0u8; len as usize];
+                reader.read_exact(&mut buf)?;
+                String::from_utf8(buf)?
+            }),
+            ARRAY_TAG => {
+                let value_count = parse!(usize);
+                let decl = TypeDecl::deserialize(reader)?;
+                let values = (0..value_count)
+                    .map(|_| Value::deserialize(reader).map(RefCell::new).map(Rc::new))
+                    .collect::<Result<_, _>>()?;
+                Self::Array(ArrayInt::new(decl, values))
+            }
+            _ => todo!(),
+        })
+    }
+
     /// We don't really need assignment operation for an array (yet), because
     /// array index will return a reference.
     fn _array_assign(&mut self, idx: usize, value: Value) {
-        if let Value::Array(_, array) = self {
-            array[idx] = Rc::new(RefCell::new(value.deref()));
+        if let Value::Array(array) = self {
+            array.borrow_mut().values[idx] = Rc::new(RefCell::new(value.deref()));
         } else {
             panic!("assign_array must be called for an array")
         }
@@ -47,7 +252,7 @@ impl Value {
     fn _array_get(&self, idx: u64) -> Value {
         match self {
             Value::Ref(rc) => rc.borrow()._array_get(idx),
-            Value::Array(_, array) => array[idx as usize].borrow().clone(),
+            Value::Array(array) => array.borrow_mut().values[idx as usize].borrow().clone(),
             _ => panic!("array index must be called for an array"),
         }
     }
@@ -55,14 +260,17 @@ impl Value {
     pub fn array_get_ref(&self, idx: u64) -> Result<Value, EvalError> {
         Ok(match self {
             Value::Ref(rc) => rc.borrow().array_get_ref(idx)?,
-            Value::Array(_, array) => Value::Ref(array[idx as usize].clone()),
+            Value::Array(array) => Value::Ref(array.borrow().values[idx as usize].clone()),
             _ => return Err("array index must be called for an array".to_string()),
         })
     }
 
     pub fn array_push(&mut self, value: Value) -> Result<(), EvalError> {
-        if let Value::Array(_, array) = self {
-            array.push(Rc::new(RefCell::new(value.deref())));
+        if let Value::Array(array) = self {
+            array
+                .borrow_mut()
+                .values
+                .push(Rc::new(RefCell::new(value.deref())));
             Ok(())
         } else {
             Err("push() must be called for an array".to_string())
@@ -73,7 +281,7 @@ impl Value {
     pub fn array_len(&self) -> usize {
         match self {
             Value::Ref(rc) => rc.borrow().array_len(),
-            Value::Array(_, array) => array.len(),
+            Value::Array(array) => array.borrow().values.len(),
             _ => panic!("len() must be called for an array"),
         }
     }

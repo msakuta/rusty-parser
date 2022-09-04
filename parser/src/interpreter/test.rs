@@ -355,7 +355,7 @@ fn brace_expr_eval_test() {
                 .unwrap()
                 .1
         ),
-        RunResult::Yield(Value::Ref(Rc::new(RefCell::new(Value::I64(1)))))
+        RunResult::Yield(Value::I64(1))
     );
 }
 
@@ -466,14 +466,20 @@ fn array_literal_eval_test() {
     assert_eq!(
         eval0(&full_expression("[1,3,5]").unwrap().1),
         // Right now array literals have "Any" internal type, but it should be decided somehow.
-        RunResult::Yield(Value::Array(TypeDecl::Any, vec![i64(1), i64(3), i64(5)]))
+        RunResult::Yield(Value::Array(ArrayInt::new(
+            TypeDecl::Any,
+            vec![i64(1), i64(3), i64(5)]
+        )))
     );
 
     // Type coarsion through variable declaration
     assert_eq!(
         run0(&source("var v: [f64] = [1,3,5]; v").unwrap().1),
         Ok(RunResult::Yield(Value::Ref(Rc::new(RefCell::new(
-            Value::Array(TypeDecl::F64, vec![f64(1.), f64(3.), f64(5.)])
+            Value::Array(ArrayInt::new(
+                TypeDecl::F64,
+                vec![f64(1.), f64(3.), f64(5.)]
+            ))
         )))))
     );
 }
@@ -529,8 +535,8 @@ fn array_index_eval_test() {
     let mut a_rc = None;
     // Very ugly idiom to extract a clone of a variant in a RefCell
     std::cell::Ref::map(a_ref.borrow(), |v| match v {
-        Value::Array(_, a) => {
-            a_rc = Some(a[1].clone());
+        Value::Array(a) => {
+            a_rc = Some(a.borrow().values[1].clone());
             &()
         }
         _ => panic!("a must be an array"),
