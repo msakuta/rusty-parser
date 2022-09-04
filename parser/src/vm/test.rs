@@ -240,7 +240,7 @@ fn array_index() {
         r#"
 var a = [1, 2, 3];
 print(a[1]);"#,
-        |vals| assert_eq!(vals[0], Value::Ref(Rc::new(RefCell::new(Value::I64(2))))),
+        |vals| assert_eq!(vals[0], Value::I64(2)),
     );
     assert!(res.is_ok());
 }
