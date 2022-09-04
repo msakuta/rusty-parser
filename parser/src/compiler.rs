@@ -177,6 +177,22 @@ impl Bytecode {
             }),
         );
         self.add_ext_fn(
+            "puts".to_string(),
+            Box::new(|values: &[Value]| -> Value {
+                print!(
+                    "{}",
+                    values.iter().fold("".to_string(), |acc, cur: &Value| {
+                        if acc.is_empty() {
+                            cur.to_string()
+                        } else {
+                            acc + &cur.to_string()
+                        }
+                    })
+                );
+                Value::I64(0)
+            }),
+        );
+        self.add_ext_fn(
             "len".to_string(),
             Box::new(|val| Value::I64(val[0].array_len() as i64)),
         );

@@ -296,8 +296,8 @@ fn interpret_fn(
                     } else {
                         let ci = call_stack.last().unwrap();
                         vm.stack_base = ci.stack_base;
-                        vm.stack.resize(ci.stack_size, Value::default());
                         vm.stack[prev_ci.stack_base] = vm.stack[retval].clone();
+                        vm.stack.resize(ci.stack_size, Value::default());
                         vm.dump_stack();
                     }
                 } else {
