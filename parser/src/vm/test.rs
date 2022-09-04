@@ -115,7 +115,7 @@ fn compile_and_run_with(src: &str, fun: impl Fn(&[Value]) + 'static) -> Result<V
         "print".to_string(),
         Box::new(move |vals| {
             fun(vals);
-            Value::I64(0)
+            Ok(Value::I64(0))
         }),
     );
     interpret(&bytecode)
