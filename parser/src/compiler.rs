@@ -517,7 +517,6 @@ fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> Result<Option<usi
                 });
                 compiler.target_stack[stk_from] = Target::Local(local_iter);
                 compiler.target_stack.push(Target::None);
-                compiler.bytecode.push_inst(OpCode::Incr, stk_from as u8, 0);
                 compiler
                     .bytecode
                     .push_inst(OpCode::Move, stk_from as u8, stk_check as u16);
@@ -526,6 +525,7 @@ fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> Result<Option<usi
                     .push_inst(OpCode::Lt, stk_check as u8, stk_to as u16);
                 let inst_break = compiler.bytecode.push_inst(OpCode::Jf, stk_check as u8, 0);
                 last_target = emit_stmts(stmts, compiler)?;
+                compiler.bytecode.push_inst(OpCode::Incr, stk_from as u8, 0);
                 compiler
                     .bytecode
                     .push_inst(OpCode::Jmp, 0, inst_loop_start as u16);
