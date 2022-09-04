@@ -1,4 +1,4 @@
-import { entry, parse_ast } from "../pkg/index.js";
+import { entry, parse_ast, compile, compile_and_run } from "../pkg/index.js";
 
 
 async function runCommon(process) {
@@ -22,6 +22,13 @@ document.getElementById("run").addEventListener("click", () => runCommon(entry))
 document.getElementById("parseAst").addEventListener("click", () => runCommon(source => {
     const result = parse_ast(source);
     document.getElementById("output").value = result;
+}));
+document.getElementById("compile").addEventListener("click", () => runCommon(source => {
+    const result = compile(source);
+    document.getElementById("output").value = result;
+}));
+document.getElementById("compileAndRun").addEventListener("click", () => runCommon(source => {
+    compile_and_run(source);
 }));
 
 document.getElementById("input").value = `

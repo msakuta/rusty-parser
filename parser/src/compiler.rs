@@ -8,7 +8,7 @@ use std::{
 use crate::{
     eval,
     parser::{ArrayInt, Expression, ReadError, Statement, TypeDecl, Value},
-    EvalContext, RunResult,
+    s_hex_string, EvalContext, EvalError, RunResult,
 };
 
 macro_rules! dbg_println {
@@ -145,7 +145,7 @@ fn read_str(reader: &mut impl Read) -> Result<String, ReadError> {
 
 pub(crate) enum FnProto {
     Code(FnBytecode),
-    Native(Box<dyn Fn(&[Value]) -> Value>),
+    Native(Box<dyn Fn(&[Value]) -> Result<Value, EvalError>>),
 }
 
 pub struct Bytecode {
@@ -154,7 +154,11 @@ pub struct Bytecode {
 
 impl Bytecode {
     /// Add a user-application provided native function to this bytecode.
-    pub fn add_ext_fn(&mut self, name: String, f: Box<dyn Fn(&[Value]) -> Value>) {
+    pub fn add_ext_fn(
+        &mut self,
+        name: String,
+        f: Box<dyn Fn(&[Value]) -> Result<Value, EvalError>>,
+    ) {
         self.functions.insert(name, FnProto::Native(f));
     }
 
@@ -162,7 +166,7 @@ impl Bytecode {
     pub fn add_std_fn(&mut self) {
         self.add_ext_fn(
             "print".to_string(),
-            Box::new(|values: &[Value]| -> Value {
+            Box::new(|values: &[Value]| -> Result<Value, EvalError> {
                 println!(
                     "Print: {}",
                     values.iter().fold("".to_string(), |acc, cur: &Value| {
@@ -173,12 +177,12 @@ impl Bytecode {
                         }
                     })
                 );
-                Value::I64(0)
+                Ok(Value::I64(0))
             }),
         );
         self.add_ext_fn(
             "puts".to_string(),
-            Box::new(|values: &[Value]| -> Value {
+            Box::new(|values: &[Value]| -> Result<Value, EvalError> {
                 print!(
                     "{}",
                     values.iter().fold("".to_string(), |acc, cur: &Value| {
@@ -189,12 +193,12 @@ impl Bytecode {
                         }
                     })
                 );
-                Value::I64(0)
+                Ok(Value::I64(0))
             }),
         );
         self.add_ext_fn(
             "len".to_string(),
-            Box::new(|val| Value::I64(val[0].array_len() as i64)),
+            Box::new(|val| Ok(Value::I64(val[0].array_len() as i64))),
         );
         self.add_ext_fn(
             "push".to_string(),
@@ -204,9 +208,10 @@ impl Bytecode {
                         .values
                         .push(Rc::new(RefCell::new(val[1].clone())));
                 }
-                Value::I64(0)
+                Ok(Value::I64(0))
             }),
         );
+        self.add_ext_fn("hex_string".to_string(), Box::new(s_hex_string));
     }
 
     pub fn write(&self, writer: &mut impl Write) -> std::io::Result<()> {

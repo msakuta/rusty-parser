@@ -125,3 +125,33 @@ pub fn parse_ast(src: &str) -> Result<String, JsValue> {
         .map_err(|e| JsValue::from_str(&format!("Parse error: {:?}", e)))?;
     Ok(format!("{:#?}", parse_result.1))
 }
+
+#[wasm_bindgen]
+pub fn compile(src: &str) -> Result<Vec<u8>, JsValue> {
+    let parse_result = source(src)
+        .finish()
+        .map_err(|e| JsValue::from_str(&format!("Parse error: {:?}", e)))?;
+    let bytecode = parser::compile(&parse_result.1)
+        .map_err(|e| JsValue::from_str(&format!("Error on execution: {:?}", e)))?;
+    let mut bytes = vec![];
+    bytecode
+        .write(&mut bytes)
+        .map_err(|s| JsValue::from_str(&s.to_string()))?;
+    Ok(bytes)
+}
+
+#[wasm_bindgen]
+pub fn compile_and_run(src: &str) -> Result<(), JsValue> {
+    let parse_result = source(src)
+        .finish()
+        .map_err(|e| JsValue::from_str(&format!("Parse error: {:?}", e)))?;
+    let mut bytecode = parser::compile(&parse_result.1)
+        .map_err(|e| JsValue::from_str(&format!("Error on execution: {:?}", e)))?;
+    bytecode.add_std_fn();
+    bytecode.add_ext_fn("print".to_string(), Box::new(s_print));
+    bytecode.add_ext_fn("puts".to_string(), Box::new(s_puts));
+    bytecode.add_ext_fn("set_fill_style".to_string(), Box::new(s_set_fill_style));
+    bytecode.add_ext_fn("rectangle".to_string(), Box::new(s_rectangle));
+    interpret(&bytecode)?;
+    Ok(())
+}

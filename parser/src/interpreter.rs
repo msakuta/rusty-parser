@@ -483,7 +483,7 @@ fn s_push(vals: &[Value]) -> Result<Value, EvalError> {
     }
 }
 
-fn s_hex_string(vals: &[Value]) -> Result<Value, EvalError> {
+pub(crate) fn s_hex_string(vals: &[Value]) -> Result<Value, EvalError> {
     if let [val, ..] = vals {
         match coerce_type(val, &TypeDecl::I64).unwrap() {
             Value::I64(i) => Ok(Value::Str(format!("{:02x}", i))),

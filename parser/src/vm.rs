@@ -281,7 +281,7 @@ fn interpret_fn(
                                 inst.arg1 as usize + 1,
                                 inst.arg1 as usize + 1 + inst.arg0 as usize,
                             ));
-                            vm.set(inst.arg1, ret);
+                            vm.set(inst.arg1, ret?);
                         }
                     }
                 } else {
