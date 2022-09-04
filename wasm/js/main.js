@@ -30,6 +30,11 @@ document.getElementById("compile").addEventListener("click", () => runCommon(sou
 document.getElementById("compileAndRun").addEventListener("click", () => runCommon(source => {
     compile_and_run(source);
 }));
+document.getElementById("clearCanvas").addEventListener("click", () => {
+    const canvas = document.getElementById("canvas");
+    const canvasRect = canvas.getBoundingClientRect();
+    canvas.getContext("2d").clearRect(0, 0, canvasRect.width, canvasRect.height);
+});
 
 document.getElementById("input").value = `
 fn fact(n) {
