@@ -39,6 +39,8 @@ pub enum OpCode {
     /// Get an element of an array (or a table in the future) at arg0 with the key at arg1, and make a copy at arg1.
     /// Array elements are always Rc wrapped, so the user can assign into it.
     Get,
+    /// If a value specified with arg0 in the stack is a reference (pointer), dereference it.
+    Deref,
     /// Compare arg0 and arg1, sets result -1, 0 or 1 to arg0, meaning less, equal and more, respectively
     // Cmp,
     Lt,
@@ -83,6 +85,7 @@ impl_op_from!(
     Or,
     Not,
     Get,
+    Deref,
     Lt,
     Gt,
     Jmp,
@@ -596,12 +599,14 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
             });
             Ok(lhs_result)
         }
-        Expression::FnInvoke(fname, args) => {
-            let args = args
+        Expression::FnInvoke(fname, argss) => {
+            // Function arguments have value semantics, even if it was an array element.
+            // Unless we emit `Deref` here, we might leave a reference in the stack that can be
+            // accidentally overwritten. I'm not sure this is the best way to avoid it.
+            let args = argss
                 .iter()
-                .map(|v| emit_expr(v, compiler))
+                .map(|v| emit_rvalue(v, compiler))
                 .collect::<Result<Vec<_>, _>>()?;
-
             let num_args = args.len();
 
             let stk_fname = compiler.find_or_create_literal(&Value::Str(fname.to_string()));
@@ -632,10 +637,11 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
                 .iter()
                 .map(|v| emit_expr(v, compiler))
                 .collect::<Result<Vec<_>, _>>()?;
-            let val = compiler
+            let arg = args[0];
+            compiler
                 .bytecode
-                .push_inst(OpCode::Get, stk_ex as u8, args[0] as u16);
-            Ok(val)
+                .push_inst(OpCode::Get, stk_ex as u8, arg as u16);
+            Ok(arg)
         }
         Expression::LT(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Lt, lhs, rhs)),
         Expression::GT(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Gt, lhs, rhs)),
@@ -680,6 +686,12 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
             Ok(res)
         }
     }
+}
+
+fn emit_rvalue(ex: &Expression, compiler: &mut Compiler) -> Result<usize, String> {
+    let ret = emit_expr(ex, compiler)?;
+    compiler.bytecode.push_inst(OpCode::Deref, ret as u8, 0);
+    Ok(ret)
 }
 
 fn emit_binary_op(

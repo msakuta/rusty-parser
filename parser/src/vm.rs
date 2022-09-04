@@ -110,8 +110,21 @@ fn interpret_fn(
                 vm.set(inst.arg1, ci.fun.literals[inst.arg0 as usize].clone());
             }
             OpCode::Move => {
-                let val = vm.get(inst.arg0).clone();
-                if let Value::Ref(vref) = vm.get_mut(inst.arg1) {
+                if let (Value::Array(lhs), Value::Array(rhs)) =
+                    (vm.get(inst.arg0), vm.get(inst.arg1))
+                {
+                    if lhs as *const _ == rhs as *const _ {
+                        println!("Self-assignment!");
+                        call_stack.last_mut().unwrap().ip += 1;
+                        continue;
+                    }
+                }
+                let val = match vm.get(inst.arg0) {
+                    Value::Ref(aref) => (*aref.borrow()).clone(),
+                    v => v.clone(),
+                };
+                let target = vm.get_mut(inst.arg1);
+                if let Value::Ref(vref) = target {
                     vref.replace(val);
                 } else {
                     vm.set(inst.arg1, val);
@@ -191,6 +204,13 @@ fn interpret_fn(
                                 .to_string(),
                         )
                     }
+                }
+            }
+            OpCode::Deref => {
+                let target = vm.get_mut(inst.arg0);
+                if let Value::Ref(v) = target {
+                    let cloned = v.borrow().clone();
+                    *target = cloned;
                 }
             }
             OpCode::Lt => {
