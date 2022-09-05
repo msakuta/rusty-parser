@@ -372,7 +372,7 @@ pub(crate) fn eval<'a, 'b>(
     })
 }
 
-fn s_print(vals: &[Value]) -> Result<Value, EvalError> {
+pub(crate) fn s_print(vals: &[Value]) -> Result<Value, EvalError> {
     println!("print:");
     fn print_inner(vals: &[Value]) {
         for val in vals {
@@ -442,7 +442,7 @@ fn type_decl_to_str(t: &TypeDecl) -> String {
     }
 }
 
-fn s_type(vals: &[Value]) -> Result<Value, EvalError> {
+pub(crate) fn s_type(vals: &[Value]) -> Result<Value, EvalError> {
     fn type_str(val: &Value) -> String {
         match val {
             Value::F64(_) => "f64".to_string(),
@@ -461,7 +461,7 @@ fn s_type(vals: &[Value]) -> Result<Value, EvalError> {
     }
 }
 
-fn s_len(vals: &[Value]) -> Result<Value, EvalError> {
+pub(crate) fn s_len(vals: &[Value]) -> Result<Value, EvalError> {
     if let [val, ..] = vals {
         Ok(Value::I64(val.array_len() as i64))
     } else {
@@ -469,7 +469,7 @@ fn s_len(vals: &[Value]) -> Result<Value, EvalError> {
     }
 }
 
-fn s_push(vals: &[Value]) -> Result<Value, EvalError> {
+pub(crate) fn s_push(vals: &[Value]) -> Result<Value, EvalError> {
     if let [arr, val, ..] = vals {
         match arr {
             Value::Ref(rc) => {

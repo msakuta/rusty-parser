@@ -6,9 +6,10 @@ use std::{
 };
 
 use crate::{
-    eval,
+    interpreter::{
+        eval, s_hex_string, s_len, s_print, s_push, s_type, EvalContext, EvalError, RunResult,
+    },
     parser::{ArrayInt, Expression, ReadError, Statement, TypeDecl, Value},
-    s_hex_string, EvalContext, EvalError, RunResult,
 };
 
 macro_rules! dbg_println {
@@ -164,22 +165,7 @@ impl Bytecode {
 
     /// Add standard common functions, such as `print`, `len` and `push`, to this bytecode.
     pub fn add_std_fn(&mut self) {
-        self.add_ext_fn(
-            "print".to_string(),
-            Box::new(|values: &[Value]| -> Result<Value, EvalError> {
-                println!(
-                    "Print: {}",
-                    values.iter().fold("".to_string(), |acc, cur: &Value| {
-                        if acc.is_empty() {
-                            cur.to_string()
-                        } else {
-                            acc + " " + &cur.to_string()
-                        }
-                    })
-                );
-                Ok(Value::I64(0))
-            }),
-        );
+        self.add_ext_fn("print".to_string(), Box::new(s_print));
         self.add_ext_fn(
             "puts".to_string(),
             Box::new(|values: &[Value]| -> Result<Value, EvalError> {
@@ -196,21 +182,9 @@ impl Bytecode {
                 Ok(Value::I64(0))
             }),
         );
-        self.add_ext_fn(
-            "len".to_string(),
-            Box::new(|val| Ok(Value::I64(val[0].array_len() as i64))),
-        );
-        self.add_ext_fn(
-            "push".to_string(),
-            Box::new(|val| {
-                if let Value::Array(ref arr) = val[0] {
-                    arr.borrow_mut()
-                        .values
-                        .push(Rc::new(RefCell::new(val[1].clone())));
-                }
-                Ok(Value::I64(0))
-            }),
-        );
+        self.add_ext_fn("type".to_string(), Box::new(&s_type));
+        self.add_ext_fn("len".to_string(), Box::new(s_len));
+        self.add_ext_fn("push".to_string(), Box::new(s_push));
         self.add_ext_fn("hex_string".to_string(), Box::new(s_hex_string));
     }
 

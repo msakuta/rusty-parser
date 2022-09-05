@@ -3,8 +3,8 @@
 use std::{cell::RefCell, collections::HashMap};
 
 use crate::{
-    binary_op, binary_op_str, coerce_f64, coerce_i64, truthy, Bytecode, EvalError, FnBytecode,
-    FnProto, OpCode, Value,
+    interpreter::{binary_op, binary_op_str, coerce_f64, coerce_i64, truthy, EvalError},
+    Bytecode, FnBytecode, FnProto, OpCode, Value,
 };
 
 macro_rules! dbg_println {
