@@ -265,15 +265,17 @@ impl Value {
         })
     }
 
-    pub fn array_push(&mut self, value: Value) -> Result<(), EvalError> {
-        if let Value::Array(array) = self {
-            array
-                .borrow_mut()
-                .values
-                .push(Rc::new(RefCell::new(value.deref())));
-            Ok(())
-        } else {
-            Err("push() must be called for an array".to_string())
+    pub fn array_push(&self, value: Value) -> Result<(), EvalError> {
+        match self {
+            Value::Ref(r) => r.borrow_mut().array_push(value),
+            Value::Array(array) => {
+                array
+                    .borrow_mut()
+                    .values
+                    .push(Rc::new(RefCell::new(value.deref())));
+                Ok(())
+            }
+            _ => Err("push() must be called for an array".to_string()),
         }
     }
 

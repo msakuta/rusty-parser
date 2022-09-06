@@ -374,34 +374,30 @@ pub(crate) fn eval<'a, 'b>(
 
 pub(crate) fn s_print(vals: &[Value]) -> Result<Value, EvalError> {
     println!("print:");
-    fn print_inner(vals: &[Value]) {
-        for val in vals {
-            match val {
-                Value::F64(val) => println!(" {}", val),
-                Value::F32(val) => println!(" {}", val),
-                Value::I64(val) => println!(" {}", val),
-                Value::I32(val) => println!(" {}", val),
-                Value::Str(val) => println!(" {}", val),
-                Value::Array(val) => {
-                    print!("[");
-                    print_inner(
-                        &val.borrow()
-                            .values
-                            .iter()
-                            .map(|v| v.borrow().clone())
-                            .collect::<Vec<_>>(),
-                    );
-                    print!("]");
+    fn print_inner(val: &Value) {
+        match val {
+            Value::F64(val) => print!(" {}", val),
+            Value::F32(val) => print!(" {}", val),
+            Value::I64(val) => print!(" {}", val),
+            Value::I32(val) => print!(" {}", val),
+            Value::Str(val) => print!(" {}", val),
+            Value::Array(val) => {
+                print!("[");
+                for val in val.borrow().values.iter() {
+                    print_inner(&val.borrow());
                 }
-                Value::Ref(r) => {
-                    print!("ref(");
-                    print_inner(&[r.borrow().clone()]);
-                    print!(")");
-                }
+                print!("]");
+            }
+            Value::Ref(r) => {
+                print!("ref(");
+                print_inner(&r.borrow());
+                print!(")");
             }
         }
     }
-    print_inner(vals);
+    for val in vals {
+        print_inner(val);
+    }
     print!("\n");
     Ok(Value::I32(0))
 }
@@ -471,13 +467,7 @@ pub(crate) fn s_len(vals: &[Value]) -> Result<Value, EvalError> {
 
 pub(crate) fn s_push(vals: &[Value]) -> Result<Value, EvalError> {
     if let [arr, val, ..] = vals {
-        match arr {
-            Value::Ref(rc) => {
-                rc.borrow_mut().array_push(val.clone())?;
-                Ok(Value::I32(0))
-            }
-            _ => Err("len() not supported other than arrays".to_string()),
-        }
+        arr.array_push(val.clone()).map(|_| Value::I32(0))
     } else {
         Ok(Value::I32(0))
     }
