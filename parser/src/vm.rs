@@ -192,19 +192,10 @@ fn interpret_fn(
             OpCode::Get => {
                 let target_array = &vm.get(inst.arg0);
                 let target_index = &vm.get(inst.arg1);
-                match target_array {
-                    Value::Array(vec) => {
-                        let idx = coerce_i64(target_index)? as usize;
-                        let new_value = vec.borrow().values[idx].clone();
-                        vm.set(inst.arg1, Value::Ref(new_value));
-                    }
-                    _ => {
-                        return Err(
-                            "Array indexing operator \"[]\" needs an array as the first operand"
-                                .to_string(),
-                        )
-                    }
-                }
+                let new_val = target_array.array_get_ref(coerce_i64(target_index)? as u64).map_err(|e| {
+                    format!("Get instruction failed with {target_array:?} and {target_index:?}: {e:?}")
+                })?;
+                vm.set(inst.arg1, new_val);
             }
             OpCode::Deref => {
                 let target = vm.get_mut(inst.arg0);
