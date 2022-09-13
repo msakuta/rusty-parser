@@ -11,7 +11,7 @@ print(fact(10));
 
 fn fibo(n) {
     if n < 1 {
-        1
+        0
     } else if n < 2 {
         1
     } else {
