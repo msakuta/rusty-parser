@@ -260,7 +260,12 @@ impl Value {
     pub fn array_get_ref(&self, idx: u64) -> Result<Value, EvalError> {
         Ok(match self {
             Value::Ref(rc) => rc.borrow().array_get_ref(idx)?,
-            Value::Array(array) => Value::Ref(array.borrow().values[idx as usize].clone()),
+            Value::Array(array) => Value::Ref({
+                let array = array.borrow();
+                array.values.get(idx as usize)
+                    .ok_or_else(|| format!("array index out of range: {idx} is larger than array length {}", array.values.len()))?
+                    .clone()
+            }),
             _ => return Err("array index must be called for an array".to_string()),
         })
     }

@@ -633,6 +633,17 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
                 .map(|v| emit_expr(v, compiler))
                 .collect::<Result<Vec<_>, _>>()?;
             let arg = args[0];
+            let arg = if matches!(compiler.target_stack[arg], Target::Local(_)) {
+                // We move the local variable to another slot because our instructions are destructive
+                let top = compiler.target_stack.len();
+                compiler
+                    .bytecode
+                    .push_inst(OpCode::Move, arg as u8, top as u16);
+                compiler.target_stack.push(Target::None);
+                top
+            } else {
+                arg
+            };
             compiler
                 .bytecode
                 .push_inst(OpCode::Get, stk_ex as u8, arg as u16);

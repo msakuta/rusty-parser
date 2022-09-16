@@ -132,13 +132,18 @@ fn interpret_fn(
             }
             OpCode::Incr => {
                 let val = vm.get_mut(inst.arg0);
-                match val {
-                    Value::I64(i) => *i += 1,
-                    Value::I32(i) => *i += 1,
-                    Value::F64(i) => *i += 1.,
-                    Value::F32(i) => *i += 1.,
-                    _ => return Err("Attempt to increment non-numerical value".to_string()),
+                fn incr(val: &mut Value) -> Result<(), String> {
+                    match val {
+                        Value::I64(i) => *i += 1,
+                        Value::I32(i) => *i += 1,
+                        Value::F64(i) => *i += 1.,
+                        Value::F32(i) => *i += 1.,
+                        Value::Ref(r) => incr(&mut r.borrow_mut())?,
+                        _ => return Err(format!("Attempt to increment non-numerical value {:?}", val)),
+                    }
+                    Ok(())
                 }
+                incr(val)?;
             }
             OpCode::Add => {
                 let result = binary_op_str(
