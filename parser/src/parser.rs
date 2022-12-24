@@ -292,6 +292,19 @@ impl Value {
                     ));
                 }
             }
+            Value::ArrayRef(rc, idx2) => {
+                let array_int = rc.borrow();
+                array_int
+                    .values
+                    .get(*idx2)
+                    .ok_or_else(|| {
+                        format!(
+                            "array index out of range: {idx2} is larger than array length {}",
+                            array_int.values.len()
+                        )
+                    })?
+                    .array_get_ref(idx)?
+            }
             _ => return Err("array index must be called for an array".to_string()),
         })
     }

@@ -44,6 +44,12 @@ pub(crate) fn binary_op_str(
         // "Deref" the references before binary
         (Value::Ref(lhs), ref rhs) => binary_op_str(&lhs.borrow(), rhs, d, i, s)?,
         (ref lhs, Value::Ref(rhs)) => binary_op_str(lhs, &rhs.borrow(), d, i, s)?,
+        (Value::ArrayRef(lhs, idx), ref rhs) => {
+            binary_op_str(&lhs.borrow().values.get(*idx).unwrap(), rhs, d, i, s)?
+        }
+        (ref lhs, Value::ArrayRef(rhs, idx)) => {
+            binary_op_str(lhs, &rhs.borrow().values.get(*idx).unwrap(), d, i, s)?
+        }
         (Value::F64(lhs), rhs) => Value::F64(d(*lhs, coerce_f64(&rhs)?)),
         (lhs, Value::F64(rhs)) => Value::F64(d(coerce_f64(&lhs)?, *rhs)),
         (Value::F32(lhs), rhs) => Value::F32(d(*lhs as f64, coerce_f64(&rhs)?) as f32),
