@@ -40,7 +40,7 @@ fn main() -> Result<(), String> {
             println!("Match: {:?}", result.1);
         }
 
-        if args.compile {
+        if args.compile || args.compile_and_run {
             let mut bytecode =
                 compile(&result.1).map_err(|e| format!("Error in compile(): {:?}", e))?;
             // println!("bytecode: {:#?}", bytecode);

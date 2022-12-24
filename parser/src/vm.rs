@@ -212,9 +212,21 @@ fn interpret_fn(
             }
             OpCode::Deref => {
                 let target = vm.get_mut(inst.arg0);
-                if let Value::Ref(v) = target {
-                    let cloned = v.borrow().clone();
-                    *target = cloned;
+                match target {
+                    Value::Ref(v) => {
+                        let cloned = v.borrow().clone();
+                        *target = cloned;
+                    }
+                    Value::ArrayRef(a, idx) => {
+                        let cloned = a
+                            .borrow()
+                            .values
+                            .get(*idx)
+                            .ok_or_else(|| "Deref instruction failed with ArrayRef out of bounds")?
+                            .clone();
+                        *target = cloned;
+                    }
+                    _ => (),
                 }
             }
             OpCode::Lt => {
