@@ -12,7 +12,6 @@ use nom::{
 use std::{
     cell::RefCell,
     io::{Read, Write},
-    ops::Deref,
     rc::Rc,
     string::FromUtf8Error,
 };
@@ -331,10 +330,10 @@ impl Value {
 
     /// Recursively peels off references
     pub fn deref(self) -> Self {
-        if let Value::Ref(r) = self {
-            r.borrow().clone().deref()
-        } else {
-            self
+        match self {
+            Value::Ref(r) => r.borrow().clone().deref(),
+            Value::ArrayRef(r, idx) => (*r.borrow()).values.get(idx).cloned().unwrap(),
+            _ => self,
         }
     }
 }
