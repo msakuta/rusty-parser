@@ -15,6 +15,9 @@ fn unwrap_deref(e: RunResult) -> RunResult {
             let r = vref.borrow();
             return RunResult::Yield(r.clone());
         }
+        RunResult::Yield(Value::ArrayRef(a, idx)) => {
+            return RunResult::Yield(a.borrow().values.get(*idx).unwrap().clone());
+        }
         RunResult::Break => return RunResult::Break,
         _ => (),
     }
@@ -141,12 +144,7 @@ fn _coerce_var(value: &Value, target: &Value) -> Result<Value, EvalError> {
                             .borrow()
                             .values
                             .iter()
-                            .map(|val| -> Result<_, String> {
-                                Ok(Rc::new(RefCell::new(coerce_type(
-                                    &val.borrow(),
-                                    inner_type,
-                                )?)))
-                            })
+                            .map(|val| -> Result<_, String> { Ok(coerce_type(val, inner_type)?) })
                             .collect::<Result<_, _>>()?,
                     ))
                 } else {
@@ -156,6 +154,7 @@ fn _coerce_var(value: &Value, target: &Value) -> Result<Value, EvalError> {
         }
         // We usually don't care about coercion
         Value::Ref(_) => value.clone(),
+        Value::ArrayRef(_, _) => value.clone(),
     })
 }
 
@@ -176,10 +175,7 @@ pub fn coerce_type(value: &Value, target: &TypeDecl) -> Result<Value, EvalError>
                         .values
                         .iter()
                         .map(|value_elem| -> Result<_, EvalError> {
-                            Ok(Rc::new(RefCell::new(coerce_type(
-                                &value_elem.borrow(),
-                                inner,
-                            )?)))
+                            Ok(coerce_type(value_elem, inner)?)
                         })
                         .collect::<Result<Vec<_>, _>>()?,
                 ))
@@ -202,7 +198,7 @@ pub(crate) fn eval<'a, 'b>(
             val.iter()
                 .map(|v| {
                     if let RunResult::Yield(y) = eval(v, ctx)? {
-                        Ok(Rc::new(RefCell::new(y)))
+                        Ok(y)
                     } else {
                         Err("Break in array literal not supported".to_string())
                     }
@@ -215,17 +211,30 @@ pub(crate) fn eval<'a, 'b>(
         )),
         Expression::VarAssign(lhs, rhs) => {
             let lhs_result = eval(lhs, ctx)?;
-            let lhs_value = if let RunResult::Yield(Value::Ref(rc)) = lhs_result {
-                rc
-            } else {
-                return Err(format!(
-                    "We need variable reference on lhs to assign. Actually we got {:?}",
-                    lhs_result
-                ));
+            let result = match lhs_result {
+                RunResult::Yield(Value::Ref(rc)) => {
+                    let rhs_value = unwrap_run!(eval(rhs, ctx)?);
+                    *rc.borrow_mut() = rhs_value.clone();
+                    rhs_value
+                }
+                RunResult::Yield(Value::ArrayRef(rc, idx)) => {
+                    if let Some(mref) = rc.borrow_mut().values.get_mut(idx) {
+                        let rhs_value = unwrap_run!(eval(rhs, ctx)?);
+                        eprintln!("Assigning {rhs_value:?} to {mref:?}");
+                        *mref = rhs_value.clone();
+                        rhs_value
+                    } else {
+                        return Err(format!("ArrayRef index out of range",));
+                    }
+                }
+                _ => {
+                    return Err(format!(
+                        "We need variable reference on lhs to assign. Actually we got {:?}",
+                        lhs_result
+                    ));
+                }
             };
-            let rhs_value = unwrap_run!(eval(rhs, ctx)?);
-            *lhs_value.borrow_mut() = rhs_value.clone();
-            RunResult::Yield(rhs_value)
+            RunResult::Yield(result)
         }
         Expression::FnInvoke(str, args) => {
             let args = args
@@ -384,13 +393,18 @@ pub(crate) fn s_print(vals: &[Value]) -> Result<Value, EvalError> {
             Value::Array(val) => {
                 print!("[");
                 for val in val.borrow().values.iter() {
-                    print_inner(&val.borrow());
+                    print_inner(val);
                 }
                 print!("]");
             }
             Value::Ref(r) => {
                 print!("ref(");
                 print_inner(&r.borrow());
+                print!(")");
+            }
+            Value::ArrayRef(r, idx) => {
+                print!("arrayref(");
+                print_inner((*r.borrow()).values.get(*idx).unwrap());
                 print!(")");
             }
         }
@@ -415,10 +429,15 @@ fn s_puts(vals: &[Value]) -> Result<Value, EvalError> {
                     &val.borrow()
                         .values
                         .iter()
-                        .map(|v| v.borrow().clone())
+                        .map(|v| v.clone())
                         .collect::<Vec<_>>(),
                 ),
                 Value::Ref(r) => puts_inner(&[r.borrow().clone()]),
+                Value::ArrayRef(r, idx) => {
+                    if let Some(r) = r.borrow().values.get(*idx) {
+                        puts_inner(&[r.clone()])
+                    }
+                }
             }
         }
     }
@@ -448,6 +467,7 @@ pub(crate) fn s_type(vals: &[Value]) -> Result<Value, EvalError> {
             Value::Str(_) => "str".to_string(),
             Value::Array(inner) => format!("[{}]", type_decl_to_str(&inner.borrow().type_decl)),
             Value::Ref(r) => format!("ref[{}]", type_str(&r.borrow())),
+            Value::ArrayRef(r, _) => format!("aref[{}]", type_decl_to_str(&r.borrow().type_decl)),
         }
     }
     if let [val, ..] = vals {
