@@ -1,0 +1,83 @@
+{
+	"$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+	"name": "rusty-parser",
+	"patterns": [
+		{
+			"include": "#keywords"
+		},
+		{
+			"include": "#builtInTypes"
+		},
+		{
+			"include": "#strings"
+		},
+		{
+			"include": "#blockComment"
+		},
+		{
+			"include": "#constants"
+		},
+		{
+			"include": "#identifiers"
+		},
+		{
+			"include": "#operators"
+		}
+
+	],
+	"repository": {
+		"keywords": {
+			"patterns": [{
+				"name": "keyword.control.rpar",
+				"match": "\\b(if|while|for|return|fn|var)\\b"
+			}]
+		},
+		"builtInTypes": {
+			"patterns": [{
+				"name": "entity.name.type.rpar",
+				"match": "\\b(i32|i64|f32|f64|str)\\b"
+			}]
+		},
+		"strings": {
+			"name": "string.quoted.double.rpar",
+			"begin": "\"",
+			"end": "\"",
+			"patterns": [
+				{
+					"name": "constant.character.escape.rpar",
+					"match": "\\\\."
+				}
+			]
+		},
+		"blockComment": {
+			"name": "comment.block.rpar",
+			"begin": "/\\*",
+			"end": "\\*/",
+			"patterns": [
+				{
+					"name": "comment.block.rpar",
+					"match": "\\\\."
+				}
+			]
+		},
+		"constants": {
+			"patterns": [{
+				"name": "constant.numeric.rpar",
+				"match": "\\d(\\.|\\d)*"
+			}]
+		},
+		"identifiers": {
+			"patterns": [{
+				"name": "variable.other.rpar",
+				"match": "\\w+"
+			}]
+		},
+		"operators": {
+			"patterns": [{
+				"name": "keyword.operator.rpar",
+				"match": "(\\+|-|\\*|/|=|<|>|&&|\\|\\|)"
+			}]
+		}
+	},
+	"scopeName": "source.rpar"
+}
