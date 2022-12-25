@@ -86,13 +86,15 @@ fn tc_expr<'a, 'b>(
         }),
         Expression::StrLiteral(_val) => TypeCheckResult::Yield(TypeDecl::Str),
         Expression::ArrLiteral(val) => {
-            for (ex1, ex2) in val[..val.len() - 1].iter().zip(val[1..].iter()) {
-                let el1 = tc_expr(ex1, ctx)?;
-                let el2 = tc_expr(ex2, ctx)?;
-                if el1 != el2 {
-                    return Err(format!(
-                        "Types in an array is not homogeneous: {el1:?} and {el2:?}"
-                    ));
+            if !val.is_empty() {
+                for (ex1, ex2) in val[..val.len() - 1].iter().zip(val[1..].iter()) {
+                    let el1 = tc_expr(ex1, ctx)?;
+                    let el2 = tc_expr(ex2, ctx)?;
+                    if el1 != el2 {
+                        return Err(format!(
+                            "Types in an array is not homogeneous: {el1:?} and {el2:?}"
+                        ));
+                    }
                 }
             }
             let ty = if let TypeCheckResult::Yield(ty) = val
@@ -110,14 +112,10 @@ fn tc_expr<'a, 'b>(
             ctx.get_var(str)
                 .ok_or_else(|| format!("Variable {} not found in scope", str))?,
         ),
-        Expression::Add(lhs, rhs)
-        | Expression::Sub(lhs, rhs)
-        | Expression::Mult(lhs, rhs)
-        | Expression::Div(lhs, rhs) => {
-            let lhs = unwrap_tc!(tc_expr(lhs, ctx)?);
-            let rhs = unwrap_tc!(tc_expr(rhs, ctx)?);
-            binary_op(&lhs, &rhs)?
-        }
+        Expression::Add(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Add")?,
+        Expression::Sub(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Sub")?,
+        Expression::Mult(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Mult")?,
+        Expression::Div(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Div")?,
         Expression::FnInvoke(str, args) => {
             let args = args
                 .iter()
@@ -171,6 +169,7 @@ fn tc_coerce_type(value: &TypeDecl, target: &TypeDecl) -> Result<TypeDecl, TypeC
     use TypeDecl::*;
     Ok(match (value, target) {
         (_, Any) => value.clone(),
+        (Any, _) => target.clone(),
         (F64 | Float, F64) => F64,
         (F32 | Float, F32) => F32,
         (I64 | Integer, I64) => I64,
@@ -190,7 +189,7 @@ pub fn type_check<'src, 'ast>(
     stmts: &'ast Vec<Statement<'src>>,
     ctx: &mut TypeCheckContext<'src, 'ast, '_, '_>,
 ) -> Result<TypeCheckResult, TypeCheckError> {
-    let res = TypeCheckResult::Yield(TypeDecl::Any);
+    let mut res = TypeCheckResult::Yield(TypeDecl::Any);
     for stmt in stmts {
         match stmt {
             Statement::VarDecl(var, type_, initializer) => {
@@ -225,10 +224,16 @@ pub fn type_check<'src, 'ast>(
                 );
             }
             Statement::Expression(e) => {
-                let res = tc_expr(&e, ctx)?;
+                res = tc_expr(&e, ctx)?;
                 if let TypeCheckResult::Break = res {
                     return Ok(res);
                 }
+            }
+            Statement::For(iter, from, to, e) => {
+                tc_coerce_type(&unwrap_tc!(tc_expr(from, ctx)?), &TypeDecl::I64)?;
+                tc_coerce_type(&unwrap_tc!(tc_expr(to, ctx)?), &TypeDecl::I64)?;
+                ctx.variables.borrow_mut().insert(iter, TypeDecl::I64);
+                res = TypeCheckResult::Yield(unwrap_tc!(type_check(e, ctx)?));
             }
             Statement::Comment(_) => (),
             _ => todo!(),
@@ -237,16 +242,23 @@ pub fn type_check<'src, 'ast>(
     Ok(res)
 }
 
-fn binary_op(lhs: &TypeDecl, rhs: &TypeDecl) -> Result<TypeCheckResult, TypeCheckError> {
+fn binary_op<'src, 'ast>(
+    lhs: &'ast Expression<'src>,
+    rhs: &'ast Expression<'src>,
+    ctx: &mut TypeCheckContext<'src, 'ast, '_, '_>,
+    op: &str,
+) -> Result<TypeCheckResult, TypeCheckError> {
+    let lhs = unwrap_tc!(tc_expr(lhs, ctx)?);
+    let rhs = unwrap_tc!(tc_expr(rhs, ctx)?);
     let res = TypeCheckResult::Yield(match (&lhs, &rhs) {
         (TypeDecl::F64 | TypeDecl::F32, TypeDecl::F64 | TypeDecl::F32) => TypeDecl::Float,
-        (TypeDecl::I64 | TypeDecl::I32, TypeDecl::F64 | TypeDecl::F32) => TypeDecl::Integer,
+        (TypeDecl::I64 | TypeDecl::I32, TypeDecl::I64 | TypeDecl::I32) => TypeDecl::Integer,
         (TypeDecl::Str, TypeDecl::Str) => TypeDecl::Str,
         (TypeDecl::Float, TypeDecl::Float) => TypeDecl::Float,
         (TypeDecl::Integer, TypeDecl::Integer) => TypeDecl::Integer,
         _ => {
             return Err(format!(
-                "Add between incompatible type: {:?} and {:?}",
+                "{op} between incompatible type: {:?} and {:?}",
                 lhs, rhs
             ))
         }
