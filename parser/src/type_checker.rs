@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap};
+use std::collections::HashMap;
 
 use crate::{
     interpreter::{std_functions, FuncCode},
@@ -10,13 +10,9 @@ pub type TypeCheckError = String;
 
 #[derive(Clone)]
 pub struct TypeCheckContext<'src, 'ast, 'native, 'ctx> {
-    /// RefCell to allow mutation in super context.
-    /// Also, the inner values must be Rc of RefCell because a reference could be returned from
-    /// a function so that the variable scope may have been ended.
-    variables: RefCell<HashMap<&'src str, TypeDecl>>,
+    /// Variables table for type checking.
+    variables: HashMap<&'src str, TypeDecl>,
     /// Function names are owned strings because it can be either from source or native.
-    /// Unlike variables, functions cannot be overwritten in the outer scope, so it does not
-    /// need to be wrapped in a RefCell.
     functions: HashMap<String, FuncDef<'src, 'ast, 'native>>,
     super_context: Option<&'ctx TypeCheckContext<'src, 'ast, 'native, 'ctx>>,
 }
@@ -24,14 +20,14 @@ pub struct TypeCheckContext<'src, 'ast, 'native, 'ctx> {
 impl<'src, 'ast, 'native, 'ctx> TypeCheckContext<'src, 'ast, 'native, 'ctx> {
     pub fn new() -> Self {
         Self {
-            variables: RefCell::new(HashMap::new()),
+            variables: HashMap::new(),
             functions: std_functions(),
             super_context: None,
         }
     }
 
     fn get_var(&self, name: &str) -> Option<TypeDecl> {
-        if let Some(val) = self.variables.borrow().get(name) {
+        if let Some(val) = self.variables.get(name) {
             Some(val.clone())
         } else if let Some(super_ctx) = self.super_context {
             super_ctx.get_var(name)
@@ -56,7 +52,7 @@ impl<'src, 'ast, 'native, 'ctx> TypeCheckContext<'src, 'ast, 'native, 'ctx> {
 
     fn push_stack(super_ctx: &'ctx Self) -> Self {
         Self {
-            variables: RefCell::new(HashMap::new()),
+            variables: HashMap::new(),
             functions: HashMap::new(),
             super_context: Some(super_ctx),
         }
@@ -197,7 +193,7 @@ pub fn type_check<'src, 'ast>(
                     TypeDecl::Any
                 };
                 let init_val = tc_coerce_type(&init_val, type_)?;
-                ctx.variables.borrow_mut().insert(*var, init_val);
+                ctx.variables.insert(*var, init_val);
             }
             Statement::FnDecl {
                 name,
@@ -212,10 +208,7 @@ pub fn type_check<'src, 'ast>(
                 );
                 let mut subctx = TypeCheckContext::push_stack(ctx);
                 for arg in args.iter() {
-                    subctx
-                        .variables
-                        .borrow_mut()
-                        .insert(arg.0.clone(), arg.1.clone());
+                    subctx.variables.insert(arg.0.clone(), arg.1.clone());
                 }
                 let last_stmt = type_check(stmts, &mut subctx)?;
                 if let Some(ret_type) = ret_type {
@@ -236,7 +229,7 @@ pub fn type_check<'src, 'ast>(
             Statement::For(iter, from, to, e) => {
                 tc_coerce_type(&tc_expr(from, ctx)?, &TypeDecl::I64)?;
                 tc_coerce_type(&tc_expr(to, ctx)?, &TypeDecl::I64)?;
-                ctx.variables.borrow_mut().insert(iter, TypeDecl::I64);
+                ctx.variables.insert(iter, TypeDecl::I64);
                 res = type_check(e, ctx)?;
             }
             Statement::Break => {
