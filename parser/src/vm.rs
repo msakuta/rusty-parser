@@ -121,13 +121,16 @@ fn interpret_fn(
                 }
                 let val = match vm.get(inst.arg0) {
                     Value::Ref(aref) => (*aref.borrow()).clone(),
+                    Value::ArrayRef(aref, idx) => (*aref.borrow()).values[*idx].clone(),
                     v => v.clone(),
                 };
                 let target = vm.get_mut(inst.arg1);
-                if let Value::Ref(vref) = target {
-                    vref.replace(val);
-                } else {
-                    vm.set(inst.arg1, val);
+                match target {
+                    Value::Ref(vref) => {
+                        vref.replace(val);
+                    }
+                    Value::ArrayRef(vref, idx) => vref.borrow_mut().values[*idx] = val,
+                    _ => vm.set(inst.arg1, val),
                 }
             }
             OpCode::Incr => {
@@ -139,7 +142,12 @@ fn interpret_fn(
                         Value::F64(i) => *i += 1.,
                         Value::F32(i) => *i += 1.,
                         Value::Ref(r) => incr(&mut r.borrow_mut())?,
-                        _ => return Err(format!("Attempt to increment non-numerical value {:?}", val)),
+                        _ => {
+                            return Err(format!(
+                                "Attempt to increment non-numerical value {:?}",
+                                val
+                            ))
+                        }
                     }
                     Ok(())
                 }
@@ -204,9 +212,21 @@ fn interpret_fn(
             }
             OpCode::Deref => {
                 let target = vm.get_mut(inst.arg0);
-                if let Value::Ref(v) = target {
-                    let cloned = v.borrow().clone();
-                    *target = cloned;
+                match target {
+                    Value::Ref(v) => {
+                        let cloned = v.borrow().clone();
+                        *target = cloned;
+                    }
+                    Value::ArrayRef(a, idx) => {
+                        let cloned = a
+                            .borrow()
+                            .values
+                            .get(*idx)
+                            .ok_or_else(|| "Deref instruction failed with ArrayRef out of bounds")?
+                            .clone();
+                        *target = cloned;
+                    }
+                    _ => (),
                 }
             }
             OpCode::Lt => {

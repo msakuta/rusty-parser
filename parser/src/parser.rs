@@ -74,15 +74,15 @@ impl TypeDecl {
 #[derive(Debug, PartialEq, Clone)]
 pub struct ArrayInt {
     pub(crate) type_decl: TypeDecl,
-    pub(crate) values: Vec<Rc<RefCell<Value>>>,
+    pub(crate) values: Vec<Value>,
 }
 
 impl ArrayInt {
-    pub(crate) fn new(type_decl: TypeDecl, values: Vec<Rc<RefCell<Value>>>) -> Rc<RefCell<Self>> {
+    pub(crate) fn new(type_decl: TypeDecl, values: Vec<Value>) -> Rc<RefCell<Self>> {
         Rc::new(RefCell::new(Self { type_decl, values }))
     }
 
-    pub fn values(&self) -> &[Rc<RefCell<Value>>] {
+    pub fn values(&self) -> &[Value] {
         &self.values
     }
 }
@@ -96,6 +96,7 @@ pub enum Value {
     Str(String),
     Array(Rc<RefCell<ArrayInt>>),
     Ref(Rc<RefCell<Value>>),
+    ArrayRef(Rc<RefCell<ArrayInt>>, usize),
 }
 
 impl Default for Value {
@@ -151,13 +152,20 @@ impl ToString for Value {
                 "[{}]",
                 &v.borrow().values.iter().fold("".to_string(), |acc, cur| {
                     if acc.is_empty() {
-                        cur.borrow().to_string()
+                        cur.to_string()
                     } else {
-                        acc + ", " + &cur.borrow().to_string()
+                        acc + ", " + &cur.to_string()
                     }
                 })
             ),
             Self::Ref(v) => "&".to_string() + &v.borrow().to_string(),
+            Self::ArrayRef(v, idx) => {
+                if let Some(v) = (*v.borrow()).values.get(*idx) {
+                    v.to_string()
+                } else {
+                    "Array index out of range".to_string()
+                }
+            }
         }
     }
 }
@@ -192,7 +200,7 @@ impl Value {
                 writer.write_all(&values.len().to_le_bytes())?;
                 decl.serialize(writer)?;
                 for value in values {
-                    value.borrow().serialize(writer)?;
+                    value.serialize(writer)?;
                 }
                 Ok(())
             }
@@ -200,6 +208,18 @@ impl Value {
                 writer.write_all(&REF_TAG.to_le_bytes())?;
                 val.borrow().serialize(writer)?;
                 Ok(())
+            }
+            Self::ArrayRef(val, idx) => {
+                if let Some(v) = (*val.borrow()).values.get(*idx) {
+                    writer.write_all(&REF_TAG.to_le_bytes())?;
+                    v.serialize(writer)?;
+                    Ok(())
+                } else {
+                    Err(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        "ArrayRef out of range".to_string(),
+                    ))
+                }
             }
         }
     }
@@ -231,7 +251,7 @@ impl Value {
                 let value_count = parse!(usize);
                 let decl = TypeDecl::deserialize(reader)?;
                 let values = (0..value_count)
-                    .map(|_| Value::deserialize(reader).map(RefCell::new).map(Rc::new))
+                    .map(|_| Value::deserialize(reader))
                     .collect::<Result<_, _>>()?;
                 Self::Array(ArrayInt::new(decl, values))
             }
@@ -243,7 +263,7 @@ impl Value {
     /// array index will return a reference.
     fn _array_assign(&mut self, idx: usize, value: Value) {
         if let Value::Array(array) = self {
-            array.borrow_mut().values[idx] = Rc::new(RefCell::new(value.deref()));
+            array.borrow_mut().values[idx] = value.deref();
         } else {
             panic!("assign_array must be called for an array")
         }
@@ -252,7 +272,7 @@ impl Value {
     fn _array_get(&self, idx: u64) -> Value {
         match self {
             Value::Ref(rc) => rc.borrow()._array_get(idx),
-            Value::Array(array) => array.borrow_mut().values[idx as usize].borrow().clone(),
+            Value::Array(array) => array.borrow_mut().values[idx as usize].clone(),
             _ => panic!("array index must be called for an array"),
         }
     }
@@ -260,12 +280,30 @@ impl Value {
     pub fn array_get_ref(&self, idx: u64) -> Result<Value, EvalError> {
         Ok(match self {
             Value::Ref(rc) => rc.borrow().array_get_ref(idx)?,
-            Value::Array(array) => Value::Ref({
-                let array = array.borrow();
-                array.values.get(idx as usize)
-                    .ok_or_else(|| format!("array index out of range: {idx} is larger than array length {}", array.values.len()))?
-                    .clone()
-            }),
+            Value::Array(array) => {
+                let array_int = array.borrow();
+                if (idx as usize) < array_int.values.len() {
+                    Value::ArrayRef(array.clone(), idx as usize)
+                } else {
+                    return Err(format!(
+                        "array index out of range: {idx} is larger than array length {}",
+                        array_int.values.len()
+                    ));
+                }
+            }
+            Value::ArrayRef(rc, idx2) => {
+                let array_int = rc.borrow();
+                array_int
+                    .values
+                    .get(*idx2)
+                    .ok_or_else(|| {
+                        format!(
+                            "array index out of range: {idx2} is larger than array length {}",
+                            array_int.values.len()
+                        )
+                    })?
+                    .array_get_ref(idx)?
+            }
             _ => return Err("array index must be called for an array".to_string()),
         })
     }
@@ -274,10 +312,7 @@ impl Value {
         match self {
             Value::Ref(r) => r.borrow_mut().array_push(value),
             Value::Array(array) => {
-                array
-                    .borrow_mut()
-                    .values
-                    .push(Rc::new(RefCell::new(value.deref())));
+                array.borrow_mut().values.push(value.deref());
                 Ok(())
             }
             _ => Err("push() must be called for an array".to_string()),
@@ -295,10 +330,10 @@ impl Value {
 
     /// Recursively peels off references
     pub fn deref(self) -> Self {
-        if let Value::Ref(r) = self {
-            r.borrow().clone().deref()
-        } else {
-            self
+        match self {
+            Value::Ref(r) => r.borrow().clone().deref(),
+            Value::ArrayRef(r, idx) => (*r.borrow()).values.get(idx).cloned().unwrap(),
+            _ => self,
         }
     }
 }

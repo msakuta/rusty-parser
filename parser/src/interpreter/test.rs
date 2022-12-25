@@ -457,11 +457,11 @@ fn array_literal_test() {
 #[test]
 fn array_literal_eval_test() {
     use Value::*;
-    fn i64(i: i64) -> Rc<RefCell<Value>> {
-        Rc::new(RefCell::new(I64(i)))
+    fn i64(i: i64) -> Value {
+        I64(i)
     }
-    fn f64(i: f64) -> Rc<RefCell<Value>> {
-        Rc::new(RefCell::new(F64(i)))
+    fn f64(i: f64) -> Value {
+        F64(i)
     }
     assert_eq!(
         eval0(&full_expression("[1,3,5]").unwrap().1),
@@ -536,13 +536,13 @@ fn array_index_eval_test() {
     // Very ugly idiom to extract a clone of a variant in a RefCell
     std::cell::Ref::map(a_ref.borrow(), |v| match v {
         Value::Array(a) => {
-            a_rc = Some(a.borrow().values[1].clone());
+            a_rc = Some(Value::ArrayRef(a.clone(), 1));
             &()
         }
         _ => panic!("a must be an array"),
     });
 
-    assert_eq!(run_result, Ok(RunResult::Yield(Value::Ref(a_rc.unwrap()))));
+    assert_eq!(run_result, Ok(RunResult::Yield(a_rc.unwrap())));
 
     // Technically, this test will return a reference to an element in a temporary array,
     // but we wouldn't care and just unwrap_deref.

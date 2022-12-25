@@ -31,7 +31,7 @@ fn s_print(vals: &[Value]) -> Result<Value, EvalError> {
                         &val.borrow()
                             .values()
                             .iter()
-                            .map(|v| v.borrow().clone())
+                            .map(|v| v.clone())
                             .collect::<Vec<_>>(),
                     );
                     wasm_print("]");
@@ -39,6 +39,15 @@ fn s_print(vals: &[Value]) -> Result<Value, EvalError> {
                 Value::Ref(r) => {
                     wasm_print("ref(");
                     print_inner(&[r.borrow().clone()]);
+                    wasm_print(")");
+                }
+                Value::ArrayRef(r, idx) => {
+                    wasm_print("aref(");
+                    if let Some(val) = r.borrow().values().get(*idx) {
+                        print_inner(&[val.clone()]);
+                    } else {
+                        wasm_print("?");
+                    }
                     wasm_print(")");
                 }
             }
@@ -62,10 +71,15 @@ fn s_puts(vals: &[Value]) -> Result<Value, EvalError> {
                     &val.borrow()
                         .values()
                         .iter()
-                        .map(|v| v.borrow().clone())
+                        .map(|v| v.clone())
                         .collect::<Vec<_>>(),
                 ),
                 Value::Ref(r) => puts_inner(&[r.borrow().clone()]),
+                Value::ArrayRef(r, idx) => {
+                    if let Some(val) = r.borrow().values().get(*idx) {
+                        puts_inner(&[val.clone()]);
+                    }
+                }
             }
         }
     }

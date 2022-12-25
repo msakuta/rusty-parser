@@ -556,7 +556,7 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
                     .iter()
                     .map(|v| {
                         if let RunResult::Yield(y) = eval(v, &mut ctx)? {
-                            Ok(Rc::new(RefCell::new(y)))
+                            Ok(y)
                         } else {
                             Err("Break in array literal not supported".to_string())
                         }

@@ -225,10 +225,7 @@ fn array_init() {
     let res = compile_and_run_with("var a: [i32] = [1 + 3]; print(a); ", |vals| {
         assert_eq!(
             vals[0],
-            Value::Array(ArrayInt::new(
-                TypeDecl::Any,
-                vec![Rc::new(RefCell::new(Value::I64(4)))]
-            ))
+            Value::Array(ArrayInt::new(TypeDecl::Any, vec![Value::I64(4)]))
         )
     });
     assert!(res.is_ok());
@@ -255,10 +252,7 @@ print(a);"#,
         |vals| {
             assert_eq!(
                 vals[0],
-                Value::Array(ArrayInt::new(
-                    TypeDecl::Any,
-                    vec![Rc::new(RefCell::new(Value::I64(10)))]
-                ))
+                Value::Array(ArrayInt::new(TypeDecl::Any, vec![Value::I64(10)]))
             )
         },
     );
