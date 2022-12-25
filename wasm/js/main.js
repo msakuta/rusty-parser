@@ -10,12 +10,15 @@ async function runCommon(process) {
     canvas.getContext("2d").clearRect(0, 0, canvasRect.width, canvasRect.height);
 
     const source = document.getElementById("input").value;
+    const start = performance.now();
     try{
         process(source);
     }
     catch(e){
         output.value = e;
     }
+    const end = performance.now();
+    document.getElementById("timeMessage").innerHTML = `Execution time: ${(end - start).toFixed(1)} ms (See <a href="#Time">notes</a>)`;
 }
 
 document.getElementById("typeCheck").addEventListener("click", () => runCommon(source => {
