@@ -9,6 +9,7 @@
   "categories": [
     "Programming Languages"
   ],
+  "repository": "https://github.com/msakuta/rusty-parser",
   "contributes": {
     "languages": [{
       "id": "rpar",
