@@ -517,7 +517,7 @@ pub(crate) fn s_hex_string(vals: &[Value]) -> Result<Value, EvalError> {
 #[derive(Clone)]
 pub struct FuncCode<'src, 'ast> {
     args: &'ast Vec<ArgDecl<'src>>,
-    ret_type: Option<TypeDecl>,
+    pub(crate) ret_type: Option<TypeDecl>,
     stmts: &'ast Vec<Statement<'src>>,
 }
 
@@ -552,16 +552,9 @@ pub struct EvalContext<'src, 'ast, 'native, 'ctx> {
 
 impl<'src, 'ast, 'native, 'ctx> EvalContext<'src, 'ast, 'native, 'ctx> {
     pub fn new() -> Self {
-        let mut functions = HashMap::new();
-        functions.insert("print".to_string(), FuncDef::Native(&s_print));
-        functions.insert("puts".to_string(), FuncDef::Native(&s_puts));
-        functions.insert("type".to_string(), FuncDef::Native(&s_type));
-        functions.insert("len".to_string(), FuncDef::Native(&s_len));
-        functions.insert("push".to_string(), FuncDef::Native(&s_push));
-        functions.insert("hex_string".to_string(), FuncDef::Native(&s_hex_string));
         Self {
             variables: RefCell::new(HashMap::new()),
-            functions,
+            functions: std_functions(),
             super_context: None,
         }
     }
@@ -607,6 +600,18 @@ impl<'src, 'ast, 'native, 'ctx> EvalContext<'src, 'ast, 'native, 'ctx> {
             None
         }
     }
+}
+
+pub(crate) fn std_functions<'src, 'ast, 'native>() -> HashMap<String, FuncDef<'src, 'ast, 'native>>
+{
+    let mut functions = HashMap::new();
+    functions.insert("print".to_string(), FuncDef::Native(&s_print));
+    functions.insert("puts".to_string(), FuncDef::Native(&s_puts));
+    functions.insert("type".to_string(), FuncDef::Native(&s_type));
+    functions.insert("len".to_string(), FuncDef::Native(&s_len));
+    functions.insert("push".to_string(), FuncDef::Native(&s_push));
+    functions.insert("hex_string".to_string(), FuncDef::Native(&s_hex_string));
+    functions
 }
 
 macro_rules! unwrap_break {

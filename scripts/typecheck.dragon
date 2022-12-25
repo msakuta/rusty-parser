@@ -1,0 +1,7 @@
+var a: i32 = 123 + 321;
+var b: f32 = 321. + 123.;
+var c: str = "Hello" + ", world!";
+
+/*var aa: [i32] = [1,2,3];*/
+
+print(c);
