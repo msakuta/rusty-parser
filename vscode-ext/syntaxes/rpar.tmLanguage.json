@@ -12,6 +12,9 @@
 			"include": "#strings"
 		},
 		{
+			"include": "#blockComment"
+		},
+		{
 			"include": "#constants"
 		},
 		{
@@ -42,6 +45,17 @@
 			"patterns": [
 				{
 					"name": "constant.character.escape.rpar",
+					"match": "\\\\."
+				}
+			]
+		},
+		"blockComment": {
+			"name": "comment.block.rpar",
+			"begin": "/\\*",
+			"end": "\\*/",
+			"patterns": [
+				{
+					"name": "comment.block.rpar",
 					"match": "\\\\."
 				}
 			]
