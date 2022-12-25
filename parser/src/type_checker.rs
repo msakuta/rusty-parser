@@ -163,8 +163,8 @@ fn tc_expr<'a, 'b>(
         Expression::Sub(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Sub")?,
         Expression::Mult(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Mult")?,
         Expression::Div(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Div")?,
-        Expression::LT(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "LT")?,
-        Expression::GT(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "GT")?,
+        Expression::LT(lhs, rhs) => binary_cmp(&lhs, &rhs, ctx, "LT")?,
+        Expression::GT(lhs, rhs) => binary_cmp(&lhs, &rhs, ctx, "GT")?,
         Expression::And(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "And")?,
         Expression::Or(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Or")?,
         Expression::Conditional(cond, true_branch, false_branch) => {
@@ -197,6 +197,8 @@ fn tc_coerce_type(value: &TypeDecl, target: &TypeDecl) -> Result<TypeDecl, TypeC
         (I32 | Integer, I32) => I32,
         (Str, Str) => Str,
         (Array(v_inner), Array(t_inner)) => Array(Box::new(tc_coerce_type(v_inner, t_inner)?)),
+        (Float, Float) => Float,
+        (Integer, Integer) => Integer,
         _ => {
             return Err(format!(
                 "Type check error! {:?} cannot be assigned to {:?}",
@@ -254,17 +256,44 @@ pub fn type_check<'src, 'ast>(
                     return Ok(res);
                 }
             }
+            Statement::Loop(e) => {
+                res = type_check(e, ctx)?;
+            }
+            Statement::While(cond, e) => {
+                tc_coerce_type(&unwrap_tc!(tc_expr(cond, ctx)?), &TypeDecl::I32)
+                    .map_err(|e| format!("Type error in condition: {e}"))?;
+                res = type_check(e, ctx)?;
+            }
             Statement::For(iter, from, to, e) => {
                 tc_coerce_type(&unwrap_tc!(tc_expr(from, ctx)?), &TypeDecl::I64)?;
                 tc_coerce_type(&unwrap_tc!(tc_expr(to, ctx)?), &TypeDecl::I64)?;
                 ctx.variables.borrow_mut().insert(iter, TypeDecl::I64);
                 res = TypeCheckResult::Yield(unwrap_tc!(type_check(e, ctx)?));
             }
+            Statement::Break => {
+                // TODO: check types in break out site. For now we disallow break with values like Rust.
+            }
             Statement::Comment(_) => (),
-            _ => todo!(),
         }
     }
     Ok(res)
+}
+
+fn binary_op_gen<'src, 'ast>(
+    lhs: &'ast Expression<'src>,
+    rhs: &'ast Expression<'src>,
+    ctx: &mut TypeCheckContext<'src, 'ast, '_, '_>,
+    op: &str,
+    mut f: impl FnMut(&TypeDecl, &TypeDecl) -> Result<TypeCheckResult, ()>,
+) -> Result<TypeCheckResult, TypeCheckError> {
+    let lhs = unwrap_tc!(tc_expr(lhs, ctx)?);
+    let rhs = unwrap_tc!(tc_expr(rhs, ctx)?);
+    f(&lhs, &rhs).map_err(|()| {
+        format!(
+            "Operation {op} between incompatible type: {:?} and {:?}",
+            lhs, rhs
+        )
+    })
 }
 
 fn binary_op<'src, 'ast>(
@@ -273,14 +302,7 @@ fn binary_op<'src, 'ast>(
     ctx: &mut TypeCheckContext<'src, 'ast, '_, '_>,
     op: &str,
 ) -> Result<TypeCheckResult, TypeCheckError> {
-    let lhs = unwrap_tc!(tc_expr(lhs, ctx)?);
-    let rhs = unwrap_tc!(tc_expr(rhs, ctx)?);
-    binary_op_type(&lhs, &rhs).map_err(|()| {
-        format!(
-            "Operation {op} between incompatible type: {:?} and {:?}",
-            lhs, rhs
-        )
-    })
+    binary_op_gen(lhs, rhs, ctx, op, binary_op_type)
 }
 
 fn binary_op_type(lhs: &TypeDecl, rhs: &TypeDecl) -> Result<TypeCheckResult, ()> {
@@ -299,6 +321,40 @@ fn binary_op_type(lhs: &TypeDecl, rhs: &TypeDecl) -> Result<TypeCheckResult, ()>
         (TypeDecl::Float, TypeDecl::F32) | (TypeDecl::F32, TypeDecl::Float) => TypeDecl::F32,
         (TypeDecl::Integer, TypeDecl::I64) | (TypeDecl::I64, TypeDecl::Integer) => TypeDecl::I64,
         (TypeDecl::Integer, TypeDecl::I32) | (TypeDecl::I32, TypeDecl::Integer) => TypeDecl::I32,
+        (TypeDecl::Array(lhs), TypeDecl::Array(rhs)) => {
+            return binary_op_type(lhs, rhs);
+        }
+        _ => return Err(()),
+    });
+    Ok(res)
+}
+
+fn binary_cmp<'src, 'ast>(
+    lhs: &'ast Expression<'src>,
+    rhs: &'ast Expression<'src>,
+    ctx: &mut TypeCheckContext<'src, 'ast, '_, '_>,
+    op: &str,
+) -> Result<TypeCheckResult, TypeCheckError> {
+    binary_op_gen(lhs, rhs, ctx, op, binary_cmp_type)
+}
+
+/// Binary comparison operator type check. It will always return i32, which is used as a bool in this language.
+fn binary_cmp_type(lhs: &TypeDecl, rhs: &TypeDecl) -> Result<TypeCheckResult, ()> {
+    let res = TypeCheckResult::Yield(match (&lhs, &rhs) {
+        // Any type spreads contamination in the source code.
+        (TypeDecl::Any, _) => TypeDecl::I32,
+        (_, TypeDecl::Any) => TypeDecl::I32,
+        (TypeDecl::F64, TypeDecl::F64) => TypeDecl::I32,
+        (TypeDecl::F32, TypeDecl::F32) => TypeDecl::I32,
+        (TypeDecl::I64, TypeDecl::I64) => TypeDecl::I32,
+        (TypeDecl::I32, TypeDecl::I32) => TypeDecl::I32,
+        (TypeDecl::Str, TypeDecl::Str) => TypeDecl::I32,
+        (TypeDecl::Float, TypeDecl::Float) => TypeDecl::I32,
+        (TypeDecl::Integer, TypeDecl::Integer) => TypeDecl::I32,
+        (TypeDecl::Float, TypeDecl::F64 | TypeDecl::F32)
+        | (TypeDecl::F64 | TypeDecl::F32, TypeDecl::Float) => TypeDecl::I32,
+        (TypeDecl::Integer, TypeDecl::I64 | TypeDecl::I32)
+        | (TypeDecl::I64 | TypeDecl::I32, TypeDecl::Integer) => TypeDecl::I32,
         (TypeDecl::Array(lhs), TypeDecl::Array(rhs)) => {
             return binary_op_type(lhs, rhs);
         }
