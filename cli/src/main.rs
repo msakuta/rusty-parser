@@ -45,6 +45,7 @@ fn main() -> Result<(), String> {
         if args.type_check {
             if let Err(e) = type_check(&result.1, &mut TypeCheckContext::new()) {
                 eprintln!("Type check error: {}", e.red());
+                return Err(format!("Compile Error: {}", e));
             }
         }
 
