@@ -6,22 +6,7 @@ use crate::{
     FuncDef, TypeDecl, Value,
 };
 
-#[derive(Debug, PartialEq, Clone)]
-pub enum TypeCheckResult {
-    Yield(TypeDecl),
-    Break,
-}
-
 pub type TypeCheckError = String;
-
-macro_rules! unwrap_tc {
-    ($e:expr) => {
-        match $e {
-            TypeCheckResult::Yield(v) => v,
-            TypeCheckResult::Break => return Ok(TypeCheckResult::Break),
-        }
-    };
-}
 
 #[derive(Clone)]
 pub struct TypeCheckContext<'src, 'ast, 'native, 'ctx> {
@@ -77,14 +62,14 @@ impl<'src, 'ast, 'native, 'ctx> TypeCheckContext<'src, 'ast, 'native, 'ctx> {
 fn tc_expr<'a, 'b>(
     e: &'b Expression<'a>,
     ctx: &mut TypeCheckContext<'a, 'b, '_, '_>,
-) -> Result<TypeCheckResult, TypeCheckError> {
+) -> Result<TypeDecl, TypeCheckError> {
     Ok(match e {
-        Expression::NumLiteral(val) => TypeCheckResult::Yield(match val {
+        Expression::NumLiteral(val) => match val {
             Value::F64(_) | Value::F32(_) => TypeDecl::Float,
             Value::I64(_) | Value::I32(_) => TypeDecl::Integer,
             _ => return Err("Numeric literal has a non-number value".to_string()),
-        }),
-        Expression::StrLiteral(_val) => TypeCheckResult::Yield(TypeDecl::Str),
+        },
+        Expression::StrLiteral(_val) => TypeDecl::Str,
         Expression::ArrLiteral(val) => {
             if !val.is_empty() {
                 for (ex1, ex2) in val[..val.len() - 1].iter().zip(val[1..].iter()) {
@@ -97,21 +82,15 @@ fn tc_expr<'a, 'b>(
                     }
                 }
             }
-            let ty = if let TypeCheckResult::Yield(ty) = val
+            let ty = val
                 .first()
                 .map(|e| tc_expr(e, ctx))
-                .unwrap_or(Ok(TypeCheckResult::Yield(TypeDecl::Any)))?
-            {
-                ty
-            } else {
-                return Err("Should not yield".to_string());
-            };
-            TypeCheckResult::Yield(TypeDecl::Array(Box::new(ty)))
+                .unwrap_or(Ok(TypeDecl::Any))?;
+            TypeDecl::Array(Box::new(ty))
         }
-        Expression::Variable(str) => TypeCheckResult::Yield(
-            ctx.get_var(str)
-                .ok_or_else(|| format!("Variable {} not found in scope", str))?,
-        ),
+        Expression::Variable(str) => ctx
+            .get_var(str)
+            .ok_or_else(|| format!("Variable {} not found in scope", str))?,
         Expression::VarAssign(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Assignment")?,
         Expression::FnInvoke(str, args) => {
             let args = args
@@ -123,16 +102,12 @@ fn tc_expr<'a, 'b>(
                 .ok_or_else(|| format!("function {} is not defined.", str))?;
             let args_decl = func.args();
             for (arg, decl) in args.iter().zip(args_decl.iter()) {
-                let arg = unwrap_tc!(arg);
+                let arg = arg;
                 tc_coerce_type(&arg, &decl.1)?;
             }
             match func {
-                FuncDef::Code(code) => {
-                    TypeCheckResult::Yield(code.ret_type.clone().unwrap_or(TypeDecl::Any))
-                }
-                FuncDef::Native(native) => {
-                    TypeCheckResult::Yield(native.ret_type.clone().unwrap_or(TypeDecl::Any))
-                }
+                FuncDef::Code(code) => code.ret_type.clone().unwrap_or(TypeDecl::Any),
+                FuncDef::Native(native) => native.ret_type.clone().unwrap_or(TypeDecl::Any),
             }
         }
         Expression::ArrIndex(ex, args) => {
@@ -140,20 +115,16 @@ fn tc_expr<'a, 'b>(
                 .iter()
                 .map(|v| tc_expr(v, ctx))
                 .collect::<Result<Vec<_>, _>>()?;
-            let _arg0 = match args[0].clone() {
-                TypeCheckResult::Yield(v) => {
-                    if let TypeDecl::I64 = tc_coerce_type(&v, &TypeDecl::I64)? {
-                        v
-                    } else {
-                        return Err("Subscript type should be integer types".to_string());
-                    }
-                }
-                TypeCheckResult::Break => {
-                    return Ok(TypeCheckResult::Break);
+            let _arg0 = {
+                let v = args[0].clone();
+                if let TypeDecl::I64 = tc_coerce_type(&v, &TypeDecl::I64)? {
+                    v
+                } else {
+                    return Err("Subscript type should be integer types".to_string());
                 }
             };
-            if let TypeDecl::Array(inner) = unwrap_tc!(tc_expr(ex, ctx)?) {
-                TypeCheckResult::Yield(*inner.clone())
+            if let TypeDecl::Array(inner) = tc_expr(ex, ctx)? {
+                *inner.clone()
             } else {
                 return Err("Subscript operator's first operand is not an array".to_string());
             }
@@ -168,15 +139,15 @@ fn tc_expr<'a, 'b>(
         Expression::And(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "And")?,
         Expression::Or(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Or")?,
         Expression::Conditional(cond, true_branch, false_branch) => {
-            tc_coerce_type(&unwrap_tc!(tc_expr(cond, ctx)?), &TypeDecl::I32)?;
-            let true_type = unwrap_tc!(type_check(true_branch, ctx)?);
+            tc_coerce_type(&tc_expr(cond, ctx)?, &TypeDecl::I32)?;
+            let true_type = type_check(true_branch, ctx)?;
             if let Some(false_type) = false_branch {
-                let false_type = unwrap_tc!(type_check(false_type, ctx)?);
+                let false_type = type_check(false_type, ctx)?;
                 binary_op_type(&true_type, &false_type).map_err(|_| {
                     format!("Conditional expression doesn't have the compatible types in true and false branch: {:?} and {:?}", true_type, false_type)
                 })?
             } else {
-                TypeCheckResult::Yield(true_type)
+                true_type
             }
         }
         Expression::Brace(stmts) => {
@@ -211,16 +182,13 @@ fn tc_coerce_type(value: &TypeDecl, target: &TypeDecl) -> Result<TypeDecl, TypeC
 pub fn type_check<'src, 'ast>(
     stmts: &'ast Vec<Statement<'src>>,
     ctx: &mut TypeCheckContext<'src, 'ast, '_, '_>,
-) -> Result<TypeCheckResult, TypeCheckError> {
-    let mut res = TypeCheckResult::Yield(TypeDecl::Any);
+) -> Result<TypeDecl, TypeCheckError> {
+    let mut res = TypeDecl::Any;
     for stmt in stmts {
         match stmt {
             Statement::VarDecl(var, type_, initializer) => {
                 let init_val = if let Some(init_expr) = initializer {
-                    match tc_expr(init_expr, ctx)? {
-                        TypeCheckResult::Yield(ty) => ty,
-                        _ => break,
-                    }
+                    tc_expr(init_expr, ctx)?
                 } else {
                     TypeDecl::Any
                 };
@@ -245,30 +213,27 @@ pub fn type_check<'src, 'ast>(
                         .borrow_mut()
                         .insert(arg.0.clone(), arg.1.clone());
                 }
-                let last_stmt = unwrap_tc!(type_check(stmts, &mut subctx)?);
+                let last_stmt = type_check(stmts, &mut subctx)?;
                 if let Some(ret_type) = ret_type {
                     tc_coerce_type(&last_stmt, ret_type)?;
                 }
             }
             Statement::Expression(e) => {
                 res = tc_expr(&e, ctx)?;
-                if let TypeCheckResult::Break = res {
-                    return Ok(res);
-                }
             }
             Statement::Loop(e) => {
                 res = type_check(e, ctx)?;
             }
             Statement::While(cond, e) => {
-                tc_coerce_type(&unwrap_tc!(tc_expr(cond, ctx)?), &TypeDecl::I32)
+                tc_coerce_type(&tc_expr(cond, ctx)?, &TypeDecl::I32)
                     .map_err(|e| format!("Type error in condition: {e}"))?;
                 res = type_check(e, ctx)?;
             }
             Statement::For(iter, from, to, e) => {
-                tc_coerce_type(&unwrap_tc!(tc_expr(from, ctx)?), &TypeDecl::I64)?;
-                tc_coerce_type(&unwrap_tc!(tc_expr(to, ctx)?), &TypeDecl::I64)?;
+                tc_coerce_type(&tc_expr(from, ctx)?, &TypeDecl::I64)?;
+                tc_coerce_type(&tc_expr(to, ctx)?, &TypeDecl::I64)?;
                 ctx.variables.borrow_mut().insert(iter, TypeDecl::I64);
-                res = TypeCheckResult::Yield(unwrap_tc!(type_check(e, ctx)?));
+                res = type_check(e, ctx)?;
             }
             Statement::Break => {
                 // TODO: check types in break out site. For now we disallow break with values like Rust.
@@ -284,10 +249,10 @@ fn binary_op_gen<'src, 'ast>(
     rhs: &'ast Expression<'src>,
     ctx: &mut TypeCheckContext<'src, 'ast, '_, '_>,
     op: &str,
-    mut f: impl FnMut(&TypeDecl, &TypeDecl) -> Result<TypeCheckResult, ()>,
-) -> Result<TypeCheckResult, TypeCheckError> {
-    let lhs = unwrap_tc!(tc_expr(lhs, ctx)?);
-    let rhs = unwrap_tc!(tc_expr(rhs, ctx)?);
+    mut f: impl FnMut(&TypeDecl, &TypeDecl) -> Result<TypeDecl, ()>,
+) -> Result<TypeDecl, TypeCheckError> {
+    let lhs = tc_expr(lhs, ctx)?;
+    let rhs = tc_expr(rhs, ctx)?;
     f(&lhs, &rhs).map_err(|()| {
         format!(
             "Operation {op} between incompatible type: {:?} and {:?}",
@@ -301,12 +266,12 @@ fn binary_op<'src, 'ast>(
     rhs: &'ast Expression<'src>,
     ctx: &mut TypeCheckContext<'src, 'ast, '_, '_>,
     op: &str,
-) -> Result<TypeCheckResult, TypeCheckError> {
+) -> Result<TypeDecl, TypeCheckError> {
     binary_op_gen(lhs, rhs, ctx, op, binary_op_type)
 }
 
-fn binary_op_type(lhs: &TypeDecl, rhs: &TypeDecl) -> Result<TypeCheckResult, ()> {
-    let res = TypeCheckResult::Yield(match (&lhs, &rhs) {
+fn binary_op_type(lhs: &TypeDecl, rhs: &TypeDecl) -> Result<TypeDecl, ()> {
+    let res = match (&lhs, &rhs) {
         // Any type spreads contamination in the source code.
         (TypeDecl::Any, _) => TypeDecl::Any,
         (_, TypeDecl::Any) => TypeDecl::Any,
@@ -325,7 +290,7 @@ fn binary_op_type(lhs: &TypeDecl, rhs: &TypeDecl) -> Result<TypeCheckResult, ()>
             return binary_op_type(lhs, rhs);
         }
         _ => return Err(()),
-    });
+    };
     Ok(res)
 }
 
@@ -334,13 +299,13 @@ fn binary_cmp<'src, 'ast>(
     rhs: &'ast Expression<'src>,
     ctx: &mut TypeCheckContext<'src, 'ast, '_, '_>,
     op: &str,
-) -> Result<TypeCheckResult, TypeCheckError> {
+) -> Result<TypeDecl, TypeCheckError> {
     binary_op_gen(lhs, rhs, ctx, op, binary_cmp_type)
 }
 
 /// Binary comparison operator type check. It will always return i32, which is used as a bool in this language.
-fn binary_cmp_type(lhs: &TypeDecl, rhs: &TypeDecl) -> Result<TypeCheckResult, ()> {
-    let res = TypeCheckResult::Yield(match (&lhs, &rhs) {
+fn binary_cmp_type(lhs: &TypeDecl, rhs: &TypeDecl) -> Result<TypeDecl, ()> {
+    let res = match (&lhs, &rhs) {
         // Any type spreads contamination in the source code.
         (TypeDecl::Any, _) => TypeDecl::I32,
         (_, TypeDecl::Any) => TypeDecl::I32,
@@ -359,6 +324,6 @@ fn binary_cmp_type(lhs: &TypeDecl, rhs: &TypeDecl) -> Result<TypeCheckResult, ()
             return binary_op_type(lhs, rhs);
         }
         _ => return Err(()),
-    });
+    };
     Ok(res)
 }
