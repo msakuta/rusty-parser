@@ -189,6 +189,8 @@ pub fn coerce_type(value: &Value, target: &TypeDecl) -> Result<Value, EvalError>
                 return Err(format!("Incompatible type to array! {:?}", value));
             }
         }
+        TypeDecl::Float => Value::F64(coerce_f64(value)?),
+        TypeDecl::Integer => Value::I64(coerce_i64(value)?),
     })
 }
 
@@ -268,7 +270,7 @@ pub(crate) fn eval<'a, 'b>(
                         RunResult::Break => return Err("break in function toplevel".to_string()),
                     }
                 }
-                FuncDef::Native(native) => RunResult::Yield(native(
+                FuncDef::Native(native) => RunResult::Yield((native.code)(
                     &args
                         .into_iter()
                         .map(|e| {
@@ -460,6 +462,8 @@ fn type_decl_to_str(t: &TypeDecl) -> String {
         TypeDecl::I32 => "i32".to_string(),
         TypeDecl::Str => "str".to_string(),
         TypeDecl::Array(inner) => format!("[{}]", type_decl_to_str(inner)),
+        TypeDecl::Float => "<Float>".to_string(),
+        TypeDecl::Integer => "<Integer>".to_string(),
     }
 }
 
@@ -493,7 +497,8 @@ pub(crate) fn s_len(vals: &[Value]) -> Result<Value, EvalError> {
 
 pub(crate) fn s_push(vals: &[Value]) -> Result<Value, EvalError> {
     if let [arr, val, ..] = vals {
-        arr.array_push(val.clone()).map(|_| Value::I32(0))
+        let val = val.clone().deref();
+        arr.array_push(val).map(|_| Value::I32(0))
     } else {
         Ok(Value::I32(0))
     }
@@ -513,14 +518,69 @@ pub(crate) fn s_hex_string(vals: &[Value]) -> Result<Value, EvalError> {
 #[derive(Clone)]
 pub struct FuncCode<'src, 'ast> {
     args: &'ast Vec<ArgDecl<'src>>,
-    ret_type: Option<TypeDecl>,
+    pub(crate) ret_type: Option<TypeDecl>,
     stmts: &'ast Vec<Statement<'src>>,
+}
+
+impl<'src, 'ast> FuncCode<'src, 'ast> {
+    pub(crate) fn new(
+        stmts: &'ast Vec<Statement<'src>>,
+        args: &'ast Vec<ArgDecl<'src>>,
+        ret_type: Option<TypeDecl>,
+    ) -> Self {
+        Self {
+            args,
+            ret_type,
+            stmts,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct NativeCode<'native> {
+    args: Vec<ArgDecl<'native>>,
+    pub(crate) ret_type: Option<TypeDecl>,
+    code: &'native dyn Fn(&[Value]) -> Result<Value, EvalError>,
+}
+
+impl<'native> NativeCode<'native> {
+    pub(crate) fn new(
+        code: &'native dyn Fn(&[Value]) -> Result<Value, EvalError>,
+        args: Vec<ArgDecl<'native>>,
+        ret_type: Option<TypeDecl>,
+    ) -> Self {
+        Self {
+            args,
+            ret_type,
+            code,
+        }
+    }
 }
 
 #[derive(Clone)]
 pub enum FuncDef<'src, 'ast, 'native> {
     Code(FuncCode<'src, 'ast>),
-    Native(&'native dyn Fn(&[Value]) -> Result<Value, EvalError>),
+    Native(NativeCode<'native>),
+}
+
+impl<'src, 'ast, 'native> FuncDef<'src, 'ast, 'native> {
+    pub fn new_native(
+        code: &'native dyn Fn(&[Value]) -> Result<Value, EvalError>,
+        args: Vec<ArgDecl<'native>>,
+        ret_type: Option<TypeDecl>,
+    ) -> Self {
+        Self::Native(NativeCode::new(code, args, ret_type))
+    }
+
+    pub(crate) fn args(&self) -> &Vec<ArgDecl<'src>>
+    where
+        'native: 'src,
+    {
+        match self {
+            FuncDef::Code(FuncCode { args, .. }) => args,
+            FuncDef::Native(NativeCode { args, .. }) => args,
+        }
+    }
 }
 
 /// A context stat for evaluating a script.
@@ -548,16 +608,9 @@ pub struct EvalContext<'src, 'ast, 'native, 'ctx> {
 
 impl<'src, 'ast, 'native, 'ctx> EvalContext<'src, 'ast, 'native, 'ctx> {
     pub fn new() -> Self {
-        let mut functions = HashMap::new();
-        functions.insert("print".to_string(), FuncDef::Native(&s_print));
-        functions.insert("puts".to_string(), FuncDef::Native(&s_puts));
-        functions.insert("type".to_string(), FuncDef::Native(&s_type));
-        functions.insert("len".to_string(), FuncDef::Native(&s_len));
-        functions.insert("push".to_string(), FuncDef::Native(&s_push));
-        functions.insert("hex_string".to_string(), FuncDef::Native(&s_hex_string));
         Self {
             variables: RefCell::new(HashMap::new()),
-            functions,
+            functions: std_functions(),
             super_context: None,
         }
     }
@@ -603,6 +656,55 @@ impl<'src, 'ast, 'native, 'ctx> EvalContext<'src, 'ast, 'native, 'ctx> {
             None
         }
     }
+}
+
+pub(crate) fn std_functions<'src, 'ast, 'native>() -> HashMap<String, FuncDef<'src, 'ast, 'native>>
+{
+    let mut functions = HashMap::new();
+    functions.insert(
+        "print".to_string(),
+        FuncDef::new_native(&s_print, vec![], None),
+    );
+    functions.insert(
+        "puts".to_string(),
+        FuncDef::new_native(&s_puts, vec![ArgDecl("val", TypeDecl::Any)], None),
+    );
+    functions.insert(
+        "type".to_string(),
+        FuncDef::new_native(
+            &s_type,
+            vec![ArgDecl("value", TypeDecl::Any)],
+            Some(TypeDecl::Str),
+        ),
+    );
+    functions.insert(
+        "len".to_string(),
+        FuncDef::new_native(
+            &s_len,
+            vec![ArgDecl("array", TypeDecl::Array(Box::new(TypeDecl::Any)))],
+            Some(TypeDecl::I64),
+        ),
+    );
+    functions.insert(
+        "push".to_string(),
+        FuncDef::new_native(
+            &s_push,
+            vec![
+                ArgDecl("array", TypeDecl::Array(Box::new(TypeDecl::Any))),
+                ArgDecl("value", TypeDecl::Any),
+            ],
+            None,
+        ),
+    );
+    functions.insert(
+        "hex_string".to_string(),
+        FuncDef::new_native(
+            &s_hex_string,
+            vec![ArgDecl("value", TypeDecl::I64)],
+            Some(TypeDecl::Str),
+        ),
+    );
+    functions
 }
 
 macro_rules! unwrap_break {

@@ -1,5 +1,5 @@
 
-fn fact(n) {
+fn fact(n: i32) -> i32 {
     if n < 1 {
         1
     } else {
@@ -9,7 +9,7 @@ fn fact(n) {
 
 print(fact(10));
 
-fn fibo(n) {
+fn fibo(n: i32) -> i32 {
     if n < 1 {
         0
     } else if n < 2 {
@@ -21,8 +21,8 @@ fn fibo(n) {
 
 print(fibo(10));
 
-fn sum(n) {
-    fn sum_int(n, acc) {
+fn sum(n: i32) -> i32 {
+    fn sum_int(n: i32, acc: i32) -> i32 {
         if n < 1 {
             acc
         } else {

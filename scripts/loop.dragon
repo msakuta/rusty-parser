@@ -1,6 +1,6 @@
 
-var i = 0;
-var accum = 0;
+var i: i32 = 0;
+var accum: i32 = 0;
 
 loop {
     i = i + 1;

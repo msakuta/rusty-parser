@@ -73,12 +73,13 @@ In ascending order of difficulty.
 * [x] Array types
 * [x] WebAssembly build target
 * [x] Function return types
+* [x] Static type checking (instead of runtime coercion)
+* [ ] Type cast operator
 * [ ] Proper error handling
 * [ ] Tuple types
 * [ ] Multi-dimensional arrays
 * [ ] Function types (first class function variables)
 * [ ] Lambda expressions
-* [ ] Static type checking (instead of runtime coercion)
 * [ ] Mutability qualifiers
 * [ ] Array slice syntax
 * [ ] Array shape constraints
