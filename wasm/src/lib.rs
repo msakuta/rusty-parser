@@ -111,13 +111,53 @@ fn s_set_fill_style(vals: &[Value]) -> Result<Value, EvalError> {
     Ok(Value::I32(0))
 }
 
+macro_rules! wasm_functions {
+    ($ctx:tt) => {
+        $ctx.set_fn("print", FuncDef::new_native(&s_print, vec![], None));
+        $ctx.set_fn(
+            "puts",
+            FuncDef::new_native(&s_puts, vec![ArgDecl("val", TypeDecl::Any)], None),
+        );
+        $ctx.set_fn(
+            "set_fill_style",
+            FuncDef::new_native(
+                &s_set_fill_style,
+                vec![ArgDecl("style", TypeDecl::Str)],
+                None,
+            ),
+        );
+        $ctx.set_fn(
+            "rectangle",
+            FuncDef::new_native(
+                &s_rectangle,
+                vec![
+                    ArgDecl("x0", TypeDecl::I64),
+                    ArgDecl("y0", TypeDecl::I64),
+                    ArgDecl("x1", TypeDecl::I64),
+                    ArgDecl("y1", TypeDecl::I64),
+                ],
+                None,
+            ),
+        );
+    };
+}
+
 #[wasm_bindgen]
-pub fn entry(src: &str) -> Result<(), JsValue> {
+pub fn type_check(src: &str) -> Result<JsValue, JsValue> {
+    let mut ctx = TypeCheckContext::new();
+    wasm_functions!(ctx);
+    let parse_result = source(src)
+        .finish()
+        .map_err(|e| JsValue::from_str(&format!("Parse error: {:?}", e)))?;
+    parser::type_check(&parse_result.1, &mut ctx)
+        .map_err(|e| JsValue::from_str(&format!("Error on execution: {:?}", e)))?;
+    Ok(JsValue::from_str("Ok"))
+}
+
+#[wasm_bindgen]
+pub fn run_script(src: &str) -> Result<(), JsValue> {
     let mut ctx = EvalContext::new();
-    ctx.set_fn("print", FuncDef::Native(&s_print));
-    ctx.set_fn("puts", FuncDef::Native(&s_puts));
-    ctx.set_fn("set_fill_style", FuncDef::Native(&s_set_fill_style));
-    ctx.set_fn("rectangle", FuncDef::Native(&s_rectangle));
+    wasm_functions!(ctx);
     let parse_result = source(src)
         .finish()
         .map_err(|e| JsValue::from_str(&format!("Parse error: {:?}", e)))?;

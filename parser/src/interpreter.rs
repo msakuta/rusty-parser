@@ -564,7 +564,7 @@ pub enum FuncDef<'src, 'ast, 'native> {
 }
 
 impl<'src, 'ast, 'native> FuncDef<'src, 'ast, 'native> {
-    pub(crate) fn new_native(
+    pub fn new_native(
         code: &'native dyn Fn(&[Value]) -> Result<Value, EvalError>,
         args: Vec<ArgDecl<'native>>,
         ret_type: Option<TypeDecl>,

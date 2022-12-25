@@ -40,6 +40,10 @@ impl<'src, 'ast, 'native, 'ctx> TypeCheckContext<'src, 'ast, 'native, 'ctx> {
         }
     }
 
+    pub fn set_fn(&mut self, name: &str, fun: FuncDef<'src, 'ast, 'native>) {
+        self.functions.insert(name.to_string(), fun);
+    }
+
     fn get_fn(&self, name: &str) -> Option<&FuncDef<'src, 'ast, 'native>> {
         if let Some(val) = self.functions.get(name) {
             Some(val)

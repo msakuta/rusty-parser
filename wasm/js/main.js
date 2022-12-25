@@ -1,4 +1,4 @@
-import { entry, parse_ast, compile, compile_and_run } from "../pkg/index.js";
+import { type_check, run_script, parse_ast, compile, compile_and_run } from "../pkg/index.js";
 
 
 async function runCommon(process) {
@@ -18,7 +18,11 @@ async function runCommon(process) {
     }
 }
 
-document.getElementById("run").addEventListener("click", () => runCommon(entry));
+document.getElementById("typeCheck").addEventListener("click", () => runCommon(source => {
+    const result = type_check(source);
+    document.getElementById("output").value = result;
+}));
+document.getElementById("run").addEventListener("click", () => runCommon(run_script));
 document.getElementById("parseAst").addEventListener("click", () => runCommon(source => {
     const result = parse_ast(source);
     document.getElementById("output").value = result;
@@ -50,9 +54,12 @@ print(fact(10));
 
 const samples = document.getElementById("samples");
 
-["expr.dragon", "factorial.dragon", "fibonacci.dragon", "recurse.dragon", "mandel.dragon",
-"mandel_canvas.dragon", "str.dragon", "type.dragon", "sieve.dragon",
-    "if.dragon", "for.dragon", "fn.dragon", "array.dragon", "array_reverse.dragon", "canvas.dragon"]
+[
+    "expr.dragon", "factorial.dragon", "fibonacci.dragon", "recurse.dragon", "mandel.dragon",
+    "mandel_canvas.dragon", "str.dragon", "type.dragon", "sieve.dragon",
+    "if.dragon", "for.dragon", "fn.dragon", "array.dragon", "array_reverse.dragon", "canvas.dragon",
+    "typecheck.dragon",
+]
     .forEach(fileName => {
     const link = document.createElement("a");
     link.href = "#";
