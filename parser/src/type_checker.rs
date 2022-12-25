@@ -68,7 +68,27 @@ fn tc_expr<'a, 'b>(
             _ => return Err("Numeric literal has a non-number value".to_string()),
         }),
         Expression::StrLiteral(_val) => TypeCheckResult::Yield(TypeDecl::Str),
-        // Expression::ArrLiteral(val) => TypeCheckResult::
+        Expression::ArrLiteral(val) => {
+            for (ex1, ex2) in val[..val.len() - 1].iter().zip(val[1..].iter()) {
+                let el1 = tc_expr(ex1, ctx)?;
+                let el2 = tc_expr(ex2, ctx)?;
+                if el1 != el2 {
+                    return Err(format!(
+                        "Types in an array is not homogeneous: {el1:?} and {el2:?}"
+                    ));
+                }
+            }
+            let ty = if let TypeCheckResult::Yield(ty) = val
+                .first()
+                .map(|e| tc_expr(e, ctx))
+                .unwrap_or(Ok(TypeCheckResult::Yield(TypeDecl::Any)))?
+            {
+                ty
+            } else {
+                return Err("Should not yield".to_string());
+            };
+            TypeCheckResult::Yield(TypeDecl::Array(Box::new(ty)))
+        }
         Expression::Add(lhs, rhs) => {
             let lhs = if let TypeCheckResult::Yield(lhs) = tc_expr(lhs, ctx)? {
                 lhs
