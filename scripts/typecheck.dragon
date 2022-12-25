@@ -1,7 +1,12 @@
-var a: i32 = 123 + 321;
-var b: f32 = 321. + 123.;
+var a: i32 = 123 + 321 - 100;
+var b: f32 = 321. + 123. * 10.;
 var c: str = "Hello" + ", world!";
 
-var aa: [i32] = [1,2,3.];
+var aa: [i32] = [1,2,3];
+var as: [str] = ["Hey", "there"];
+
+print(len(aa));
+push(aa, aa[1]);
+print(hex_string(64));
 
 print(c);

@@ -14,6 +14,15 @@ pub enum TypeCheckResult {
 
 pub type TypeCheckError = String;
 
+macro_rules! unwrap_tc {
+    ($e:expr) => {
+        match $e {
+            TypeCheckResult::Yield(v) => v,
+            TypeCheckResult::Break => return Ok(TypeCheckResult::Break),
+        }
+    };
+}
+
 #[derive(Clone)]
 pub struct TypeCheckContext<'src, 'ast, 'native, 'ctx> {
     /// RefCell to allow mutation in super context.
@@ -89,36 +98,18 @@ fn tc_expr<'a, 'b>(
             };
             TypeCheckResult::Yield(TypeDecl::Array(Box::new(ty)))
         }
-        Expression::Add(lhs, rhs) => {
-            let lhs = if let TypeCheckResult::Yield(lhs) = tc_expr(lhs, ctx)? {
-                lhs
-            } else {
-                return Ok(TypeCheckResult::Break);
-            };
-            let rhs = if let TypeCheckResult::Yield(rhs) = tc_expr(rhs, ctx)? {
-                rhs
-            } else {
-                return Ok(TypeCheckResult::Break);
-            };
-            let res = TypeCheckResult::Yield(match (&lhs, &rhs) {
-                (TypeDecl::F64 | TypeDecl::F32, TypeDecl::F64 | TypeDecl::F32) => TypeDecl::Float,
-                (TypeDecl::I64 | TypeDecl::I32, TypeDecl::F64 | TypeDecl::F32) => TypeDecl::Integer,
-                (TypeDecl::Str, TypeDecl::Str) => TypeDecl::Str,
-                (TypeDecl::Float, TypeDecl::Float) => TypeDecl::Float,
-                (TypeDecl::Integer, TypeDecl::Integer) => TypeDecl::Integer,
-                _ => {
-                    return Err(format!(
-                        "Add between incompatible type: {:?} and {:?}",
-                        lhs, rhs
-                    ))
-                }
-            });
-            res
-        }
         Expression::Variable(str) => TypeCheckResult::Yield(
             ctx.get_var(str)
                 .ok_or_else(|| format!("Variable {} not found in scope", str))?,
         ),
+        Expression::Add(lhs, rhs)
+        | Expression::Sub(lhs, rhs)
+        | Expression::Mult(lhs, rhs)
+        | Expression::Div(lhs, rhs) => {
+            let lhs = unwrap_tc!(tc_expr(lhs, ctx)?);
+            let rhs = unwrap_tc!(tc_expr(rhs, ctx)?);
+            binary_op(&lhs, &rhs)?
+        }
         Expression::FnInvoke(str, args) => {
             let args = args
                 .iter()
@@ -127,11 +118,41 @@ fn tc_expr<'a, 'b>(
             let func = ctx
                 .get_fn(*str)
                 .ok_or_else(|| format!("function {} is not defined.", str))?;
+            let args_decl = func.args();
+            for (arg, decl) in args.iter().zip(args_decl.iter()) {
+                let arg = unwrap_tc!(arg);
+                tc_coerce_type(&arg, &decl.1)?;
+            }
             match func {
                 FuncDef::Code(code) => {
                     TypeCheckResult::Yield(code.ret_type.clone().unwrap_or(TypeDecl::Any))
                 }
-                FuncDef::Native(_) => TypeCheckResult::Yield(TypeDecl::Any),
+                FuncDef::Native(native) => {
+                    TypeCheckResult::Yield(native.ret_type.clone().unwrap_or(TypeDecl::Any))
+                }
+            }
+        }
+        Expression::ArrIndex(ex, args) => {
+            let args = args
+                .iter()
+                .map(|v| tc_expr(v, ctx))
+                .collect::<Result<Vec<_>, _>>()?;
+            let _arg0 = match args[0].clone() {
+                TypeCheckResult::Yield(v) => {
+                    if let TypeDecl::I64 = tc_coerce_type(&v, &TypeDecl::I64)? {
+                        v
+                    } else {
+                        return Err("Subscript type should be integer types".to_string());
+                    }
+                }
+                TypeCheckResult::Break => {
+                    return Ok(TypeCheckResult::Break);
+                }
+            };
+            if let TypeDecl::Array(inner) = unwrap_tc!(tc_expr(ex, ctx)?) {
+                TypeCheckResult::Yield(*inner.clone())
+            } else {
+                return Err("Subscript operator's first operand is not an array".to_string());
             }
         }
         _ => todo!(),
@@ -173,7 +194,6 @@ pub fn type_check<'src, 'ast>(
                 } else {
                     TypeDecl::I32
                 };
-                dbg!(&init_val);
                 let init_val = tc_coerce_type(&init_val, type_)?;
                 ctx.variables.borrow_mut().insert(*var, init_val);
             }
@@ -187,5 +207,22 @@ pub fn type_check<'src, 'ast>(
             _ => todo!(),
         }
     }
+    Ok(res)
+}
+
+fn binary_op(lhs: &TypeDecl, rhs: &TypeDecl) -> Result<TypeCheckResult, TypeCheckError> {
+    let res = TypeCheckResult::Yield(match (&lhs, &rhs) {
+        (TypeDecl::F64 | TypeDecl::F32, TypeDecl::F64 | TypeDecl::F32) => TypeDecl::Float,
+        (TypeDecl::I64 | TypeDecl::I32, TypeDecl::F64 | TypeDecl::F32) => TypeDecl::Integer,
+        (TypeDecl::Str, TypeDecl::Str) => TypeDecl::Str,
+        (TypeDecl::Float, TypeDecl::Float) => TypeDecl::Float,
+        (TypeDecl::Integer, TypeDecl::Integer) => TypeDecl::Integer,
+        _ => {
+            return Err(format!(
+                "Add between incompatible type: {:?} and {:?}",
+                lhs, rhs
+            ))
+        }
+    });
     Ok(res)
 }
