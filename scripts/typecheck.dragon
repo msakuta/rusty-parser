@@ -9,4 +9,15 @@ print(len(aa));
 push(aa, aa[1]);
 print(hex_string(64));
 
+fn accept_i32(arg: i32) {
+    var a: i32 = arg;
+}
+fn accept_i64(arg: [i32]) {
+    var b: [i32] = arg;
+    var c: i32 = arg[0];
+}
+
+accept_i32(a);
+accept_i64(aa);
+
 print(c);

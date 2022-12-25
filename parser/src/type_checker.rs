@@ -1,7 +1,7 @@
 use std::{cell::RefCell, collections::HashMap};
 
 use crate::{
-    interpreter::std_functions,
+    interpreter::{std_functions, FuncCode},
     parser::{Expression, Statement},
     FuncDef, TypeDecl, Value,
 };
@@ -62,6 +62,14 @@ impl<'src, 'ast, 'native, 'ctx> TypeCheckContext<'src, 'ast, 'native, 'ctx> {
             super_ctx.get_fn(name)
         } else {
             None
+        }
+    }
+
+    fn push_stack(super_ctx: &'ctx Self) -> Self {
+        Self {
+            variables: RefCell::new(HashMap::new()),
+            functions: HashMap::new(),
+            super_context: Some(super_ctx),
         }
     }
 }
@@ -196,6 +204,25 @@ pub fn type_check<'src, 'ast>(
                 };
                 let init_val = tc_coerce_type(&init_val, type_)?;
                 ctx.variables.borrow_mut().insert(*var, init_val);
+            }
+            Statement::FnDecl {
+                name,
+                args,
+                ret_type,
+                stmts,
+            } => {
+                let mut subctx = TypeCheckContext::push_stack(ctx);
+                for arg in args.iter() {
+                    subctx
+                        .variables
+                        .borrow_mut()
+                        .insert(arg.0.clone(), arg.1.clone());
+                }
+                type_check(stmts, &mut subctx)?;
+                ctx.functions.insert(
+                    name.to_string(),
+                    FuncDef::Code(FuncCode::new(stmts, args, ret_type.clone())),
+                );
             }
             Statement::Expression(e) => {
                 let res = tc_expr(&e, ctx)?;

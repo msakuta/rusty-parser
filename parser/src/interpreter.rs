@@ -522,6 +522,20 @@ pub struct FuncCode<'src, 'ast> {
     stmts: &'ast Vec<Statement<'src>>,
 }
 
+impl<'src, 'ast> FuncCode<'src, 'ast> {
+    pub(crate) fn new(
+        stmts: &'ast Vec<Statement<'src>>,
+        args: &'ast Vec<ArgDecl<'src>>,
+        ret_type: Option<TypeDecl>,
+    ) -> Self {
+        Self {
+            args,
+            ret_type,
+            stmts,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct NativeCode<'native> {
     args: Vec<ArgDecl<'native>>,
