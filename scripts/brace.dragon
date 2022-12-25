@@ -1,8 +1,8 @@
 
-var x = 42;
+var x: i32 = 42;
 
-var result = {
-    var y;
+var result: i32 = {
+    var y: i32;
     y = 10;
     x = x * 10;
     x + y

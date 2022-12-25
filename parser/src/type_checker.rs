@@ -112,24 +112,7 @@ fn tc_expr<'a, 'b>(
             ctx.get_var(str)
                 .ok_or_else(|| format!("Variable {} not found in scope", str))?,
         ),
-        Expression::Add(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Add")?,
-        Expression::Sub(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Sub")?,
-        Expression::Mult(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Mult")?,
-        Expression::Div(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Div")?,
-        Expression::LT(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "LT")?,
-        Expression::GT(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "GT")?,
-        Expression::And(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "And")?,
-        Expression::Or(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Or")?,
-        Expression::Conditional(cond, true_branch, false_branch) => {
-            tc_coerce_type(&unwrap_tc!(tc_expr(cond, ctx)?), &TypeDecl::I32)?;
-            let true_type = unwrap_tc!(type_check(true_branch, ctx)?);
-            if let Some(false_type) = false_branch {
-                let false_type = unwrap_tc!(type_check(false_type, ctx)?);
-                binary_op_type(&true_type, &false_type).map_err(|_| format!("Conditional expression doesn't have the compatible types in true and false branch: {:?} and {:?}", true_type, false_type))?
-            } else {
-                TypeCheckResult::Yield(true_type)
-            }
-        }
+        Expression::VarAssign(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Assignment")?,
         Expression::FnInvoke(str, args) => {
             let args = args
                 .iter()
@@ -175,7 +158,31 @@ fn tc_expr<'a, 'b>(
                 return Err("Subscript operator's first operand is not an array".to_string());
             }
         }
-        _ => todo!(),
+        Expression::Not(val) => tc_expr(val, ctx)?,
+        Expression::Add(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Add")?,
+        Expression::Sub(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Sub")?,
+        Expression::Mult(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Mult")?,
+        Expression::Div(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Div")?,
+        Expression::LT(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "LT")?,
+        Expression::GT(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "GT")?,
+        Expression::And(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "And")?,
+        Expression::Or(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Or")?,
+        Expression::Conditional(cond, true_branch, false_branch) => {
+            tc_coerce_type(&unwrap_tc!(tc_expr(cond, ctx)?), &TypeDecl::I32)?;
+            let true_type = unwrap_tc!(type_check(true_branch, ctx)?);
+            if let Some(false_type) = false_branch {
+                let false_type = unwrap_tc!(type_check(false_type, ctx)?);
+                binary_op_type(&true_type, &false_type).map_err(|_| {
+                    format!("Conditional expression doesn't have the compatible types in true and false branch: {:?} and {:?}", true_type, false_type)
+                })?
+            } else {
+                TypeCheckResult::Yield(true_type)
+            }
+        }
+        Expression::Brace(stmts) => {
+            let mut subctx = TypeCheckContext::push_stack(ctx);
+            type_check(stmts, &mut subctx)?
+        }
     })
 }
 
@@ -213,7 +220,7 @@ pub fn type_check<'src, 'ast>(
                         _ => break,
                     }
                 } else {
-                    TypeDecl::I32
+                    TypeDecl::Any
                 };
                 let init_val = tc_coerce_type(&init_val, type_)?;
                 ctx.variables.borrow_mut().insert(*var, init_val);
@@ -292,6 +299,9 @@ fn binary_op_type(lhs: &TypeDecl, rhs: &TypeDecl) -> Result<TypeCheckResult, ()>
         (TypeDecl::Float, TypeDecl::F32) | (TypeDecl::F32, TypeDecl::Float) => TypeDecl::F32,
         (TypeDecl::Integer, TypeDecl::I64) | (TypeDecl::I64, TypeDecl::Integer) => TypeDecl::I64,
         (TypeDecl::Integer, TypeDecl::I32) | (TypeDecl::I32, TypeDecl::Integer) => TypeDecl::I32,
+        (TypeDecl::Array(lhs), TypeDecl::Array(rhs)) => {
+            return binary_op_type(lhs, rhs);
+        }
         _ => return Err(()),
     });
     Ok(res)
