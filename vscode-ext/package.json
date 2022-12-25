@@ -1,0 +1,25 @@
+{
+  "name": "rusty-parser",
+  "displayName": "rusty-parser",
+  "description": "rusty-parser language syntax coloring",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [{
+      "id": "rpar",
+      "aliases": ["rusty-parser", "rpar"],
+      "extensions": [".dragon"],
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "rpar",
+      "scopeName": "source.rpar",
+      "path": "./syntaxes/rpar.tmLanguage.json"
+    }]
+  }
+}
