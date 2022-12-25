@@ -1,6 +1,7 @@
 use clap::Parser;
 use parser::*;
 
+use ::colored::Colorize;
 use std::fs::File;
 use std::io::{prelude::*, BufReader, BufWriter};
 
@@ -18,6 +19,8 @@ struct Args {
     ast: bool,
     #[clap(short = 'A', long, help = "Show AST in pretty format")]
     ast_pretty: bool,
+    #[clap(short = 't', long, help = "Type check AST")]
+    type_check: bool,
     #[clap(short, help = "Compile to bytecode")]
     compile: bool,
     #[clap(short = 'R', help = "Compile and run")]
@@ -38,6 +41,11 @@ fn main() -> Result<(), String> {
             println!("Match: {:#?}", result.1);
         } else if args.ast {
             println!("Match: {:?}", result.1);
+        }
+        if args.type_check {
+            if let Err(e) = type_check(&result.1, &mut TypeCheckContext::new()) {
+                eprintln!("Type check error: {}", e.red());
+            }
         }
 
         if args.compile || args.compile_and_run {

@@ -26,9 +26,26 @@ pub enum TypeDecl {
     I32,
     Str,
     Array(Box<TypeDecl>),
+    /// An abstract type that can match F64 or F32
+    Float,
+    /// An abstract type that can match I64 or I32
+    Integer,
 }
 
 impl TypeDecl {
+    pub(crate) fn from_value(value: &Value) -> Self {
+        match value {
+            Value::F64(_) => Self::F64,
+            Value::F32(_) => Self::F32,
+            Value::I32(_) => Self::I32,
+            Value::I64(_) => Self::I64,
+            Value::Str(_) => Self::Str,
+            Value::Array(a) => Self::Array(Box::new(a.borrow().type_decl.clone())),
+            Value::Ref(a) => Self::from_value(&*a.borrow()),
+            Value::ArrayRef(a, _) => a.borrow().type_decl.clone(),
+        }
+    }
+
     fn serialize(&self, writer: &mut impl Write) -> std::io::Result<()> {
         let tag = match self {
             Self::Any => 0xff,
@@ -42,6 +59,8 @@ impl TypeDecl {
                 inner.serialize(writer)?;
                 return Ok(());
             }
+            Self::Float => FLOAT_TAG,
+            Self::Integer => INTEGER_TAG,
         };
         writer.write_all(&tag.to_le_bytes())?;
         Ok(())
@@ -66,6 +85,8 @@ impl TypeDecl {
             STR_TAG => Self::Str,
             ARRAY_TAG => Self::Array(Box::new(Self::deserialize(reader)?)),
             REF_TAG => todo!(),
+            FLOAT_TAG => Self::Float,
+            INTEGER_TAG => Self::Integer,
             _ => unreachable!(),
         })
     }
@@ -112,6 +133,8 @@ const I32_TAG: u8 = 3;
 const STR_TAG: u8 = 4;
 const ARRAY_TAG: u8 = 5;
 const REF_TAG: u8 = 6;
+const FLOAT_TAG: u8 = 7;
+const INTEGER_TAG: u8 = 8;
 
 #[derive(Debug)]
 pub enum ReadError {

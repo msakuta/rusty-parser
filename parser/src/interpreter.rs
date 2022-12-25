@@ -189,6 +189,8 @@ pub fn coerce_type(value: &Value, target: &TypeDecl) -> Result<Value, EvalError>
                 return Err(format!("Incompatible type to array! {:?}", value));
             }
         }
+        TypeDecl::Float => Value::F64(coerce_f64(value)?),
+        TypeDecl::Integer => Value::I64(coerce_i64(value)?),
     })
 }
 
@@ -460,6 +462,8 @@ fn type_decl_to_str(t: &TypeDecl) -> String {
         TypeDecl::I32 => "i32".to_string(),
         TypeDecl::Str => "str".to_string(),
         TypeDecl::Array(inner) => format!("[{}]", type_decl_to_str(inner)),
+        TypeDecl::Float => "<Float>".to_string(),
+        TypeDecl::Integer => "<Integer>".to_string(),
     }
 }
 
