@@ -33,9 +33,12 @@ fn main() -> Result<(), String> {
     let args = Args::parse();
 
     let parse_source = |code| -> Result<(), String> {
-        let result = source(code).map_err(|e| e.to_string())?;
+        let result = source(code).map_err(|e| format!("{:#?}", e))?;
         if !result.0.is_empty() {
-            return Err(format!("Input has terminated unexpectedly: {:?}", result.0));
+            return Err(format!(
+                "Input has terminated unexpectedly: {:#?}",
+                result.0
+            ));
         }
         if args.ast_pretty {
             println!("Match: {:#?}", result.1);
@@ -82,7 +85,9 @@ fn main() -> Result<(), String> {
             let mut contents = String::new();
             file.read_to_string(&mut contents)
                 .map_err(|e| e.to_string())?;
-            parse_source(&contents)?;
+            if let Err(e) = parse_source(&contents) {
+                println!("{e}");
+            };
         }
     } else {
         return Err("Error: can't open file".to_string());

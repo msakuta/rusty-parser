@@ -10,6 +10,7 @@ edition = "2018"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-nom = "6.1.2"
+nom = "7.1.1"
+nom_locate = "4.0.0"
 
 
