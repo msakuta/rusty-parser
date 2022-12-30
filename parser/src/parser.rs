@@ -36,7 +36,7 @@ pub enum TypeDecl {
 }
 
 impl TypeDecl {
-    pub(crate) fn from_value(value: &Value) -> Self {
+    pub(crate) fn _from_value(value: &Value) -> Self {
         match value {
             Value::F64(_) => Self::F64,
             Value::F32(_) => Self::F32,
@@ -44,7 +44,7 @@ impl TypeDecl {
             Value::I64(_) => Self::I64,
             Value::Str(_) => Self::Str,
             Value::Array(a) => Self::Array(Box::new(a.borrow().type_decl.clone())),
-            Value::Ref(a) => Self::from_value(&*a.borrow()),
+            Value::Ref(a) => Self::_from_value(&*a.borrow()),
             Value::ArrayRef(a, _) => a.borrow().type_decl.clone(),
         }
     }

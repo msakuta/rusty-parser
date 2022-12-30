@@ -911,10 +911,7 @@ fn for_test() {
             Expression::new(NumLiteral(Value::I64(0)), span.subslice(10, 1)),
             Expression::new(NumLiteral(Value::I64(10)), span.subslice(15, 2)),
             vec![Statement::Expression(Expression::new(
-                FnInvoke(
-                    "print",
-                    vec![*var_r(span.subslice(26, 1))],
-                ),
+                FnInvoke("print", vec![*var_r(span.subslice(26, 1))],),
                 span.subslice(20, 8)
             ))]
         )]

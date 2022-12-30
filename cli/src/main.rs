@@ -32,7 +32,7 @@ struct Args {
 fn main() -> Result<(), String> {
     let args = Args::parse();
 
-    let parse_source = |code| -> Result<(), String> {
+    let parse_source = |code, source_file| -> Result<(), String> {
         let result = source(code).map_err(|e| format!("{:#?}", e))?;
         if !result.0.is_empty() {
             return Err(format!(
@@ -46,9 +46,9 @@ fn main() -> Result<(), String> {
             println!("Match: {:?}", result.1);
         }
         if args.type_check {
-            if let Err(e) = type_check(&result.1, &mut TypeCheckContext::new()) {
-                eprintln!("Type check error: {}", e.red());
-                return Err(format!("Compile Error: {}", e));
+            if let Err(e) = type_check(&result.1, &mut TypeCheckContext::new(source_file)) {
+                eprintln!("Type check error: {}", e.to_string().red());
+                return Ok(());
             }
         }
 
@@ -74,7 +74,7 @@ fn main() -> Result<(), String> {
     };
 
     if args.eval {
-        parse_source(&args.input)?;
+        parse_source(&args.input, None)?;
     } else if let Ok(mut file) = File::open(&args.input) {
         if args.bytecode {
             let mut bytecode = Bytecode::read(&mut BufReader::new(file))?;
@@ -85,7 +85,7 @@ fn main() -> Result<(), String> {
             let mut contents = String::new();
             file.read_to_string(&mut contents)
                 .map_err(|e| e.to_string())?;
-            if let Err(e) = parse_source(&contents) {
+            if let Err(e) = parse_source(&contents, Some(&args.input)) {
                 println!("{e}");
             };
         }
