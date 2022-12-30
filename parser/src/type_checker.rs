@@ -255,13 +255,13 @@ pub fn type_check<'src, 'ast>(
     for stmt in stmts {
         match stmt {
             Statement::VarDecl(var, type_, initializer) => {
-                let init_val = if let Some(init_expr) = initializer {
-                    let init_val = tc_expr(init_expr, ctx)?;
-                    tc_coerce_type(&init_val, type_, init_expr.span, ctx)?
+                let init_type = if let Some(init_expr) = initializer {
+                    let init_type = tc_expr(init_expr, ctx)?;
+                    tc_coerce_type(&init_type, type_, init_expr.span, ctx)?
                 } else {
-                    TypeDecl::Any
+                    type_.clone()
                 };
-                ctx.variables.insert(*var, init_val);
+                ctx.variables.insert(*var, init_type);
             }
             Statement::FnDecl {
                 name,
