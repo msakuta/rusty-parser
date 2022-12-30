@@ -7,7 +7,7 @@ use nom::{
     multi::{fold_many0, many0, many1},
     number::complete::recognize_float,
     sequence::{delimited, pair, preceded, terminated, tuple},
-    IResult,
+    IResult, InputTake, Offset,
 };
 use nom_locate::LocatedSpan;
 use std::{
@@ -385,7 +385,7 @@ pub enum Statement<'a> {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum Expression<'a> {
+pub(crate) enum ExprEnum<'a> {
     NumLiteral(Value),
     StrLiteral(String),
     ArrLiteral(Vec<Expression<'a>>),
@@ -410,6 +410,40 @@ pub enum Expression<'a> {
     Brace(Vec<Statement<'a>>),
 }
 
+#[derive(Debug, PartialEq, Clone)]
+pub struct Expression<'a> {
+    pub(crate) expr: ExprEnum<'a>,
+    pub(crate) span: Span<'a>,
+}
+
+impl<'a> Expression<'a> {
+    pub(crate) fn new(expr: ExprEnum<'a>, span: Span<'a>) -> Self {
+        Self { expr, span }
+    }
+}
+
+/// Calculate offset between the start positions of the input spans and return a span between them.
+///
+/// Note: `i` shall start earlier than `r`, otherwise wrapping would occur.
+fn calc_offset<'a>(i: Span<'a>, r: Span<'a>) -> Span<'a> {
+    let rp = r.fragment().as_ptr() as usize;
+    let ip = i.fragment().as_ptr() as usize;
+    assert!(ip < rp);
+    let offset = rp - ip;
+    i.take(offset)
+}
+
+/// An extension trait for writing subslice concisely
+trait Subslice {
+    fn subslice(&self, start: usize, length: usize) -> Self;
+}
+
+impl<'a> Subslice for Span<'a> {
+    fn subslice(&self, start: usize, length: usize) -> Self {
+        self.take_split(start).0.take(length)
+    }
+}
+
 fn comment(input: Span) -> IResult<Span, Statement> {
     let (r, _) = multispace0(input)?;
     delimited(tag("/*"), take_until("*/"), tag("*/"))(r)
@@ -429,7 +463,7 @@ fn ident_space(input: Span) -> IResult<Span, Span> {
 
 pub(crate) fn var_ref(input: Span) -> IResult<Span, Expression> {
     let (r, res) = ident_space(input)?;
-    Ok((r, Expression::Variable(res.fragment())))
+    Ok((r, Expression::new(ExprEnum::Variable(res.fragment()), res)))
 }
 
 fn type_scalar(input: Span) -> IResult<Span, TypeDecl> {
@@ -499,22 +533,25 @@ fn double_expr(input: Span) -> IResult<Span, Expression> {
     // by a presense of a period.
     Ok((
         r,
-        Expression::NumLiteral(if v.contains('.') {
-            let parsed = v.parse().map_err(|_| {
-                nom::Err::Error(nom::error::Error {
-                    input,
-                    code: nom::error::ErrorKind::Digit,
-                })
-            })?;
-            Value::F64(parsed)
-        } else {
-            Value::I64(v.parse().map_err(|_| {
-                nom::Err::Error(nom::error::Error {
-                    input,
-                    code: nom::error::ErrorKind::Digit,
-                })
-            })?)
-        }),
+        Expression::new(
+            ExprEnum::NumLiteral(if v.contains('.') {
+                let parsed = v.parse().map_err(|_| {
+                    nom::Err::Error(nom::error::Error {
+                        input,
+                        code: nom::error::ErrorKind::Digit,
+                    })
+                })?;
+                Value::F64(parsed)
+            } else {
+                Value::I64(v.parse().map_err(|_| {
+                    nom::Err::Error(nom::error::Error {
+                        input,
+                        code: nom::error::ErrorKind::Digit,
+                    })
+                })?)
+            }),
+            v,
+        ),
     ))
 }
 
@@ -522,19 +559,20 @@ fn numeric_literal_expression(input: Span) -> IResult<Span, Expression> {
     delimited(multispace0, double_expr, multispace0)(input)
 }
 
-fn str_literal(input: Span) -> IResult<Span, Expression> {
-    let (r, val) = delimited(
-        preceded(multispace0, char('\"')),
-        many0(none_of("\"")),
-        terminated(char('"'), multispace0),
-    )(input)?;
+fn str_literal(i: Span) -> IResult<Span, Expression> {
+    let (r0, _) = preceded(multispace0, char('\"'))(i)?;
+    let (r, val) = many0(none_of("\""))(r0)?;
+    let (r, _) = terminated(char('"'), multispace0)(r)?;
     Ok((
         r,
-        Expression::StrLiteral(
-            val.iter()
-                .collect::<String>()
-                .replace("\\\\", "\\")
-                .replace("\\n", "\n"),
+        Expression::new(
+            ExprEnum::StrLiteral(
+                val.iter()
+                    .collect::<String>()
+                    .replace("\\\\", "\\")
+                    .replace("\\n", "\n"),
+            ),
+            i,
         ),
     ))
 }
@@ -555,16 +593,15 @@ pub(crate) fn array_literal(input: Span) -> IResult<Span, Expression> {
     if let Some(last) = last {
         val.push(last);
     }
-    Ok((r, Expression::ArrLiteral(val)))
+    Ok((r, Expression::new(ExprEnum::ArrLiteral(val), input)))
 }
 
 // We parse any expr surrounded by parens, ignoring all whitespaces around those
 fn parens(i: Span) -> IResult<Span, Expression> {
-    delimited(
-        multispace0,
-        delimited(tag("("), conditional_expr, tag(")")),
-        multispace0,
-    )(i)
+    let (r0, _) = multispace0(i)?;
+    let (r, res) = delimited(tag("("), conditional_expr, tag(")"))(r0)?;
+    let (r, _) = multispace0(r)?;
+    Ok((r, Expression::new(res.expr, r0.take(r0.offset(&r)))))
 }
 
 pub(crate) fn func_invoke(i: Span) -> IResult<Span, Expression> {
@@ -583,7 +620,7 @@ pub(crate) fn func_invoke(i: Span) -> IResult<Span, Expression> {
         ),
         multispace0,
     )(r)?;
-    Ok((r, Expression::FnInvoke(*ident, args)))
+    Ok((r, Expression::new(ExprEnum::FnInvoke(*ident, args), ident)))
 }
 
 pub(crate) fn array_index(i: Span) -> IResult<Span, Expression> {
@@ -603,11 +640,12 @@ pub(crate) fn array_index(i: Span) -> IResult<Span, Expression> {
             multispace0,
         )),
     )(i)?;
+    let offset = r.fragment().as_ptr() as usize - i.fragment().as_ptr() as usize;
     Ok((
         r,
-        indices
-            .into_iter()
-            .fold(prim, |acc, v| Expression::ArrIndex(Box::new(acc), v)),
+        indices.into_iter().fold(prim, |acc, v| {
+            Expression::new(ExprEnum::ArrIndex(Box::new(acc), v), i.take(offset))
+        }),
     ))
 }
 
@@ -628,7 +666,10 @@ fn postfix_expression(i: Span) -> IResult<Span, Expression> {
 
 fn not(i: Span) -> IResult<Span, Expression> {
     let (r, v) = preceded(delimited(multispace0, tag("!"), multispace0), not_factor)(i)?;
-    Ok((r, Expression::Not(Box::new(v))))
+    Ok((
+        r,
+        Expression::new(ExprEnum::Not(Box::new(v)), calc_offset(i, r)),
+    ))
 }
 
 fn not_factor(i: Span) -> IResult<Span, Expression> {
@@ -639,47 +680,56 @@ fn not_factor(i: Span) -> IResult<Span, Expression> {
 // a * or / operator followed by another factor, we do
 // the math by folding everything
 fn term(i: Span) -> IResult<Span, Expression> {
-    let (i, init) = not_factor(i)?;
+    let (r, init) = not_factor(i)?;
+    let ip = i.fragment().as_ptr() as usize;
 
     fold_many0(
         pair(alt((char('*'), char('/'))), not_factor),
         move || init.clone(),
-        |acc, (op, val): (char, Expression)| {
+        move |acc, (op, val): (char, Expression)| {
+            let accp = acc.span.fragment().as_ptr() as usize;
+            let valp = val.span.fragment().as_ptr() as usize + val.span.fragment().len();
+            let span = i.take_split(accp - ip).0.take(valp - accp);
             if op == '*' {
-                Expression::Mult(Box::new(acc), Box::new(val))
+                Expression::new(ExprEnum::Mult(Box::new(acc), Box::new(val)), span)
             } else {
-                Expression::Div(Box::new(acc), Box::new(val))
+                Expression::new(ExprEnum::Div(Box::new(acc), Box::new(val)), span)
             }
         },
-    )(i)
+    )(r)
 }
 
 pub(crate) fn expr(i: Span) -> IResult<Span, Expression> {
-    let (i, init) = term(i)?;
+    let (r, init) = term(i)?;
 
     fold_many0(
         pair(alt((char('+'), char('-'))), term),
         move || init.clone(),
-        |acc, (op, val): (char, Expression)| {
+        move |acc, (op, val): (char, Expression)| {
+            let span = i.subslice(
+                i.offset(&acc.span),
+                acc.span.offset(&val.span) + val.span.len(),
+            );
             if op == '+' {
-                Expression::Add(Box::new(acc), Box::new(val))
+                Expression::new(ExprEnum::Add(Box::new(acc), Box::new(val)), span)
             } else {
-                Expression::Sub(Box::new(acc), Box::new(val))
+                Expression::new(ExprEnum::Sub(Box::new(acc), Box::new(val)), span)
             }
         },
-    )(i)
+    )(r)
 }
 
 fn cmp(i: Span) -> IResult<Span, Expression> {
-    let (i, lhs) = expr(i)?;
+    let (r, lhs) = expr(i)?;
 
-    let (i, (op, val)) = pair(alt((char('<'), char('>'))), expr)(i)?;
+    let (r, (op, val)) = pair(alt((char('<'), char('>'))), expr)(r)?;
+    let span = calc_offset(i, r);
     Ok((
-        i,
+        r,
         if op == '<' {
-            Expression::LT(Box::new(lhs), Box::new(val))
+            Expression::new(ExprEnum::LT(Box::new(lhs), Box::new(val)), span)
         } else {
-            Expression::GT(Box::new(lhs), Box::new(val))
+            Expression::new(ExprEnum::GT(Box::new(lhs), Box::new(val)), span)
         },
     ))
 }
@@ -710,13 +760,20 @@ pub(crate) fn conditional(i: Span) -> IResult<Span, Expression> {
     ))(r)?;
     Ok((
         r,
-        Expression::Conditional(Box::new(cond), true_branch, false_branch),
+        Expression::new(
+            ExprEnum::Conditional(Box::new(cond), true_branch, false_branch),
+            calc_offset(i, r),
+        ),
     ))
 }
 
-pub(crate) fn var_assign(input: Span) -> IResult<Span, Expression> {
-    let (r, res) = tuple((cmp_expr, char('='), assign_expr))(input)?;
-    Ok((r, Expression::VarAssign(Box::new(res.0), Box::new(res.2))))
+pub(crate) fn var_assign(i: Span) -> IResult<Span, Expression> {
+    let (r, res) = tuple((cmp_expr, char('='), assign_expr))(i)?;
+    let span = calc_offset(i, r);
+    Ok((
+        r,
+        Expression::new(ExprEnum::VarAssign(Box::new(res.0), Box::new(res.2)), span),
+    ))
 }
 
 pub(crate) fn cmp_expr(i: Span) -> IResult<Span, Expression> {
@@ -727,7 +784,13 @@ fn and(i: Span) -> IResult<Span, Expression> {
     let (r, first) = cmp_expr(i)?;
     let (r, _) = delimited(multispace0, tag("&&"), multispace0)(r)?;
     let (r, second) = cmp_expr(r)?;
-    Ok((r, Expression::And(Box::new(first), Box::new(second))))
+    Ok((
+        r,
+        Expression::new(
+            ExprEnum::And(Box::new(first), Box::new(second)),
+            calc_offset(i, r),
+        ),
+    ))
 }
 
 fn and_expr(i: Span) -> IResult<Span, Expression> {
@@ -738,7 +801,13 @@ fn or(i: Span) -> IResult<Span, Expression> {
     let (r, first) = and_expr(i)?;
     let (r, _) = delimited(multispace0, tag("||"), multispace0)(r)?;
     let (r, second) = and_expr(r)?;
-    Ok((r, Expression::Or(Box::new(first), Box::new(second))))
+    Ok((
+        r,
+        Expression::new(
+            ExprEnum::Or(Box::new(first), Box::new(second)),
+            calc_offset(i, r),
+        ),
+    ))
 }
 
 fn or_expr(i: Span) -> IResult<Span, Expression> {
@@ -753,13 +822,14 @@ pub(crate) fn conditional_expr(i: Span) -> IResult<Span, Expression> {
     alt((conditional, assign_expr))(i)
 }
 
-fn brace_expr(input: Span) -> IResult<Span, Expression> {
+fn brace_expr(i: Span) -> IResult<Span, Expression> {
     let (r, v) = delimited(
         delimited(multispace0, tag("{"), multispace0),
         source,
         delimited(multispace0, tag("}"), multispace0),
-    )(input)?;
-    Ok((r, Expression::Brace(v)))
+    )(i)?;
+    let offset = r.fragment().as_ptr() as usize - (*i).as_ptr() as usize;
+    Ok((r, Expression::new(ExprEnum::Brace(v), i.take(offset))))
 }
 
 pub(crate) fn full_expression(input: Span) -> IResult<Span, Expression> {
@@ -901,4 +971,5 @@ pub fn span_source(input: &str) -> IResult<Span, Vec<Statement>> {
     source(Span::new(input))
 }
 
+#[cfg(test)]
 mod test;

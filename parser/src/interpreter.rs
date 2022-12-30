@@ -198,10 +198,10 @@ pub(crate) fn eval<'a, 'b>(
     e: &'b Expression<'a>,
     ctx: &mut EvalContext<'a, 'b, '_, '_>,
 ) -> Result<RunResult, EvalError> {
-    Ok(match e {
-        Expression::NumLiteral(val) => RunResult::Yield(val.clone()),
-        Expression::StrLiteral(val) => RunResult::Yield(Value::Str(val.clone())),
-        Expression::ArrLiteral(val) => RunResult::Yield(Value::Array(ArrayInt::new(
+    Ok(match &e.expr {
+        ExprEnum::NumLiteral(val) => RunResult::Yield(val.clone()),
+        ExprEnum::StrLiteral(val) => RunResult::Yield(Value::Str(val.clone())),
+        ExprEnum::ArrLiteral(val) => RunResult::Yield(Value::Array(ArrayInt::new(
             TypeDecl::Any,
             val.iter()
                 .map(|v| {
@@ -213,11 +213,11 @@ pub(crate) fn eval<'a, 'b>(
                 })
                 .collect::<Result<Vec<_>, _>>()?,
         ))),
-        Expression::Variable(str) => RunResult::Yield(Value::Ref(
+        ExprEnum::Variable(str) => RunResult::Yield(Value::Ref(
             ctx.get_var_rc(str)
                 .ok_or_else(|| format!("Variable {} not found in scope", str))?,
         )),
-        Expression::VarAssign(lhs, rhs) => {
+        ExprEnum::VarAssign(lhs, rhs) => {
             let lhs_result = eval(lhs, ctx)?;
             let result = match lhs_result {
                 RunResult::Yield(Value::Ref(rc)) => {
@@ -244,7 +244,7 @@ pub(crate) fn eval<'a, 'b>(
             };
             RunResult::Yield(result)
         }
-        Expression::FnInvoke(str, args) => {
+        ExprEnum::FnInvoke(str, args) => {
             let args = args
                 .iter()
                 .map(|v| eval(v, ctx))
@@ -286,7 +286,7 @@ pub(crate) fn eval<'a, 'b>(
                 )?),
             }
         }
-        Expression::ArrIndex(ex, args) => {
+        ExprEnum::ArrIndex(ex, args) => {
             let args = args
                 .iter()
                 .map(|v| eval(v, ctx))
@@ -306,14 +306,14 @@ pub(crate) fn eval<'a, 'b>(
             let result = unwrap_run!(eval(ex, ctx)?);
             RunResult::Yield(result.array_get_ref(arg0)?)
         }
-        Expression::Not(val) => {
+        ExprEnum::Not(val) => {
             RunResult::Yield(Value::I32(if truthy(&unwrap_run!(eval(val, ctx)?)) {
                 0
             } else {
                 1
             }))
         }
-        Expression::Add(lhs, rhs) => {
+        ExprEnum::Add(lhs, rhs) => {
             let res = RunResult::Yield(binary_op_str(
                 &unwrap_run!(eval(lhs, ctx)?),
                 &unwrap_run!(eval(rhs, ctx)?),
@@ -323,51 +323,51 @@ pub(crate) fn eval<'a, 'b>(
             )?);
             res
         }
-        Expression::Sub(lhs, rhs) => RunResult::Yield(binary_op(
+        ExprEnum::Sub(lhs, rhs) => RunResult::Yield(binary_op(
             &unwrap_run!(eval(lhs, ctx)?),
             &unwrap_run!(eval(rhs, ctx)?),
             |lhs, rhs| lhs - rhs,
             |lhs, rhs| lhs - rhs,
         )?),
-        Expression::Mult(lhs, rhs) => RunResult::Yield(binary_op(
+        ExprEnum::Mult(lhs, rhs) => RunResult::Yield(binary_op(
             &unwrap_run!(eval(lhs, ctx)?),
             &unwrap_run!(eval(rhs, ctx)?),
             |lhs, rhs| lhs * rhs,
             |lhs, rhs| lhs * rhs,
         )?),
-        Expression::Div(lhs, rhs) => RunResult::Yield(binary_op(
+        ExprEnum::Div(lhs, rhs) => RunResult::Yield(binary_op(
             &unwrap_run!(eval(lhs, ctx)?),
             &unwrap_run!(eval(rhs, ctx)?),
             |lhs, rhs| lhs / rhs,
             |lhs, rhs| lhs / rhs,
         )?),
-        Expression::LT(lhs, rhs) => RunResult::Yield(binary_op(
+        ExprEnum::LT(lhs, rhs) => RunResult::Yield(binary_op(
             &unwrap_run!(eval(lhs, ctx)?),
             &unwrap_run!(eval(rhs, ctx)?),
             |lhs, rhs| if lhs < rhs { 1. } else { 0. },
             |lhs, rhs| if lhs < rhs { 1 } else { 0 },
         )?),
-        Expression::GT(lhs, rhs) => RunResult::Yield(binary_op(
+        ExprEnum::GT(lhs, rhs) => RunResult::Yield(binary_op(
             &unwrap_run!(eval(lhs, ctx)?),
             &unwrap_run!(eval(rhs, ctx)?),
             |lhs, rhs| if lhs > rhs { 1. } else { 0. },
             |lhs, rhs| if lhs > rhs { 1 } else { 0 },
         )?),
-        Expression::And(lhs, rhs) => RunResult::Yield(Value::I32(
+        ExprEnum::And(lhs, rhs) => RunResult::Yield(Value::I32(
             if truthy(&unwrap_run!(eval(lhs, ctx)?)) && truthy(&unwrap_run!(eval(rhs, ctx)?)) {
                 1
             } else {
                 0
             },
         )),
-        Expression::Or(lhs, rhs) => RunResult::Yield(Value::I32(
+        ExprEnum::Or(lhs, rhs) => RunResult::Yield(Value::I32(
             if truthy(&unwrap_run!(eval(lhs, ctx)?)) || truthy(&unwrap_run!(eval(rhs, ctx)?)) {
                 1
             } else {
                 0
             },
         )),
-        Expression::Conditional(cond, true_branch, false_branch) => {
+        ExprEnum::Conditional(cond, true_branch, false_branch) => {
             if truthy(&unwrap_run!(eval(cond, ctx)?)) {
                 run(true_branch, ctx)?
             } else if let Some(ast) = false_branch {
@@ -376,7 +376,7 @@ pub(crate) fn eval<'a, 'b>(
                 RunResult::Yield(Value::I32(0))
             }
         }
-        Expression::Brace(stmts) => {
+        ExprEnum::Brace(stmts) => {
             let mut subctx = EvalContext::push_stack(ctx);
             let res = run(stmts, &mut subctx)?;
             if let RunResult::Yield(Value::Ref(res)) = res {
@@ -792,5 +792,5 @@ pub fn run<'src, 'ast>(
     Ok(res)
 }
 
-#[cfg(test)]
-mod test;
+// #[cfg(test)]
+// mod test;

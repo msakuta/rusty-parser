@@ -9,7 +9,7 @@ use crate::{
     interpreter::{
         eval, s_hex_string, s_len, s_print, s_push, s_type, EvalContext, EvalError, RunResult,
     },
-    parser::{ArrayInt, Expression, ReadError, Statement, TypeDecl, Value},
+    parser::{ArrayInt, ExprEnum, Expression, ReadError, Statement, TypeDecl, Value},
 };
 
 macro_rules! dbg_println {
@@ -543,12 +543,10 @@ fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> Result<Option<usi
 }
 
 fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String> {
-    match expr {
-        Expression::NumLiteral(val) => Ok(compiler.find_or_create_literal(val)),
-        Expression::StrLiteral(val) => {
-            Ok(compiler.find_or_create_literal(&Value::Str(val.clone())))
-        }
-        Expression::ArrLiteral(val) => {
+    match &expr.expr {
+        ExprEnum::NumLiteral(val) => Ok(compiler.find_or_create_literal(val)),
+        ExprEnum::StrLiteral(val) => Ok(compiler.find_or_create_literal(&Value::Str(val.clone()))),
+        ExprEnum::ArrLiteral(val) => {
             let mut ctx = EvalContext::new();
             let val = Value::Array(Rc::new(RefCell::new(ArrayInt {
                 type_decl: TypeDecl::Any,
@@ -565,7 +563,7 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
             })));
             Ok(compiler.find_or_create_literal(&val))
         }
-        Expression::Variable(str) => {
+        ExprEnum::Variable(str) => {
             let local = compiler.locals.iter().rev().fold(None, |acc, rhs| {
                 if acc.is_some() {
                     acc
@@ -580,11 +578,11 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
                 return Err(format!("Variable {} not found in scope", str));
             }
         }
-        Expression::Add(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Add, lhs, rhs)),
-        Expression::Sub(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Sub, lhs, rhs)),
-        Expression::Mult(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Mul, lhs, rhs)),
-        Expression::Div(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Div, lhs, rhs)),
-        Expression::VarAssign(lhs, rhs) => {
+        ExprEnum::Add(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Add, lhs, rhs)),
+        ExprEnum::Sub(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Sub, lhs, rhs)),
+        ExprEnum::Mult(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Mul, lhs, rhs)),
+        ExprEnum::Div(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Div, lhs, rhs)),
+        ExprEnum::VarAssign(lhs, rhs) => {
             let lhs_result = emit_expr(lhs, compiler)?;
             let rhs_result = emit_expr(rhs, compiler)?;
             compiler.bytecode.instructions.push(Instruction {
@@ -594,7 +592,7 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
             });
             Ok(lhs_result)
         }
-        Expression::FnInvoke(fname, argss) => {
+        ExprEnum::FnInvoke(fname, argss) => {
             // Function arguments have value semantics, even if it was an array element.
             // Unless we emit `Deref` here, we might leave a reference in the stack that can be
             // accidentally overwritten. I'm not sure this is the best way to avoid it.
@@ -626,7 +624,7 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
             compiler.target_stack.push(Target::None);
             Ok(stk_fname)
         }
-        Expression::ArrIndex(ex, args) => {
+        ExprEnum::ArrIndex(ex, args) => {
             let stk_ex = emit_expr(ex, compiler)?;
             let args = args
                 .iter()
@@ -649,16 +647,16 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
                 .push_inst(OpCode::Get, stk_ex as u8, arg as u16);
             Ok(arg)
         }
-        Expression::LT(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Lt, lhs, rhs)),
-        Expression::GT(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Gt, lhs, rhs)),
-        Expression::Not(val) => {
+        ExprEnum::LT(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Lt, lhs, rhs)),
+        ExprEnum::GT(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Gt, lhs, rhs)),
+        ExprEnum::Not(val) => {
             let val = emit_expr(val, compiler)?;
             compiler.bytecode.push_inst(OpCode::Not, val as u8, 0);
             Ok(val)
         }
-        Expression::And(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::And, lhs, rhs)),
-        Expression::Or(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Or, lhs, rhs)),
-        Expression::Conditional(cond, true_branch, false_branch) => {
+        ExprEnum::And(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::And, lhs, rhs)),
+        ExprEnum::Or(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Or, lhs, rhs)),
+        ExprEnum::Conditional(cond, true_branch, false_branch) => {
             let cond = emit_expr(cond, compiler)?;
             let cond_inst_idx = compiler.bytecode.instructions.len();
             compiler.bytecode.push_inst(OpCode::Jf, cond as u8, 0);
@@ -685,7 +683,7 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
             }
             Ok(true_branch.unwrap_or(0))
         }
-        Expression::Brace(stmts) => {
+        ExprEnum::Brace(stmts) => {
             compiler.locals.push(vec![]);
             let res = emit_stmts(stmts, compiler)?.unwrap_or(0);
             compiler.locals.pop();

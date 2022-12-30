@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     interpreter::{std_functions, FuncCode},
-    parser::{Expression, Statement},
+    parser::{ExprEnum, Expression, Statement},
     FuncDef, TypeDecl, Value,
 };
 
@@ -63,14 +63,14 @@ fn tc_expr<'a, 'b>(
     e: &'b Expression<'a>,
     ctx: &mut TypeCheckContext<'a, 'b, '_, '_>,
 ) -> Result<TypeDecl, TypeCheckError> {
-    Ok(match e {
-        Expression::NumLiteral(val) => match val {
+    Ok(match &e.expr {
+        ExprEnum::NumLiteral(val) => match val {
             Value::F64(_) | Value::F32(_) => TypeDecl::Float,
             Value::I64(_) | Value::I32(_) => TypeDecl::Integer,
             _ => return Err("Numeric literal has a non-number value".to_string()),
         },
-        Expression::StrLiteral(_val) => TypeDecl::Str,
-        Expression::ArrLiteral(val) => {
+        ExprEnum::StrLiteral(_val) => TypeDecl::Str,
+        ExprEnum::ArrLiteral(val) => {
             if !val.is_empty() {
                 for (ex1, ex2) in val[..val.len() - 1].iter().zip(val[1..].iter()) {
                     let el1 = tc_expr(ex1, ctx)?;
@@ -88,11 +88,11 @@ fn tc_expr<'a, 'b>(
                 .unwrap_or(Ok(TypeDecl::Any))?;
             TypeDecl::Array(Box::new(ty))
         }
-        Expression::Variable(str) => ctx
+        ExprEnum::Variable(str) => ctx
             .get_var(str)
             .ok_or_else(|| format!("Variable {} not found in scope", str))?,
-        Expression::VarAssign(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Assignment")?,
-        Expression::FnInvoke(str, args) => {
+        ExprEnum::VarAssign(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Assignment")?,
+        ExprEnum::FnInvoke(str, args) => {
             let args = args
                 .iter()
                 .map(|v| tc_expr(v, ctx))
@@ -110,7 +110,7 @@ fn tc_expr<'a, 'b>(
                 FuncDef::Native(native) => native.ret_type.clone().unwrap_or(TypeDecl::Any),
             }
         }
-        Expression::ArrIndex(ex, args) => {
+        ExprEnum::ArrIndex(ex, args) => {
             let args = args
                 .iter()
                 .map(|v| tc_expr(v, ctx))
@@ -126,19 +126,22 @@ fn tc_expr<'a, 'b>(
             if let TypeDecl::Array(inner) = tc_expr(ex, ctx)? {
                 *inner.clone()
             } else {
-                return Err("Subscript operator's first operand is not an array".to_string());
+                return Err(format!(
+                    "{:?}: Subscript operator's first operand is not an array",
+                    ex.span
+                ));
             }
         }
-        Expression::Not(val) => tc_expr(val, ctx)?,
-        Expression::Add(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Add")?,
-        Expression::Sub(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Sub")?,
-        Expression::Mult(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Mult")?,
-        Expression::Div(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Div")?,
-        Expression::LT(lhs, rhs) => binary_cmp(&lhs, &rhs, ctx, "LT")?,
-        Expression::GT(lhs, rhs) => binary_cmp(&lhs, &rhs, ctx, "GT")?,
-        Expression::And(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "And")?,
-        Expression::Or(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Or")?,
-        Expression::Conditional(cond, true_branch, false_branch) => {
+        ExprEnum::Not(val) => tc_expr(val, ctx)?,
+        ExprEnum::Add(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Add")?,
+        ExprEnum::Sub(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Sub")?,
+        ExprEnum::Mult(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Mult")?,
+        ExprEnum::Div(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Div")?,
+        ExprEnum::LT(lhs, rhs) => binary_cmp(&lhs, &rhs, ctx, "LT")?,
+        ExprEnum::GT(lhs, rhs) => binary_cmp(&lhs, &rhs, ctx, "GT")?,
+        ExprEnum::And(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "And")?,
+        ExprEnum::Or(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Or")?,
+        ExprEnum::Conditional(cond, true_branch, false_branch) => {
             tc_coerce_type(&tc_expr(cond, ctx)?, &TypeDecl::I32)?;
             let true_type = type_check(true_branch, ctx)?;
             if let Some(false_type) = false_branch {
@@ -150,7 +153,7 @@ fn tc_expr<'a, 'b>(
                 true_type
             }
         }
-        Expression::Brace(stmts) => {
+        ExprEnum::Brace(stmts) => {
             let mut subctx = TypeCheckContext::push_stack(ctx);
             type_check(stmts, &mut subctx)?
         }
