@@ -17,6 +17,9 @@ fn accept_i64(arg: [i32]) {
     var c: i32 = arg[0];
 }
 
+var s: str = "hey";
+s = "hoy";
+
 accept_i32(a);
 accept_i64(aa);
 

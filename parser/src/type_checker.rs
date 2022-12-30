@@ -365,7 +365,7 @@ fn binary_op_type(lhs: &TypeDecl, rhs: &TypeDecl) -> Result<TypeDecl, ()> {
         (TypeDecl::Integer, TypeDecl::I64) | (TypeDecl::I64, TypeDecl::Integer) => TypeDecl::I64,
         (TypeDecl::Integer, TypeDecl::I32) | (TypeDecl::I32, TypeDecl::Integer) => TypeDecl::I32,
         (TypeDecl::Array(lhs), TypeDecl::Array(rhs)) => {
-            return binary_op_type(lhs, rhs);
+            return Ok(TypeDecl::Array(Box::new(binary_op_type(lhs, rhs)?)));
         }
         _ => return Err(()),
     };

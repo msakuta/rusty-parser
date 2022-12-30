@@ -218,10 +218,6 @@ fn cond_eval_test() {
     );
 }
 
-fn span_conditional_expr(s: &str) -> IResult<Span, Expression> {
-    conditional_expr(Span::new(s))
-}
-
 #[test]
 fn cmp_test() {
     let span = Span::new(" 1 <  2 ");
