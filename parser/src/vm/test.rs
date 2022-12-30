@@ -1,13 +1,12 @@
-use std::rc::Rc;
-
 use super::*;
 use crate::{
     compile,
-    parser::{expr, source, ArrayInt, Statement, TypeDecl},
+    parser::{expr, span_source, ArrayInt, Statement, TypeDecl},
+    Span,
 };
 
 fn compile_expr(s: &str) -> Bytecode {
-    let bytecode = compile(&[Statement::Expression(expr(s).unwrap().1)]).unwrap();
+    let bytecode = compile(&[Statement::Expression(expr(Span::new(s)).unwrap().1)]).unwrap();
     bytecode
 }
 
@@ -36,7 +35,7 @@ fn parens_eval_test() {
 }
 
 fn compile_and_run(src: &str) -> Result<Value, EvalError> {
-    interpret(&compile(&source(src).unwrap().1).unwrap())
+    interpret(&compile(&span_source(src).unwrap().1).unwrap())
 }
 
 #[test]
@@ -110,7 +109,7 @@ fn brace_shadowing_test() {
 }
 
 fn compile_and_run_with(src: &str, fun: impl Fn(&[Value]) + 'static) -> Result<Value, EvalError> {
-    let mut bytecode = compile(&source(src).unwrap().1).unwrap();
+    let mut bytecode = compile(&span_source(src).unwrap().1).unwrap();
     bytecode.add_ext_fn(
         "print".to_string(),
         Box::new(move |vals| {

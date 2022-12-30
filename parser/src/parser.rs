@@ -7,14 +7,17 @@ use nom::{
     multi::{fold_many0, many0, many1},
     number::complete::recognize_float,
     sequence::{delimited, pair, preceded, terminated, tuple},
-    IResult,
+    IResult, InputTake, Offset,
 };
+use nom_locate::LocatedSpan;
 use std::{
     cell::RefCell,
     io::{Read, Write},
     rc::Rc,
     string::FromUtf8Error,
 };
+
+pub type Span<'a> = LocatedSpan<&'a str>;
 
 #[derive(Debug, PartialEq, Clone)]
 #[repr(u8)]
@@ -33,7 +36,7 @@ pub enum TypeDecl {
 }
 
 impl TypeDecl {
-    pub(crate) fn from_value(value: &Value) -> Self {
+    pub(crate) fn _from_value(value: &Value) -> Self {
         match value {
             Value::F64(_) => Self::F64,
             Value::F32(_) => Self::F32,
@@ -41,7 +44,7 @@ impl TypeDecl {
             Value::I64(_) => Self::I64,
             Value::Str(_) => Self::Str,
             Value::Array(a) => Self::Array(Box::new(a.borrow().type_decl.clone())),
-            Value::Ref(a) => Self::from_value(&*a.borrow()),
+            Value::Ref(a) => Self::_from_value(&*a.borrow()),
             Value::ArrayRef(a, _) => a.borrow().type_decl.clone(),
         }
     }
@@ -382,7 +385,7 @@ pub enum Statement<'a> {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum Expression<'a> {
+pub(crate) enum ExprEnum<'a> {
     NumLiteral(Value),
     StrLiteral(String),
     ArrLiteral(Vec<Expression<'a>>),
@@ -407,28 +410,63 @@ pub enum Expression<'a> {
     Brace(Vec<Statement<'a>>),
 }
 
-fn comment(input: &str) -> IResult<&str, Statement> {
-    let (r, _) = multispace0(input)?;
-    delimited(tag("/*"), take_until("*/"), tag("*/"))(r).map(|(r, s)| (r, Statement::Comment(s)))
+#[derive(Debug, PartialEq, Clone)]
+pub struct Expression<'a> {
+    pub(crate) expr: ExprEnum<'a>,
+    pub(crate) span: Span<'a>,
 }
 
-pub fn identifier(input: &str) -> IResult<&str, &str> {
+impl<'a> Expression<'a> {
+    pub(crate) fn new(expr: ExprEnum<'a>, span: Span<'a>) -> Self {
+        Self { expr, span }
+    }
+}
+
+/// Calculate offset between the start positions of the input spans and return a span between them.
+///
+/// Note: `i` shall start earlier than `r`, otherwise wrapping would occur.
+fn calc_offset<'a>(i: Span<'a>, r: Span<'a>) -> Span<'a> {
+    let rp = r.fragment().as_ptr() as usize;
+    let ip = i.fragment().as_ptr() as usize;
+    assert!(ip < rp);
+    let offset = rp - ip;
+    i.take(offset)
+}
+
+/// An extension trait for writing subslice concisely
+pub(super) trait Subslice {
+    fn subslice(&self, start: usize, length: usize) -> Self;
+}
+
+impl<'a> Subslice for Span<'a> {
+    fn subslice(&self, start: usize, length: usize) -> Self {
+        self.take_split(start).0.take(length)
+    }
+}
+
+fn comment(input: Span) -> IResult<Span, Statement> {
+    let (r, _) = multispace0(input)?;
+    delimited(tag("/*"), take_until("*/"), tag("*/"))(r)
+        .map(|(r, s)| (r, Statement::Comment(s.fragment())))
+}
+
+pub fn identifier(input: Span) -> IResult<Span, Span> {
     recognize(pair(
         alt((alpha1, tag("_"))),
         many0(alt((alphanumeric1, tag("_")))),
     ))(input)
 }
 
-fn ident_space(input: &str) -> IResult<&str, &str> {
+fn ident_space(input: Span) -> IResult<Span, Span> {
     delimited(multispace0, identifier, multispace0)(input)
 }
 
-pub(crate) fn var_ref(input: &str) -> IResult<&str, Expression> {
+pub(crate) fn var_ref(input: Span) -> IResult<Span, Expression> {
     let (r, res) = ident_space(input)?;
-    Ok((r, Expression::Variable(res)))
+    Ok((r, Expression::new(ExprEnum::Variable(res.fragment()), res)))
 }
 
-fn type_scalar(input: &str) -> IResult<&str, TypeDecl> {
+fn type_scalar(input: Span) -> IResult<Span, TypeDecl> {
     let (r, type_) = opt(delimited(
         multispace0,
         alt((tag("f64"), tag("f32"), tag("i64"), tag("i32"), tag("str"))),
@@ -436,7 +474,7 @@ fn type_scalar(input: &str) -> IResult<&str, TypeDecl> {
     ))(input)?;
     Ok((
         r,
-        match type_ {
+        match type_.map(|ty| *ty) {
             Some("f64") | None => TypeDecl::F64,
             Some("f32") => TypeDecl::F32,
             Some("i32") => TypeDecl::I32,
@@ -447,7 +485,7 @@ fn type_scalar(input: &str) -> IResult<&str, TypeDecl> {
     ))
 }
 
-fn type_array(input: &str) -> IResult<&str, TypeDecl> {
+fn type_array(input: Span) -> IResult<Span, TypeDecl> {
     let (r, arr) = delimited(
         delimited(multispace0, tag("["), multispace0),
         alt((type_array, type_scalar)),
@@ -456,11 +494,11 @@ fn type_array(input: &str) -> IResult<&str, TypeDecl> {
     Ok((r, TypeDecl::Array(Box::new(arr))))
 }
 
-pub(crate) fn type_decl(input: &str) -> IResult<&str, TypeDecl> {
+pub(crate) fn type_decl(input: Span) -> IResult<Span, TypeDecl> {
     alt((type_array, type_scalar))(input)
 }
 
-pub(crate) fn type_spec(input: &str) -> IResult<&str, TypeDecl> {
+pub(crate) fn type_spec(input: Span) -> IResult<Span, TypeDecl> {
     let (r, type_) = opt(delimited(
         delimited(multispace0, tag(":"), multispace0),
         type_decl,
@@ -476,7 +514,7 @@ pub(crate) fn type_spec(input: &str) -> IResult<&str, TypeDecl> {
     ))
 }
 
-fn var_decl(input: &str) -> IResult<&str, Statement> {
+fn var_decl(input: Span) -> IResult<Span, Statement> {
     let (r, _) = multispace1(tag("var")(multispace0(input)?.0)?.0)?;
     let (r, ident) = identifier(r)?;
     let (r, ts) = type_spec(r)?;
@@ -486,84 +524,86 @@ fn var_decl(input: &str) -> IResult<&str, Statement> {
         multispace0,
     ))(r)?;
     let (r, _) = char(';')(multispace0(r)?.0)?;
-    Ok((r, Statement::VarDecl(ident, ts, initializer)))
+    Ok((r, Statement::VarDecl(*ident, ts, initializer)))
 }
 
-fn double_expr(input: &str) -> IResult<&str, Expression> {
+fn double_expr(input: Span) -> IResult<Span, Expression> {
     let (r, v) = recognize_float(input)?;
     // For now we have very simple conditinon to decide if it is a floating point literal
     // by a presense of a period.
     Ok((
         r,
-        Expression::NumLiteral(if v.contains('.') {
-            let parsed = v.parse().map_err(|_| {
-                nom::Err::Error(nom::error::Error {
-                    input,
-                    code: nom::error::ErrorKind::Digit,
-                })
-            })?;
-            Value::F64(parsed)
-        } else {
-            Value::I64(v.parse().map_err(|_| {
-                nom::Err::Error(nom::error::Error {
-                    input,
-                    code: nom::error::ErrorKind::Digit,
-                })
-            })?)
-        }),
+        Expression::new(
+            ExprEnum::NumLiteral(if v.contains('.') {
+                let parsed = v.parse().map_err(|_| {
+                    nom::Err::Error(nom::error::Error {
+                        input,
+                        code: nom::error::ErrorKind::Digit,
+                    })
+                })?;
+                Value::F64(parsed)
+            } else {
+                Value::I64(v.parse().map_err(|_| {
+                    nom::Err::Error(nom::error::Error {
+                        input,
+                        code: nom::error::ErrorKind::Digit,
+                    })
+                })?)
+            }),
+            v,
+        ),
     ))
 }
 
-fn numeric_literal_expression(input: &str) -> IResult<&str, Expression> {
+fn numeric_literal_expression(input: Span) -> IResult<Span, Expression> {
     delimited(multispace0, double_expr, multispace0)(input)
 }
 
-fn str_literal(input: &str) -> IResult<&str, Expression> {
-    let (r, val) = delimited(
-        preceded(multispace0, char('\"')),
-        many0(none_of("\"")),
-        terminated(char('"'), multispace0),
-    )(input)?;
+fn str_literal(i: Span) -> IResult<Span, Expression> {
+    let (r0, _) = preceded(multispace0, char('\"'))(i)?;
+    let (r, val) = many0(none_of("\""))(r0)?;
+    let (r, _) = terminated(char('"'), multispace0)(r)?;
     Ok((
         r,
-        Expression::StrLiteral(
-            val.iter()
-                .collect::<String>()
-                .replace("\\\\", "\\")
-                .replace("\\n", "\n"),
+        Expression::new(
+            ExprEnum::StrLiteral(
+                val.iter()
+                    .collect::<String>()
+                    .replace("\\\\", "\\")
+                    .replace("\\n", "\n"),
+            ),
+            i,
         ),
     ))
 }
 
-pub(crate) fn array_literal(input: &str) -> IResult<&str, Expression> {
-    let (r, (mut val, last)) = delimited(
-        multispace0,
-        delimited(
-            tag("["),
-            pair(
-                many0(terminated(full_expression, tag(","))),
-                opt(full_expression),
-            ),
-            tag("]"),
-        ),
-        multispace0,
-    )(input)?;
+pub(crate) fn array_literal(i: Span) -> IResult<Span, Expression> {
+    let (r, _) = multispace0(i)?;
+    let (r, open_br) = tag("[")(r)?;
+    let (r, (mut val, last)) = pair(
+        many0(terminated(full_expression, tag(","))),
+        opt(full_expression),
+    )(r)?;
+    let (r, close_br) = tag("]")(r)?;
     if let Some(last) = last {
         val.push(last);
     }
-    Ok((r, Expression::ArrLiteral(val)))
+    let span = i.subslice(
+        i.offset(&open_br),
+        open_br.offset(&close_br) + close_br.len(),
+    );
+    Ok((r, Expression::new(ExprEnum::ArrLiteral(val), span)))
 }
 
 // We parse any expr surrounded by parens, ignoring all whitespaces around those
-fn parens(i: &str) -> IResult<&str, Expression> {
-    delimited(
-        multispace0,
-        delimited(tag("("), conditional_expr, tag(")")),
-        multispace0,
-    )(i)
+fn parens(i: Span) -> IResult<Span, Expression> {
+    let (r0, _) = multispace0(i)?;
+    let (r, res) = delimited(tag("("), conditional_expr, tag(")"))(r0)?;
+    let (r, _) = multispace0(r)?;
+    Ok((r, Expression::new(res.expr, r0.take(r0.offset(&r)))))
 }
 
-pub(crate) fn func_invoke(i: &str) -> IResult<&str, Expression> {
+pub(crate) fn func_invoke(i: Span) -> IResult<Span, Expression> {
     let (r, ident) = delimited(multispace0, identifier, multispace0)(i)?;
     // println!("func_invoke ident: {}", ident);
     let (r, args) = delimited(
@@ -579,10 +619,16 @@ pub(crate) fn func_invoke(i: &str) -> IResult<&str, Expression> {
         ),
         multispace0,
     )(r)?;
-    Ok((r, Expression::FnInvoke(ident, args)))
+    Ok((
+        r,
+        Expression::new(
+            ExprEnum::FnInvoke(*ident, args),
+            i.subslice(i.offset(&ident), ident.offset(&r)),
+        ),
+    ))
 }
 
-pub(crate) fn array_index(i: &str) -> IResult<&str, Expression> {
+pub(crate) fn array_index(i: Span) -> IResult<Span, Expression> {
     let (r, (prim, indices)) = pair(
         primary_expression,
         many1(delimited(
@@ -599,15 +645,16 @@ pub(crate) fn array_index(i: &str) -> IResult<&str, Expression> {
             multispace0,
         )),
     )(i)?;
+    let offset = r.fragment().as_ptr() as usize - i.fragment().as_ptr() as usize;
     Ok((
         r,
-        indices
-            .into_iter()
-            .fold(prim, |acc, v| Expression::ArrIndex(Box::new(acc), v)),
+        indices.into_iter().fold(prim, |acc, v| {
+            Expression::new(ExprEnum::ArrIndex(Box::new(acc), v), i.take(offset))
+        }),
     ))
 }
 
-pub(crate) fn primary_expression(i: &str) -> IResult<&str, Expression> {
+pub(crate) fn primary_expression(i: Span) -> IResult<Span, Expression> {
     alt((
         numeric_literal_expression,
         str_literal,
@@ -618,69 +665,81 @@ pub(crate) fn primary_expression(i: &str) -> IResult<&str, Expression> {
     ))(i)
 }
 
-fn postfix_expression(i: &str) -> IResult<&str, Expression> {
+fn postfix_expression(i: Span) -> IResult<Span, Expression> {
     alt((func_invoke, array_index, primary_expression))(i)
 }
 
-fn not(i: &str) -> IResult<&str, Expression> {
+fn not(i: Span) -> IResult<Span, Expression> {
     let (r, v) = preceded(delimited(multispace0, tag("!"), multispace0), not_factor)(i)?;
-    Ok((r, Expression::Not(Box::new(v))))
+    Ok((
+        r,
+        Expression::new(ExprEnum::Not(Box::new(v)), calc_offset(i, r)),
+    ))
 }
 
-fn not_factor(i: &str) -> IResult<&str, Expression> {
+fn not_factor(i: Span) -> IResult<Span, Expression> {
     alt((not, postfix_expression))(i)
 }
 
 // We read an initial factor and for each time we find
 // a * or / operator followed by another factor, we do
 // the math by folding everything
-fn term(i: &str) -> IResult<&str, Expression> {
-    let (i, init) = not_factor(i)?;
+fn term(i: Span) -> IResult<Span, Expression> {
+    let (r, init) = not_factor(i)?;
+    let ip = i.fragment().as_ptr() as usize;
 
     fold_many0(
         pair(alt((char('*'), char('/'))), not_factor),
-        init,
-        |acc, (op, val): (char, Expression)| {
+        move || init.clone(),
+        move |acc, (op, val): (char, Expression)| {
+            let accp = acc.span.fragment().as_ptr() as usize;
+            let valp = val.span.fragment().as_ptr() as usize + val.span.fragment().len();
+            let span = i.take_split(accp - ip).0.take(valp - accp);
             if op == '*' {
-                Expression::Mult(Box::new(acc), Box::new(val))
+                Expression::new(ExprEnum::Mult(Box::new(acc), Box::new(val)), span)
             } else {
-                Expression::Div(Box::new(acc), Box::new(val))
+                Expression::new(ExprEnum::Div(Box::new(acc), Box::new(val)), span)
             }
         },
-    )(i)
+    )(r)
 }
 
-pub(crate) fn expr(i: &str) -> IResult<&str, Expression> {
-    let (i, init) = term(i)?;
+pub(crate) fn expr(i: Span) -> IResult<Span, Expression> {
+    let (r, init) = term(i)?;
 
     fold_many0(
         pair(alt((char('+'), char('-'))), term),
-        init,
-        |acc, (op, val): (char, Expression)| {
+        move || init.clone(),
+        move |acc, (op, val): (char, Expression)| {
+            let span = i.subslice(
+                i.offset(&acc.span),
+                acc.span.offset(&val.span) + val.span.len(),
+            );
             if op == '+' {
-                Expression::Add(Box::new(acc), Box::new(val))
+                Expression::new(ExprEnum::Add(Box::new(acc), Box::new(val)), span)
             } else {
-                Expression::Sub(Box::new(acc), Box::new(val))
+                Expression::new(ExprEnum::Sub(Box::new(acc), Box::new(val)), span)
             }
         },
-    )(i)
+    )(r)
 }
 
-fn cmp(i: &str) -> IResult<&str, Expression> {
-    let (i, lhs) = expr(i)?;
+fn cmp(i: Span) -> IResult<Span, Expression> {
+    let (r, lhs) = expr(i)?;
 
-    let (i, (op, val)) = pair(alt((char('<'), char('>'))), expr)(i)?;
+    let (r, (op, val)) = pair(alt((char('<'), char('>'))), expr)(r)?;
+    let span = calc_offset(i, r);
     Ok((
-        i,
+        r,
         if op == '<' {
-            Expression::LT(Box::new(lhs), Box::new(val))
+            Expression::new(ExprEnum::LT(Box::new(lhs), Box::new(val)), span)
         } else {
-            Expression::GT(Box::new(lhs), Box::new(val))
+            Expression::new(ExprEnum::GT(Box::new(lhs), Box::new(val)), span)
         },
     ))
 }
 
-pub(crate) fn conditional(i: &str) -> IResult<&str, Expression> {
+pub(crate) fn conditional(i: Span) -> IResult<Span, Expression> {
     let (r, _) = delimited(multispace0, tag("if"), multispace0)(i)?;
     let (r, cond) = or_expr(r)?;
     let (r, true_branch) = delimited(
@@ -706,76 +765,97 @@ pub(crate) fn conditional(i: &str) -> IResult<&str, Expression> {
     ))(r)?;
     Ok((
         r,
-        Expression::Conditional(Box::new(cond), true_branch, false_branch),
+        Expression::new(
+            ExprEnum::Conditional(Box::new(cond), true_branch, false_branch),
+            calc_offset(i, r),
+        ),
     ))
 }
 
-pub(crate) fn var_assign(input: &str) -> IResult<&str, Expression> {
-    let (r, res) = tuple((cmp_expr, char('='), assign_expr))(input)?;
-    Ok((r, Expression::VarAssign(Box::new(res.0), Box::new(res.2))))
+pub(crate) fn var_assign(i: Span) -> IResult<Span, Expression> {
+    let (r, res) = tuple((cmp_expr, char('='), assign_expr))(i)?;
+    let span = calc_offset(i, r);
+    Ok((
+        r,
+        Expression::new(ExprEnum::VarAssign(Box::new(res.0), Box::new(res.2)), span),
+    ))
 }
 
-pub(crate) fn cmp_expr(i: &str) -> IResult<&str, Expression> {
+pub(crate) fn cmp_expr(i: Span) -> IResult<Span, Expression> {
     alt((cmp, expr))(i)
 }
 
-fn and(i: &str) -> IResult<&str, Expression> {
+fn and(i: Span) -> IResult<Span, Expression> {
     let (r, first) = cmp_expr(i)?;
     let (r, _) = delimited(multispace0, tag("&&"), multispace0)(r)?;
     let (r, second) = cmp_expr(r)?;
-    Ok((r, Expression::And(Box::new(first), Box::new(second))))
+    Ok((
+        r,
+        Expression::new(
+            ExprEnum::And(Box::new(first), Box::new(second)),
+            calc_offset(i, r),
+        ),
+    ))
 }
 
-fn and_expr(i: &str) -> IResult<&str, Expression> {
+fn and_expr(i: Span) -> IResult<Span, Expression> {
     alt((and, cmp_expr))(i)
 }
 
-fn or(i: &str) -> IResult<&str, Expression> {
+fn or(i: Span) -> IResult<Span, Expression> {
     let (r, first) = and_expr(i)?;
     let (r, _) = delimited(multispace0, tag("||"), multispace0)(r)?;
     let (r, second) = and_expr(r)?;
-    Ok((r, Expression::Or(Box::new(first), Box::new(second))))
+    Ok((
+        r,
+        Expression::new(
+            ExprEnum::Or(Box::new(first), Box::new(second)),
+            calc_offset(i, r),
+        ),
+    ))
 }
 
-fn or_expr(i: &str) -> IResult<&str, Expression> {
+fn or_expr(i: Span) -> IResult<Span, Expression> {
     alt((or, and_expr))(i)
 }
 
-fn assign_expr(i: &str) -> IResult<&str, Expression> {
+fn assign_expr(i: Span) -> IResult<Span, Expression> {
     alt((var_assign, or_expr))(i)
 }
 
-pub(crate) fn conditional_expr(i: &str) -> IResult<&str, Expression> {
+pub(crate) fn conditional_expr(i: Span) -> IResult<Span, Expression> {
     alt((conditional, assign_expr))(i)
 }
 
-fn brace_expr(input: &str) -> IResult<&str, Expression> {
-    let (r, v) = delimited(
-        delimited(multispace0, tag("{"), multispace0),
-        source,
-        delimited(multispace0, tag("}"), multispace0),
-    )(input)?;
-    Ok((r, Expression::Brace(v)))
+fn brace_expr(i: Span) -> IResult<Span, Expression> {
+    let (r, open_br) = delimited(multispace0, tag("{"), multispace0)(i)?;
+    let (r, v) = source(r)?;
+    let (r, close_br) = delimited(multispace0, tag("}"), multispace0)(r)?;
+    let span = i.subslice(
+        i.offset(&open_br),
+        open_br.offset(&close_br) + close_br.len(),
+    );
+    Ok((r, Expression::new(ExprEnum::Brace(v), span)))
 }
 
-pub(crate) fn full_expression(input: &str) -> IResult<&str, Expression> {
+pub(crate) fn full_expression(input: Span) -> IResult<Span, Expression> {
     conditional_expr(input)
 }
 
-fn expression_statement(input: &str) -> IResult<&str, Statement> {
+fn expression_statement(input: Span) -> IResult<Span, Statement> {
     let (r, val) = full_expression(input)?;
     Ok((r, Statement::Expression(val)))
 }
 
-pub(crate) fn func_arg(input: &str) -> IResult<&str, ArgDecl> {
+pub(crate) fn func_arg(input: Span) -> IResult<Span, ArgDecl> {
     let (r, v) = pair(
         identifier,
         opt(delimited(multispace0, type_spec, multispace0)),
     )(input)?;
-    Ok((r, ArgDecl(v.0, v.1.unwrap_or(TypeDecl::F64))))
+    Ok((r, ArgDecl(*v.0, v.1.unwrap_or(TypeDecl::F64))))
 }
 
-pub(crate) fn func_decl(input: &str) -> IResult<&str, Statement> {
+pub(crate) fn func_decl(input: Span) -> IResult<Span, Statement> {
     let (r, _) = multispace1(tag("fn")(multispace0(input)?.0)?.0)?;
     let (r, name) = identifier(r)?;
     let (r, args) = delimited(
@@ -803,7 +883,7 @@ pub(crate) fn func_decl(input: &str) -> IResult<&str, Statement> {
     Ok((
         r,
         Statement::FnDecl {
-            name,
+            name: *name,
             args,
             ret_type,
             stmts,
@@ -811,7 +891,7 @@ pub(crate) fn func_decl(input: &str) -> IResult<&str, Statement> {
     ))
 }
 
-fn loop_stmt(input: &str) -> IResult<&str, Statement> {
+fn loop_stmt(input: Span) -> IResult<Span, Statement> {
     let (r, _) = multispace0(tag("loop")(multispace0(input)?.0)?.0)?;
     let (r, stmts) = delimited(
         delimited(multispace0, tag("{"), multispace0),
@@ -821,7 +901,7 @@ fn loop_stmt(input: &str) -> IResult<&str, Statement> {
     Ok((r, Statement::Loop(stmts)))
 }
 
-fn while_stmt(input: &str) -> IResult<&str, Statement> {
+fn while_stmt(input: Span) -> IResult<Span, Statement> {
     let (r, _) = multispace0(tag("while")(multispace0(input)?.0)?.0)?;
     let (r, cond) = cmp_expr(r)?;
     let (r, stmts) = delimited(
@@ -832,7 +912,7 @@ fn while_stmt(input: &str) -> IResult<&str, Statement> {
     Ok((r, Statement::While(cond, stmts)))
 }
 
-fn for_stmt(input: &str) -> IResult<&str, Statement> {
+fn for_stmt(input: Span) -> IResult<Span, Statement> {
     let (r, _) = delimited(multispace0, tag("for"), multispace1)(input)?;
     let (r, iter) = identifier(r)?;
     let (r, _) = delimited(multispace0, tag("in"), multispace0)(r)?;
@@ -844,16 +924,16 @@ fn for_stmt(input: &str) -> IResult<&str, Statement> {
         source,
         delimited(multispace0, tag("}"), multispace0),
     )(r)?;
-    Ok((r, Statement::For(iter, from, to, stmts)))
+    Ok((r, Statement::For(*iter, from, to, stmts)))
 }
 
-fn break_stmt(input: &str) -> IResult<&str, Statement> {
+fn break_stmt(input: Span) -> IResult<Span, Statement> {
     let (r, _) = delimited(multispace0, tag("break"), multispace0)(input)?;
     Ok((r, Statement::Break))
 }
 
-fn general_statement<'a>(last: bool) -> impl Fn(&'a str) -> IResult<&'a str, Statement> {
-    let terminator = move |i| -> IResult<&str, ()> {
+fn general_statement<'a>(last: bool) -> impl Fn(Span<'a>) -> IResult<Span<'a>, Statement> {
+    let terminator = move |i| -> IResult<Span, ()> {
         let mut semicolon = pair(tag(";"), multispace0);
         if last {
             Ok((opt(semicolon)(i)?.0, ()))
@@ -861,7 +941,7 @@ fn general_statement<'a>(last: bool) -> impl Fn(&'a str) -> IResult<&'a str, Sta
             Ok((semicolon(i)?.0, ()))
         }
     };
-    move |input: &str| {
+    move |input: Span| {
         alt((
             var_decl,
             func_decl,
@@ -875,15 +955,15 @@ fn general_statement<'a>(last: bool) -> impl Fn(&'a str) -> IResult<&'a str, Sta
     }
 }
 
-pub(crate) fn last_statement(input: &str) -> IResult<&str, Statement> {
+pub(crate) fn last_statement(input: Span) -> IResult<Span, Statement> {
     general_statement(true)(input)
 }
 
-pub(crate) fn statement(input: &str) -> IResult<&str, Statement> {
+pub(crate) fn statement(input: Span) -> IResult<Span, Statement> {
     general_statement(false)(input)
 }
 
-pub fn source(input: &str) -> IResult<&str, Vec<Statement>> {
+pub fn source(input: Span) -> IResult<Span, Vec<Statement>> {
     let (r, mut v) = many0(statement)(input)?;
     let (r, last) = opt(last_statement)(r)?;
     let (r, _) = opt(multispace0)(r)?;
@@ -893,4 +973,9 @@ pub fn source(input: &str) -> IResult<&str, Vec<Statement>> {
     Ok((r, v))
 }
 
+pub fn span_source(input: &str) -> IResult<Span, Vec<Statement>> {
+    source(Span::new(input))
+}
+
+#[cfg(test)]
 mod test;

@@ -1,12 +1,39 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Display};
 
 use crate::{
     interpreter::{std_functions, FuncCode},
-    parser::{Expression, Statement},
-    FuncDef, TypeDecl, Value,
+    parser::{ExprEnum, Expression, Statement},
+    FuncDef, Span, TypeDecl, Value,
 };
 
-pub type TypeCheckError = String;
+pub struct TypeCheckError<'src> {
+    msg: String,
+    span: Span<'src>,
+    source_file: Option<&'src str>,
+}
+
+impl<'src> Display for TypeCheckError<'src> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}\n{}:{}:{}",
+            self.msg,
+            self.source_file.unwrap_or("<unknown>"),
+            self.span.location_line(),
+            self.span.get_utf8_column()
+        )
+    }
+}
+
+impl<'src> TypeCheckError<'src> {
+    fn new(msg: String, span: Span<'src>, source_file: Option<&'src str>) -> Self {
+        Self {
+            msg,
+            span,
+            source_file,
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct TypeCheckContext<'src, 'ast, 'native, 'ctx> {
@@ -15,14 +42,16 @@ pub struct TypeCheckContext<'src, 'ast, 'native, 'ctx> {
     /// Function names are owned strings because it can be either from source or native.
     functions: HashMap<String, FuncDef<'src, 'ast, 'native>>,
     super_context: Option<&'ctx TypeCheckContext<'src, 'ast, 'native, 'ctx>>,
+    source_file: Option<&'src str>,
 }
 
 impl<'src, 'ast, 'native, 'ctx> TypeCheckContext<'src, 'ast, 'native, 'ctx> {
-    pub fn new() -> Self {
+    pub fn new(source_file: Option<&'src str>) -> Self {
         Self {
             variables: HashMap::new(),
             functions: std_functions(),
             super_context: None,
+            source_file,
         }
     }
 
@@ -55,29 +84,38 @@ impl<'src, 'ast, 'native, 'ctx> TypeCheckContext<'src, 'ast, 'native, 'ctx> {
             variables: HashMap::new(),
             functions: HashMap::new(),
             super_context: Some(super_ctx),
+            source_file: super_ctx.source_file,
         }
     }
 }
 
-fn tc_expr<'a, 'b>(
-    e: &'b Expression<'a>,
-    ctx: &mut TypeCheckContext<'a, 'b, '_, '_>,
-) -> Result<TypeDecl, TypeCheckError> {
-    Ok(match e {
-        Expression::NumLiteral(val) => match val {
+fn tc_expr<'src, 'b>(
+    e: &'b Expression<'src>,
+    ctx: &mut TypeCheckContext<'src, 'b, '_, '_>,
+) -> Result<TypeDecl, TypeCheckError<'src>> {
+    Ok(match &e.expr {
+        ExprEnum::NumLiteral(val) => match val {
             Value::F64(_) | Value::F32(_) => TypeDecl::Float,
             Value::I64(_) | Value::I32(_) => TypeDecl::Integer,
-            _ => return Err("Numeric literal has a non-number value".to_string()),
+            _ => {
+                return Err(TypeCheckError::new(
+                    "Numeric literal has a non-number value".to_string(),
+                    e.span,
+                    ctx.source_file,
+                ))
+            }
         },
-        Expression::StrLiteral(_val) => TypeDecl::Str,
-        Expression::ArrLiteral(val) => {
+        ExprEnum::StrLiteral(_val) => TypeDecl::Str,
+        ExprEnum::ArrLiteral(val) => {
             if !val.is_empty() {
                 for (ex1, ex2) in val[..val.len() - 1].iter().zip(val[1..].iter()) {
                     let el1 = tc_expr(ex1, ctx)?;
                     let el2 = tc_expr(ex2, ctx)?;
                     if el1 != el2 {
-                        return Err(format!(
-                            "Types in an array is not homogeneous: {el1:?} and {el2:?}"
+                        return Err(TypeCheckError::new(
+                            format!("Types in an array is not homogeneous: {el1:?} and {el2:?}"),
+                            e.span,
+                            ctx.source_file,
                         ));
                     }
                 }
@@ -88,76 +126,100 @@ fn tc_expr<'a, 'b>(
                 .unwrap_or(Ok(TypeDecl::Any))?;
             TypeDecl::Array(Box::new(ty))
         }
-        Expression::Variable(str) => ctx
-            .get_var(str)
-            .ok_or_else(|| format!("Variable {} not found in scope", str))?,
-        Expression::VarAssign(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Assignment")?,
-        Expression::FnInvoke(str, args) => {
-            let args = args
+        ExprEnum::Variable(str) => ctx.get_var(str).ok_or_else(|| {
+            TypeCheckError::new(
+                format!("Variable {} not found in scope", str),
+                e.span,
+                ctx.source_file,
+            )
+        })?,
+        ExprEnum::VarAssign(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Assignment")?,
+        ExprEnum::FnInvoke(str, args) => {
+            let args_ty = args
                 .iter()
                 .map(|v| tc_expr(v, ctx))
                 .collect::<Result<Vec<_>, _>>()?;
-            let func = ctx
-                .get_fn(*str)
-                .ok_or_else(|| format!("function {} is not defined.", str))?;
+            let func = ctx.get_fn(*str).ok_or_else(|| {
+                TypeCheckError::new(
+                    format!("function {} is not defined", str),
+                    e.span,
+                    ctx.source_file,
+                )
+            })?;
             let args_decl = func.args();
-            for (arg, decl) in args.iter().zip(args_decl.iter()) {
-                let arg = arg;
-                tc_coerce_type(&arg, &decl.1)?;
+            for ((arg_ty, arg), decl) in args_ty.iter().zip(args.iter()).zip(args_decl.iter()) {
+                tc_coerce_type(&arg_ty, &decl.1, arg.span, ctx)?;
             }
             match func {
                 FuncDef::Code(code) => code.ret_type.clone().unwrap_or(TypeDecl::Any),
                 FuncDef::Native(native) => native.ret_type.clone().unwrap_or(TypeDecl::Any),
             }
         }
-        Expression::ArrIndex(ex, args) => {
-            let args = args
+        ExprEnum::ArrIndex(ex, args) => {
+            let arg_types = args
                 .iter()
                 .map(|v| tc_expr(v, ctx))
                 .collect::<Result<Vec<_>, _>>()?;
             let _arg0 = {
-                let v = args[0].clone();
-                if let TypeDecl::I64 = tc_coerce_type(&v, &TypeDecl::I64)? {
+                let v = arg_types[0].clone();
+                if let TypeDecl::I64 = tc_coerce_type(&v, &TypeDecl::I64, args[0].span, ctx)? {
                     v
                 } else {
-                    return Err("Subscript type should be integer types".to_string());
+                    return Err(TypeCheckError::new(
+                        "Subscript type should be integer types".to_string(),
+                        args.first().unwrap_or(e).span,
+                        ctx.source_file,
+                    ));
                 }
             };
             if let TypeDecl::Array(inner) = tc_expr(ex, ctx)? {
                 *inner.clone()
             } else {
-                return Err("Subscript operator's first operand is not an array".to_string());
+                return Err(TypeCheckError::new(
+                    "Subscript operator's first operand is not an array".to_string(),
+                    ex.span,
+                    ctx.source_file,
+                ));
             }
         }
-        Expression::Not(val) => tc_expr(val, ctx)?,
-        Expression::Add(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Add")?,
-        Expression::Sub(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Sub")?,
-        Expression::Mult(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Mult")?,
-        Expression::Div(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Div")?,
-        Expression::LT(lhs, rhs) => binary_cmp(&lhs, &rhs, ctx, "LT")?,
-        Expression::GT(lhs, rhs) => binary_cmp(&lhs, &rhs, ctx, "GT")?,
-        Expression::And(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "And")?,
-        Expression::Or(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Or")?,
-        Expression::Conditional(cond, true_branch, false_branch) => {
-            tc_coerce_type(&tc_expr(cond, ctx)?, &TypeDecl::I32)?;
+        ExprEnum::Not(val) => tc_expr(val, ctx)?,
+        ExprEnum::Add(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Add")?,
+        ExprEnum::Sub(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Sub")?,
+        ExprEnum::Mult(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Mult")?,
+        ExprEnum::Div(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Div")?,
+        ExprEnum::LT(lhs, rhs) => binary_cmp(&lhs, &rhs, ctx, "LT")?,
+        ExprEnum::GT(lhs, rhs) => binary_cmp(&lhs, &rhs, ctx, "GT")?,
+        ExprEnum::And(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "And")?,
+        ExprEnum::Or(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Or")?,
+        ExprEnum::Conditional(cond, true_branch, false_branch) => {
+            tc_coerce_type(&tc_expr(cond, ctx)?, &TypeDecl::I32, cond.span, ctx)?;
             let true_type = type_check(true_branch, ctx)?;
             if let Some(false_type) = false_branch {
                 let false_type = type_check(false_type, ctx)?;
                 binary_op_type(&true_type, &false_type).map_err(|_| {
-                    format!("Conditional expression doesn't have the compatible types in true and false branch: {:?} and {:?}", true_type, false_type)
+                    TypeCheckError::new(
+                        format!("Conditional expression doesn't have the compatible types in true and false branch: {:?} and {:?}", true_type, false_type),
+                        e.span,
+                        ctx.source_file
+                    )
                 })?
             } else {
                 true_type
             }
         }
-        Expression::Brace(stmts) => {
+        ExprEnum::Brace(stmts) => {
             let mut subctx = TypeCheckContext::push_stack(ctx);
             type_check(stmts, &mut subctx)?
         }
     })
 }
 
-fn tc_coerce_type(value: &TypeDecl, target: &TypeDecl) -> Result<TypeDecl, TypeCheckError> {
+fn tc_coerce_type<'src>(
+    value: &TypeDecl,
+    target: &TypeDecl,
+    span: Span<'src>,
+    ctx: &TypeCheckContext<'src, '_, '_, '_>,
+) -> Result<TypeDecl, TypeCheckError<'src>> {
     use TypeDecl::*;
     Ok(match (value, target) {
         (_, Any) => value.clone(),
@@ -167,13 +229,19 @@ fn tc_coerce_type(value: &TypeDecl, target: &TypeDecl) -> Result<TypeDecl, TypeC
         (I64 | Integer, I64) => I64,
         (I32 | Integer, I32) => I32,
         (Str, Str) => Str,
-        (Array(v_inner), Array(t_inner)) => Array(Box::new(tc_coerce_type(v_inner, t_inner)?)),
+        (Array(v_inner), Array(t_inner)) => {
+            Array(Box::new(tc_coerce_type(v_inner, t_inner, span, ctx)?))
+        }
         (Float, Float) => Float,
         (Integer, Integer) => Integer,
         _ => {
-            return Err(format!(
-                "Type check error! {:?} cannot be assigned to {:?}",
-                value, target
+            return Err(TypeCheckError::new(
+                format!(
+                    "Type check error! {:?} cannot be assigned to {:?}",
+                    value, target
+                ),
+                span,
+                ctx.source_file,
             ))
         }
     })
@@ -182,18 +250,18 @@ fn tc_coerce_type(value: &TypeDecl, target: &TypeDecl) -> Result<TypeDecl, TypeC
 pub fn type_check<'src, 'ast>(
     stmts: &'ast Vec<Statement<'src>>,
     ctx: &mut TypeCheckContext<'src, 'ast, '_, '_>,
-) -> Result<TypeDecl, TypeCheckError> {
+) -> Result<TypeDecl, TypeCheckError<'src>> {
     let mut res = TypeDecl::Any;
     for stmt in stmts {
         match stmt {
             Statement::VarDecl(var, type_, initializer) => {
-                let init_val = if let Some(init_expr) = initializer {
-                    tc_expr(init_expr, ctx)?
+                let init_type = if let Some(init_expr) = initializer {
+                    let init_type = tc_expr(init_expr, ctx)?;
+                    tc_coerce_type(&init_type, type_, init_expr.span, ctx)?
                 } else {
-                    TypeDecl::Any
+                    type_.clone()
                 };
-                let init_val = tc_coerce_type(&init_val, type_)?;
-                ctx.variables.insert(*var, init_val);
+                ctx.variables.insert(*var, init_type);
             }
             Statement::FnDecl {
                 name,
@@ -208,11 +276,13 @@ pub fn type_check<'src, 'ast>(
                 );
                 let mut subctx = TypeCheckContext::push_stack(ctx);
                 for arg in args.iter() {
-                    subctx.variables.insert(arg.0.clone(), arg.1.clone());
+                    subctx.variables.insert(arg.0, arg.1.clone());
                 }
                 let last_stmt = type_check(stmts, &mut subctx)?;
-                if let Some(ret_type) = ret_type {
-                    tc_coerce_type(&last_stmt, ret_type)?;
+                if let Some((ret_type, Statement::Expression(ret_expr))) =
+                    ret_type.as_ref().zip(stmts.last())
+                {
+                    tc_coerce_type(&last_stmt, &ret_type, ret_expr.span, ctx)?;
                 }
             }
             Statement::Expression(e) => {
@@ -222,13 +292,20 @@ pub fn type_check<'src, 'ast>(
                 res = type_check(e, ctx)?;
             }
             Statement::While(cond, e) => {
-                tc_coerce_type(&tc_expr(cond, ctx)?, &TypeDecl::I32)
-                    .map_err(|e| format!("Type error in condition: {e}"))?;
+                tc_coerce_type(&tc_expr(cond, ctx)?, &TypeDecl::I32, cond.span, ctx).map_err(
+                    |e| {
+                        TypeCheckError::new(
+                            format!("Type error in condition: {e}"),
+                            cond.span,
+                            ctx.source_file,
+                        )
+                    },
+                )?;
                 res = type_check(e, ctx)?;
             }
             Statement::For(iter, from, to, e) => {
-                tc_coerce_type(&tc_expr(from, ctx)?, &TypeDecl::I64)?;
-                tc_coerce_type(&tc_expr(to, ctx)?, &TypeDecl::I64)?;
+                tc_coerce_type(&tc_expr(from, ctx)?, &TypeDecl::I64, from.span, ctx)?;
+                tc_coerce_type(&tc_expr(to, ctx)?, &TypeDecl::I64, to.span, ctx)?;
                 ctx.variables.insert(iter, TypeDecl::I64);
                 res = type_check(e, ctx)?;
             }
@@ -247,13 +324,17 @@ fn binary_op_gen<'src, 'ast>(
     ctx: &mut TypeCheckContext<'src, 'ast, '_, '_>,
     op: &str,
     mut f: impl FnMut(&TypeDecl, &TypeDecl) -> Result<TypeDecl, ()>,
-) -> Result<TypeDecl, TypeCheckError> {
-    let lhs = tc_expr(lhs, ctx)?;
-    let rhs = tc_expr(rhs, ctx)?;
-    f(&lhs, &rhs).map_err(|()| {
-        format!(
-            "Operation {op} between incompatible type: {:?} and {:?}",
-            lhs, rhs
+) -> Result<TypeDecl, TypeCheckError<'src>> {
+    let lhst = tc_expr(lhs, ctx)?;
+    let rhst = tc_expr(rhs, ctx)?;
+    f(&lhst, &rhst).map_err(|()| {
+        TypeCheckError::new(
+            format!(
+                "Operation {op} between incompatible type: {:?} and {:?}",
+                lhst, rhst,
+            ),
+            lhs.span,
+            ctx.source_file,
         )
     })
 }
@@ -263,7 +344,7 @@ fn binary_op<'src, 'ast>(
     rhs: &'ast Expression<'src>,
     ctx: &mut TypeCheckContext<'src, 'ast, '_, '_>,
     op: &str,
-) -> Result<TypeDecl, TypeCheckError> {
+) -> Result<TypeDecl, TypeCheckError<'src>> {
     binary_op_gen(lhs, rhs, ctx, op, binary_op_type)
 }
 
@@ -284,7 +365,7 @@ fn binary_op_type(lhs: &TypeDecl, rhs: &TypeDecl) -> Result<TypeDecl, ()> {
         (TypeDecl::Integer, TypeDecl::I64) | (TypeDecl::I64, TypeDecl::Integer) => TypeDecl::I64,
         (TypeDecl::Integer, TypeDecl::I32) | (TypeDecl::I32, TypeDecl::Integer) => TypeDecl::I32,
         (TypeDecl::Array(lhs), TypeDecl::Array(rhs)) => {
-            return binary_op_type(lhs, rhs);
+            return Ok(TypeDecl::Array(Box::new(binary_op_type(lhs, rhs)?)));
         }
         _ => return Err(()),
     };
@@ -296,7 +377,7 @@ fn binary_cmp<'src, 'ast>(
     rhs: &'ast Expression<'src>,
     ctx: &mut TypeCheckContext<'src, 'ast, '_, '_>,
     op: &str,
-) -> Result<TypeDecl, TypeCheckError> {
+) -> Result<TypeDecl, TypeCheckError<'src>> {
     binary_op_gen(lhs, rhs, ctx, op, binary_cmp_type)
 }
 

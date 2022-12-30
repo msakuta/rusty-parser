@@ -144,13 +144,12 @@ macro_rules! wasm_functions {
 
 #[wasm_bindgen]
 pub fn type_check(src: &str) -> Result<JsValue, JsValue> {
-    let mut ctx = TypeCheckContext::new();
+    let mut ctx = TypeCheckContext::new(None);
     wasm_functions!(ctx);
     let parse_result = source(src)
-        .finish()
         .map_err(|e| JsValue::from_str(&format!("Parse error: {:?}", e)))?;
     parser::type_check(&parse_result.1, &mut ctx)
-        .map_err(|e| JsValue::from_str(&format!("Error on execution: {:?}", e)))?;
+        .map_err(|e| JsValue::from_str(&format!("Error on type check: {}", e)))?;
     Ok(JsValue::from_str("Ok"))
 }
 
@@ -159,7 +158,6 @@ pub fn run_script(src: &str) -> Result<(), JsValue> {
     let mut ctx = EvalContext::new();
     wasm_functions!(ctx);
     let parse_result = source(src)
-        .finish()
         .map_err(|e| JsValue::from_str(&format!("Parse error: {:?}", e)))?;
     if 0 < parse_result.0.len() {
         return Err(JsValue::from_str(&format!(
@@ -175,7 +173,6 @@ pub fn run_script(src: &str) -> Result<(), JsValue> {
 #[wasm_bindgen]
 pub fn parse_ast(src: &str) -> Result<String, JsValue> {
     let parse_result = source(src)
-        .finish()
         .map_err(|e| JsValue::from_str(&format!("Parse error: {:?}", e)))?;
     Ok(format!("{:#?}", parse_result.1))
 }
@@ -183,7 +180,6 @@ pub fn parse_ast(src: &str) -> Result<String, JsValue> {
 #[wasm_bindgen]
 pub fn compile(src: &str) -> Result<Vec<u8>, JsValue> {
     let parse_result = source(src)
-        .finish()
         .map_err(|e| JsValue::from_str(&format!("Parse error: {:?}", e)))?;
     let bytecode = parser::compile(&parse_result.1)
         .map_err(|e| JsValue::from_str(&format!("Error on execution: {:?}", e)))?;
@@ -197,7 +193,6 @@ pub fn compile(src: &str) -> Result<Vec<u8>, JsValue> {
 #[wasm_bindgen]
 pub fn compile_and_run(src: &str) -> Result<(), JsValue> {
     let parse_result = source(src)
-        .finish()
         .map_err(|e| JsValue::from_str(&format!("Parse error: {:?}", e)))?;
     let mut bytecode = parser::compile(&parse_result.1)
         .map_err(|e| JsValue::from_str(&format!("Error on execution: {:?}", e)))?;
