@@ -792,5 +792,5 @@ pub fn run<'src, 'ast>(
     Ok(res)
 }
 
-// #[cfg(test)]
-// mod test;
+#[cfg(test)]
+mod test;

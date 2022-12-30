@@ -434,7 +434,7 @@ fn calc_offset<'a>(i: Span<'a>, r: Span<'a>) -> Span<'a> {
 }
 
 /// An extension trait for writing subslice concisely
-trait Subslice {
+pub(super) trait Subslice {
     fn subslice(&self, start: usize, length: usize) -> Self;
 }
 
@@ -577,23 +577,22 @@ fn str_literal(i: Span) -> IResult<Span, Expression> {
     ))
 }
 
-pub(crate) fn array_literal(input: Span) -> IResult<Span, Expression> {
-    let (r, (mut val, last)) = delimited(
-        multispace0,
-        delimited(
-            tag("["),
-            pair(
-                many0(terminated(full_expression, tag(","))),
-                opt(full_expression),
-            ),
-            tag("]"),
-        ),
-        multispace0,
-    )(input)?;
+pub(crate) fn array_literal(i: Span) -> IResult<Span, Expression> {
+    let (r, _) = multispace0(i)?;
+    let (r, open_br) = tag("[")(r)?;
+    let (r, (mut val, last)) = pair(
+        many0(terminated(full_expression, tag(","))),
+        opt(full_expression),
+    )(r)?;
+    let (r, close_br) = tag("]")(r)?;
     if let Some(last) = last {
         val.push(last);
     }
-    Ok((r, Expression::new(ExprEnum::ArrLiteral(val), input)))
+    let span = i.subslice(
+        i.offset(&open_br),
+        open_br.offset(&close_br) + close_br.len(),
+    );
+    Ok((r, Expression::new(ExprEnum::ArrLiteral(val), span)))
 }
 
 // We parse any expr surrounded by parens, ignoring all whitespaces around those
@@ -620,7 +619,13 @@ pub(crate) fn func_invoke(i: Span) -> IResult<Span, Expression> {
         ),
         multispace0,
     )(r)?;
-    Ok((r, Expression::new(ExprEnum::FnInvoke(*ident, args), ident)))
+    Ok((
+        r,
+        Expression::new(
+            ExprEnum::FnInvoke(*ident, args),
+            i.subslice(i.offset(&ident), ident.offset(&r)),
+        ),
+    ))
 }
 
 pub(crate) fn array_index(i: Span) -> IResult<Span, Expression> {
@@ -823,13 +828,14 @@ pub(crate) fn conditional_expr(i: Span) -> IResult<Span, Expression> {
 }
 
 fn brace_expr(i: Span) -> IResult<Span, Expression> {
-    let (r, v) = delimited(
-        delimited(multispace0, tag("{"), multispace0),
-        source,
-        delimited(multispace0, tag("}"), multispace0),
-    )(i)?;
-    let offset = r.fragment().as_ptr() as usize - (*i).as_ptr() as usize;
-    Ok((r, Expression::new(ExprEnum::Brace(v), i.take(offset))))
+    let (r, open_br) = delimited(multispace0, tag("{"), multispace0)(i)?;
+    let (r, v) = source(r)?;
+    let (r, close_br) = delimited(multispace0, tag("}"), multispace0)(r)?;
+    let span = i.subslice(
+        i.offset(&open_br),
+        open_br.offset(&close_br) + close_br.len(),
+    );
+    Ok((r, Expression::new(ExprEnum::Brace(v), span)))
 }
 
 pub(crate) fn full_expression(input: Span) -> IResult<Span, Expression> {
