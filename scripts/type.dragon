@@ -4,12 +4,13 @@ var l: i64 = 1000;
 var i: i32 = 100;
 
 print(type(d));
-print(d + f);
+print(d + 123.);
 print(f + f);
-print(l + i);
-print(i + i);
+print(l + 123);
+print(i + 123);
 
-i = l = 0.5;
+i = 0;
+l = 0;
 
 print("i", i);
 print("l", l);
@@ -19,10 +20,10 @@ fn coerce_i64(a: i64) {
     a
 }
 
-print(coerce_i64(123.45));
+print(coerce_i64(123));
 
 fn coerce_f64(a: f64) {
     a
 }
 
-print(type(coerce_f64(123)));
+print(type(coerce_f64(123.23)));

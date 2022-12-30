@@ -1,8 +1,8 @@
 
-fn square(x) {
+fn square(x: i32) {
     x * x;
 }
 
-square(10);
-square(100);
-square(square(10));
+print(square(10));
+print(square(100));
+print(square(square(10)));

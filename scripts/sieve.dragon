@@ -5,9 +5,9 @@ for i in 0 .. n {
     push(array, 1);
 }
 
-fn sieve(array: [i32], prime: i32) {
+fn sieve(array: [i32], prime: i64) {
     var i = 2;
-    print(prime, type(prime));
+    /*print(prime, type(prime));*/
     while prime * i < n {
         array[prime * i] = 0;
         i = i + 1;
@@ -15,7 +15,7 @@ fn sieve(array: [i32], prime: i32) {
     array
 }
 
-var nextPrime: i32 = 2;
+var nextPrime: i64 = 2;
 print(array[nextPrime]);
 
 while nextPrime < n {
@@ -24,7 +24,7 @@ while nextPrime < n {
     };
 
     nextPrime = nextPrime + 1;
-    print(nextPrime);
+    /*print(nextPrime);*/
 }
 
 for i in 1 .. n {

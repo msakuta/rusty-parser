@@ -228,7 +228,6 @@ pub(crate) fn eval<'a, 'b>(
                 RunResult::Yield(Value::ArrayRef(rc, idx)) => {
                     if let Some(mref) = rc.borrow_mut().values.get_mut(idx) {
                         let rhs_value = unwrap_run!(eval(rhs, ctx)?);
-                        eprintln!("Assigning {rhs_value:?} to {mref:?}");
                         *mref = rhs_value.clone();
                         rhs_value
                     } else {
