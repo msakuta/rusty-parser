@@ -686,15 +686,15 @@ fn not_factor(i: Span) -> IResult<Span, Expression> {
 // the math by folding everything
 fn term(i: Span) -> IResult<Span, Expression> {
     let (r, init) = not_factor(i)?;
-    let ip = i.fragment().as_ptr() as usize;
 
     fold_many0(
         pair(alt((char('*'), char('/'))), not_factor),
         move || init.clone(),
         move |acc, (op, val): (char, Expression)| {
-            let accp = acc.span.fragment().as_ptr() as usize;
-            let valp = val.span.fragment().as_ptr() as usize + val.span.fragment().len();
-            let span = i.take_split(accp - ip).0.take(valp - accp);
+            let span = i.subslice(
+                i.offset(&acc.span),
+                acc.span.offset(&val.span) + val.span.len(),
+            );
             if op == '*' {
                 Expression::new(ExprEnum::Mult(Box::new(acc), Box::new(val)), span)
             } else {
