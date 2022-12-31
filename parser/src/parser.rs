@@ -750,7 +750,7 @@ fn cmp(i: Span) -> IResult<Span, Expression> {
 
 pub(crate) fn conditional(i: Span) -> IResult<Span, Expression> {
     let (r, _) = delimited(multispace0, tag("if"), multispace0)(i)?;
-    let (r, cond) = or_expr(r)?;
+    let (r, cond) = or(r)?;
     let (r, true_branch) = delimited(
         delimited(multispace0, tag("{"), multispace0),
         source,
@@ -832,41 +832,15 @@ fn bit_or(i: Span) -> IResult<Span, Expression> {
 }
 
 fn and(i: Span) -> IResult<Span, Expression> {
-    let (r, first) = bit_or(i)?;
-    let (r, _) = delimited(multispace0, tag("&&"), multispace0)(r)?;
-    let (r, second) = bit_or(r)?;
-    Ok((
-        r,
-        Expression::new(
-            ExprEnum::And(Box::new(first), Box::new(second)),
-            calc_offset(i, r),
-        ),
-    ))
-}
-
-fn and_expr(i: Span) -> IResult<Span, Expression> {
-    alt((and, bit_or))(i)
+    bin_op("&&", bit_or, |lhs, rhs| ExprEnum::And(lhs, rhs))(i)
 }
 
 fn or(i: Span) -> IResult<Span, Expression> {
-    let (r, first) = and_expr(i)?;
-    let (r, _) = delimited(multispace0, tag("||"), multispace0)(r)?;
-    let (r, second) = and_expr(r)?;
-    Ok((
-        r,
-        Expression::new(
-            ExprEnum::Or(Box::new(first), Box::new(second)),
-            calc_offset(i, r),
-        ),
-    ))
-}
-
-fn or_expr(i: Span) -> IResult<Span, Expression> {
-    alt((or, and_expr))(i)
+    bin_op("||", and, |lhs, rhs| ExprEnum::Or(lhs, rhs))(i)
 }
 
 fn assign_expr(i: Span) -> IResult<Span, Expression> {
-    alt((var_assign, or_expr))(i)
+    alt((var_assign, or))(i)
 }
 
 pub(crate) fn conditional_expr(i: Span) -> IResult<Span, Expression> {

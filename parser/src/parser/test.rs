@@ -565,7 +565,7 @@ fn test_bit_or_arg() {
 fn test_or_expr() {
     let span = Span::new("a < 100");
     assert_eq!(
-        or_expr(span).finish().unwrap().1,
+        or(span).finish().unwrap().1,
         Expression::new(
             LT(
                 Box::new(Expression::new(Variable("a"), span.take(1))),
