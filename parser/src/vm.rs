@@ -157,7 +157,7 @@ fn interpret_fn(
                 let result = binary_op_str(
                     &vm.get(inst.arg0),
                     &vm.get(inst.arg1),
-                    |lhs, rhs| lhs + rhs,
+                    |lhs, rhs| Ok(lhs + rhs),
                     |lhs, rhs| lhs + rhs,
                     |lhs: &str, rhs: &str| Ok(lhs.to_string() + rhs),
                 )?;

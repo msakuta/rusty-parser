@@ -36,7 +36,7 @@ macro_rules! unwrap_run {
 pub(crate) fn binary_op_str(
     lhs: &Value,
     rhs: &Value,
-    d: impl Fn(f64, f64) -> f64,
+    d: impl Fn(f64, f64) -> Result<f64, EvalError>,
     i: impl Fn(i64, i64) -> i64,
     s: impl Fn(&str, &str) -> Result<String, EvalError>,
 ) -> Result<Value, EvalError> {
@@ -50,10 +50,10 @@ pub(crate) fn binary_op_str(
         (ref lhs, Value::ArrayRef(rhs, idx)) => {
             binary_op_str(lhs, &rhs.borrow().values.get(*idx).unwrap(), d, i, s)?
         }
-        (Value::F64(lhs), rhs) => Value::F64(d(*lhs, coerce_f64(&rhs)?)),
-        (lhs, Value::F64(rhs)) => Value::F64(d(coerce_f64(&lhs)?, *rhs)),
-        (Value::F32(lhs), rhs) => Value::F32(d(*lhs as f64, coerce_f64(&rhs)?) as f32),
-        (lhs, Value::F32(rhs)) => Value::F32(d(coerce_f64(&lhs)?, *rhs as f64) as f32),
+        (Value::F64(lhs), rhs) => Value::F64(d(*lhs, coerce_f64(&rhs)?)?),
+        (lhs, Value::F64(rhs)) => Value::F64(d(coerce_f64(&lhs)?, *rhs)?),
+        (Value::F32(lhs), rhs) => Value::F32(d(*lhs as f64, coerce_f64(&rhs)?)? as f32),
+        (lhs, Value::F32(rhs)) => Value::F32(d(coerce_f64(&lhs)?, *rhs as f64)? as f32),
         (Value::I64(lhs), Value::I64(rhs)) => Value::I64(i(*lhs, *rhs)),
         (Value::I64(lhs), Value::I32(rhs)) => Value::I64(i(*lhs, *rhs as i64)),
         (Value::I32(lhs), Value::I64(rhs)) => Value::I64(i(*lhs as i64, *rhs)),
@@ -74,9 +74,27 @@ pub(crate) fn binary_op(
     d: impl Fn(f64, f64) -> f64,
     i: impl Fn(i64, i64) -> i64,
 ) -> Result<Value, EvalError> {
-    binary_op_str(lhs, rhs, d, i, |_lhs, _rhs| {
-        Err("This operator is not supported for strings".to_string())
-    })
+    binary_op_str(
+        lhs,
+        rhs,
+        |lhs, rhs| Ok(d(lhs, rhs)),
+        i,
+        |_lhs, _rhs| Err("This operator is not supported for strings".to_string()),
+    )
+}
+
+pub(crate) fn binary_op_int(
+    lhs: &Value,
+    rhs: &Value,
+    i: impl Fn(i64, i64) -> i64,
+) -> Result<Value, EvalError> {
+    binary_op_str(
+        lhs,
+        rhs,
+        |_lhs, _rhs| Err("This operator is not supported for double".to_string()),
+        i,
+        |_lhs, _rhs| Err("This operator is not supported for strings".to_string()),
+    )
 }
 
 pub(crate) fn truthy(a: &Value) -> bool {
@@ -316,7 +334,7 @@ pub(crate) fn eval<'a, 'b>(
             let res = RunResult::Yield(binary_op_str(
                 &unwrap_run!(eval(lhs, ctx)?),
                 &unwrap_run!(eval(rhs, ctx)?),
-                |lhs, rhs| lhs + rhs,
+                |lhs, rhs| Ok(lhs + rhs),
                 |lhs, rhs| lhs + rhs,
                 |lhs: &str, rhs: &str| Ok(lhs.to_string() + rhs),
             )?);
@@ -351,6 +369,21 @@ pub(crate) fn eval<'a, 'b>(
             &unwrap_run!(eval(rhs, ctx)?),
             |lhs, rhs| if lhs > rhs { 1. } else { 0. },
             |lhs, rhs| if lhs > rhs { 1 } else { 0 },
+        )?),
+        ExprEnum::BitAnd(lhs, rhs) => RunResult::Yield(binary_op_int(
+            &unwrap_run!(eval(lhs, ctx)?),
+            &unwrap_run!(eval(rhs, ctx)?),
+            |lhs, rhs| lhs & rhs,
+        )?),
+        ExprEnum::BitXor(lhs, rhs) => RunResult::Yield(binary_op_int(
+            &unwrap_run!(eval(lhs, ctx)?),
+            &unwrap_run!(eval(rhs, ctx)?),
+            |lhs, rhs| lhs ^ rhs,
+        )?),
+        ExprEnum::BitOr(lhs, rhs) => RunResult::Yield(binary_op_int(
+            &unwrap_run!(eval(lhs, ctx)?),
+            &unwrap_run!(eval(rhs, ctx)?),
+            |lhs, rhs| lhs | rhs,
         )?),
         ExprEnum::And(lhs, rhs) => RunResult::Yield(Value::I32(
             if truthy(&unwrap_run!(eval(lhs, ctx)?)) && truthy(&unwrap_run!(eval(rhs, ctx)?)) {

@@ -654,6 +654,9 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
             compiler.bytecode.push_inst(OpCode::Not, val as u8, 0);
             Ok(val)
         }
+        ExprEnum::BitAnd(lhs, rhs) => todo!(), //Ok(emit_binary_op(compiler, OpCode::And, lhs, rhs)),
+        ExprEnum::BitXor(lhs, rhs) => todo!(),
+        ExprEnum::BitOr(lhs, rhs) => todo!(),
         ExprEnum::And(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::And, lhs, rhs)),
         ExprEnum::Or(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Or, lhs, rhs)),
         ExprEnum::Conditional(cond, true_branch, false_branch) => {

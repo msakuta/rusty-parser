@@ -400,6 +400,9 @@ pub(crate) enum ExprEnum<'a> {
     Div(Box<Expression<'a>>, Box<Expression<'a>>),
     LT(Box<Expression<'a>>, Box<Expression<'a>>),
     GT(Box<Expression<'a>>, Box<Expression<'a>>),
+    BitAnd(Box<Expression<'a>>, Box<Expression<'a>>),
+    BitXor(Box<Expression<'a>>, Box<Expression<'a>>),
+    BitOr(Box<Expression<'a>>, Box<Expression<'a>>),
     And(Box<Expression<'a>>, Box<Expression<'a>>),
     Or(Box<Expression<'a>>, Box<Expression<'a>>),
     Conditional(
@@ -612,7 +615,7 @@ pub(crate) fn func_invoke(i: Span) -> IResult<Span, Expression> {
             tag("("),
             many0(delimited(
                 multispace0,
-                expr,
+                full_expression,
                 delimited(multispace0, opt(tag(",")), multispace0),
             )),
             tag(")"),
@@ -785,10 +788,47 @@ pub(crate) fn cmp_expr(i: Span) -> IResult<Span, Expression> {
     alt((cmp, expr))(i)
 }
 
+/// A functor to create a function for a binary operator
+fn bin_op<'src>(
+    t: &'static str,
+    sub: impl Fn(Span<'src>) -> IResult<Span<'src>, Expression<'src>>,
+    cons: impl Fn(Box<Expression<'src>>, Box<Expression<'src>>) -> ExprEnum<'src>,
+) -> impl Fn(Span<'src>) -> IResult<Span<'src>, Expression<'src>> {
+    move |i| {
+        let sub = &sub;
+        let cons = &cons;
+        let (r, init) = sub.clone()(i)?;
+
+        fold_many0(
+            pair(delimited(multispace0, tag(t), multispace0), sub),
+            move || init.clone(),
+            move |acc: Expression, (_, val): (Span, Expression)| {
+                let span = i.subslice(
+                    i.offset(&acc.span),
+                    acc.span.offset(&val.span) + val.span.len(),
+                );
+                Expression::new(cons(Box::new(acc), Box::new(val)), span)
+            },
+        )(r)
+    }
+}
+
+fn bit_and(i: Span) -> IResult<Span, Expression> {
+    bin_op("&", cmp_expr, |lhs, rhs| ExprEnum::BitAnd(lhs, rhs))(i)
+}
+
+fn bit_xor(i: Span) -> IResult<Span, Expression> {
+    bin_op("^", bit_and, |lhs, rhs| ExprEnum::BitXor(lhs, rhs))(i)
+}
+
+fn bit_or(i: Span) -> IResult<Span, Expression> {
+    bin_op("|", bit_xor, |lhs, rhs| ExprEnum::BitOr(lhs, rhs))(i)
+}
+
 fn and(i: Span) -> IResult<Span, Expression> {
-    let (r, first) = cmp_expr(i)?;
+    let (r, first) = bit_or(i)?;
     let (r, _) = delimited(multispace0, tag("&&"), multispace0)(r)?;
-    let (r, second) = cmp_expr(r)?;
+    let (r, second) = bit_or(r)?;
     Ok((
         r,
         Expression::new(
@@ -799,7 +839,7 @@ fn and(i: Span) -> IResult<Span, Expression> {
 }
 
 fn and_expr(i: Span) -> IResult<Span, Expression> {
-    alt((and, cmp_expr))(i)
+    alt((and, bit_or))(i)
 }
 
 fn or(i: Span) -> IResult<Span, Expression> {

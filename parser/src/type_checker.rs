@@ -189,6 +189,9 @@ fn tc_expr<'src, 'b>(
         ExprEnum::Div(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Div")?,
         ExprEnum::LT(lhs, rhs) => binary_cmp(&lhs, &rhs, ctx, "LT")?,
         ExprEnum::GT(lhs, rhs) => binary_cmp(&lhs, &rhs, ctx, "GT")?,
+        ExprEnum::BitAnd(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "BitAnd")?,
+        ExprEnum::BitXor(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "BitXor")?,
+        ExprEnum::BitOr(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "BitOr")?,
         ExprEnum::And(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "And")?,
         ExprEnum::Or(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Or")?,
         ExprEnum::Conditional(cond, true_branch, false_branch) => {
