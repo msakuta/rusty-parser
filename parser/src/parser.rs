@@ -394,6 +394,7 @@ pub(crate) enum ExprEnum<'a> {
     FnInvoke(&'a str, Vec<Expression<'a>>),
     ArrIndex(Box<Expression<'a>>, Vec<Expression<'a>>),
     Not(Box<Expression<'a>>),
+    BitNot(Box<Expression<'a>>),
     Add(Box<Expression<'a>>, Box<Expression<'a>>),
     Sub(Box<Expression<'a>>, Box<Expression<'a>>),
     Mult(Box<Expression<'a>>, Box<Expression<'a>>),
@@ -673,10 +674,15 @@ fn postfix_expression(i: Span) -> IResult<Span, Expression> {
 }
 
 fn not(i: Span) -> IResult<Span, Expression> {
-    let (r, v) = preceded(delimited(multispace0, tag("!"), multispace0), not_factor)(i)?;
+    let (r, op) = delimited(multispace0, alt((char('!'), char('~'))), multispace0)(i)?;
+    let (r, v) = not_factor(r)?;
     Ok((
         r,
-        Expression::new(ExprEnum::Not(Box::new(v)), calc_offset(i, r)),
+        match op {
+            '!' => Expression::new(ExprEnum::Not(Box::new(v)), calc_offset(i, r)),
+            '~' => Expression::new(ExprEnum::BitNot(Box::new(v)), calc_offset(i, r)),
+            _ => unreachable!("not operator should be ! or ~"),
+        },
     ))
 }
 

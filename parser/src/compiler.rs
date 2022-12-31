@@ -43,6 +43,10 @@ pub enum OpCode {
     Or,
     /// Logical not (!)
     Not,
+    /// Bitwise not (~). Interestingly, Rust does not have dedicated bitwise not operator, because
+    /// it has bool type. It can distinguish logical or bitwise operation by the operand type.
+    /// However, we do not have bool type (yet), so we need a dedicated operator for bitwise not, like C.
+    BitNot,
     /// Get an element of an array (or a table in the future) at arg0 with the key at arg1, and make a copy at arg1.
     /// Array elements are always Rc wrapped, so the user can assign into it.
     Get,
@@ -584,6 +588,16 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
                 return Err(format!("Variable {} not found in scope", str));
             }
         }
+        ExprEnum::Not(val) => {
+            let val = emit_expr(val, compiler)?;
+            compiler.bytecode.push_inst(OpCode::Not, val as u8, 0);
+            Ok(val)
+        }
+        ExprEnum::BitNot(val) => {
+            let val = emit_expr(val, compiler)?;
+            compiler.bytecode.push_inst(OpCode::BitNot, val as u8, 0);
+            Ok(val)
+        }
         ExprEnum::Add(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Add, lhs, rhs)),
         ExprEnum::Sub(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Sub, lhs, rhs)),
         ExprEnum::Mult(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Mul, lhs, rhs)),
@@ -655,11 +669,6 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
         }
         ExprEnum::LT(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Lt, lhs, rhs)),
         ExprEnum::GT(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Gt, lhs, rhs)),
-        ExprEnum::Not(val) => {
-            let val = emit_expr(val, compiler)?;
-            compiler.bytecode.push_inst(OpCode::Not, val as u8, 0);
-            Ok(val)
-        }
         ExprEnum::BitAnd(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::BitAnd, lhs, rhs)),
         ExprEnum::BitXor(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::BitXor, lhs, rhs)),
         ExprEnum::BitOr(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::BitOr, lhs, rhs)),

@@ -5,3 +5,4 @@ var j: i32 = 16;
 print(i | j);
 print(i & j);
 print(i ^ j);
+print(~i);

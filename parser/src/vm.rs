@@ -219,6 +219,15 @@ fn interpret_fn(
                 let result = !truthy(&vm.get(inst.arg0));
                 vm.set(inst.arg0, Value::I32(result as i32));
             }
+            OpCode::BitNot => {
+                let val = vm.get(inst.arg0);
+                let result = match val {
+                    Value::I32(i) => Value::I32(!i),
+                    Value::I64(i) => Value::I64(!i),
+                    _ => return Err(format!("Bitwise not is not supported for {:?}", val)),
+                };
+                vm.set(inst.arg0, result);
+            }
             OpCode::Get => {
                 let target_array = &vm.get(inst.arg0);
                 let target_index = &vm.get(inst.arg1);

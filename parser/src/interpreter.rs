@@ -330,6 +330,14 @@ pub(crate) fn eval<'a, 'b>(
                 1
             }))
         }
+        ExprEnum::BitNot(val) => {
+            let val = unwrap_run!(eval(val, ctx)?);
+            RunResult::Yield(match val {
+                Value::I32(i) => Value::I32(!i),
+                Value::I64(i) => Value::I64(!i),
+                _ => return Err(format!("Bitwise not is not supported for {:?}", val)),
+            })
+        }
         ExprEnum::Add(lhs, rhs) => {
             let res = RunResult::Yield(binary_op_str(
                 &unwrap_run!(eval(lhs, ctx)?),

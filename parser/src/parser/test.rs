@@ -425,6 +425,22 @@ fn test_bit_or() {
 }
 
 #[test]
+fn test_bit_not() {
+    use nom::Finish;
+    let span = Span::new("~1");
+    assert_eq!(
+        full_expression(span).finish().unwrap().1,
+        Expression::new(
+            ExprEnum::BitNot(Box::new(Expression::new(
+                ExprEnum::NumLiteral(Value::I64(1)),
+                span.subslice(1, 1)
+            ))),
+            span
+        )
+    );
+}
+
+#[test]
 fn test_bit_or_var() {
     use nom::Finish;
     let span = Span::new("1 | 2 && 3");

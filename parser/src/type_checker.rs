@@ -182,7 +182,12 @@ fn tc_expr<'src, 'b>(
                 ));
             }
         }
-        ExprEnum::Not(val) => tc_expr(val, ctx)?,
+        ExprEnum::Not(val) => {
+            tc_expr(val, ctx)?;
+            // The result of logical operator should be i32 (bool)
+            TypeDecl::I32
+        }
+        ExprEnum::BitNot(val) => tc_expr(val, ctx)?,
         ExprEnum::Add(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Add")?,
         ExprEnum::Sub(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Sub")?,
         ExprEnum::Mult(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Mult")?,
