@@ -68,7 +68,7 @@ In ascending order of difficulty.
 * [x] Primitive types (i32, i64, f32, f64)
 * [x] String type
 * [x] Logical operators (||, &&, !)
-* [ ] Bitwise operators (|, &, ^, ~)
+* [x] Bitwise operators (|, &, ^, ~)
 * [ ] String manipulations
 * [x] Array types
 * [x] WebAssembly build target
