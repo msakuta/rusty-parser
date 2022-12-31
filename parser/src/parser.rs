@@ -4,7 +4,7 @@ use nom::{
     bytes::complete::{tag, take_until},
     character::complete::{alpha1, alphanumeric1, char, multispace0, multispace1, none_of},
     combinator::{map_res, opt, recognize},
-    multi::{fold_many0, many0, many1},
+    multi::{fold_many0, many0, many1, separated_list1},
     number::complete::recognize_float,
     sequence::{delimited, pair, preceded, terminated, tuple},
     IResult, InputTake, Offset,
@@ -394,12 +394,16 @@ pub(crate) enum ExprEnum<'a> {
     FnInvoke(&'a str, Vec<Expression<'a>>),
     ArrIndex(Box<Expression<'a>>, Vec<Expression<'a>>),
     Not(Box<Expression<'a>>),
+    BitNot(Box<Expression<'a>>),
     Add(Box<Expression<'a>>, Box<Expression<'a>>),
     Sub(Box<Expression<'a>>, Box<Expression<'a>>),
     Mult(Box<Expression<'a>>, Box<Expression<'a>>),
     Div(Box<Expression<'a>>, Box<Expression<'a>>),
     LT(Box<Expression<'a>>, Box<Expression<'a>>),
     GT(Box<Expression<'a>>, Box<Expression<'a>>),
+    BitAnd(Box<Expression<'a>>, Box<Expression<'a>>),
+    BitXor(Box<Expression<'a>>, Box<Expression<'a>>),
+    BitOr(Box<Expression<'a>>, Box<Expression<'a>>),
     And(Box<Expression<'a>>, Box<Expression<'a>>),
     Or(Box<Expression<'a>>, Box<Expression<'a>>),
     Conditional(
@@ -426,11 +430,7 @@ impl<'a> Expression<'a> {
 ///
 /// Note: `i` shall start earlier than `r`, otherwise wrapping would occur.
 fn calc_offset<'a>(i: Span<'a>, r: Span<'a>) -> Span<'a> {
-    let rp = r.fragment().as_ptr() as usize;
-    let ip = i.fragment().as_ptr() as usize;
-    assert!(ip < rp);
-    let offset = rp - ip;
-    i.take(offset)
+    i.take(i.offset(&r))
 }
 
 /// An extension trait for writing subslice concisely
@@ -612,7 +612,7 @@ pub(crate) fn func_invoke(i: Span) -> IResult<Span, Expression> {
             tag("("),
             many0(delimited(
                 multispace0,
-                expr,
+                full_expression,
                 delimited(multispace0, opt(tag(",")), multispace0),
             )),
             tag(")"),
@@ -629,27 +629,27 @@ pub(crate) fn func_invoke(i: Span) -> IResult<Span, Expression> {
 }
 
 pub(crate) fn array_index(i: Span) -> IResult<Span, Expression> {
-    let (r, (prim, indices)) = pair(
-        primary_expression,
-        many1(delimited(
-            multispace0,
-            delimited(
-                tag("["),
-                many0(delimited(
-                    multispace0,
-                    full_expression,
-                    delimited(multispace0, opt(tag(",")), multispace0),
-                )),
-                tag("]"),
+    let (r, prim) = primary_expression(i)?;
+    let (r, indices) = many1(delimited(
+        multispace0,
+        delimited(
+            tag("["),
+            separated_list1(
+                delimited(multispace0, tag(","), multispace0),
+                full_expression,
             ),
-            multispace0,
-        )),
-    )(i)?;
-    let offset = r.fragment().as_ptr() as usize - i.fragment().as_ptr() as usize;
+            tag("]"),
+        ),
+        multispace0,
+    ))(r)?;
+    let prim_span = prim.span;
     Ok((
         r,
         indices.into_iter().fold(prim, |acc, v| {
-            Expression::new(ExprEnum::ArrIndex(Box::new(acc), v), i.take(offset))
+            Expression::new(
+                ExprEnum::ArrIndex(Box::new(acc), v),
+                i.subslice(i.offset(&prim_span), prim_span.offset(&r)),
+            )
         }),
     ))
 }
@@ -670,10 +670,15 @@ fn postfix_expression(i: Span) -> IResult<Span, Expression> {
 }
 
 fn not(i: Span) -> IResult<Span, Expression> {
-    let (r, v) = preceded(delimited(multispace0, tag("!"), multispace0), not_factor)(i)?;
+    let (r, op) = delimited(multispace0, alt((char('!'), char('~'))), multispace0)(i)?;
+    let (r, v) = not_factor(r)?;
     Ok((
         r,
-        Expression::new(ExprEnum::Not(Box::new(v)), calc_offset(i, r)),
+        match op {
+            '!' => Expression::new(ExprEnum::Not(Box::new(v)), calc_offset(i, r)),
+            '~' => Expression::new(ExprEnum::BitNot(Box::new(v)), calc_offset(i, r)),
+            _ => unreachable!("not operator should be ! or ~"),
+        },
     ))
 }
 
@@ -741,7 +746,7 @@ fn cmp(i: Span) -> IResult<Span, Expression> {
 
 pub(crate) fn conditional(i: Span) -> IResult<Span, Expression> {
     let (r, _) = delimited(multispace0, tag("if"), multispace0)(i)?;
-    let (r, cond) = or_expr(r)?;
+    let (r, cond) = or(r)?;
     let (r, true_branch) = delimited(
         delimited(multispace0, tag("{"), multispace0),
         source,
@@ -785,42 +790,53 @@ pub(crate) fn cmp_expr(i: Span) -> IResult<Span, Expression> {
     alt((cmp, expr))(i)
 }
 
-fn and(i: Span) -> IResult<Span, Expression> {
-    let (r, first) = cmp_expr(i)?;
-    let (r, _) = delimited(multispace0, tag("&&"), multispace0)(r)?;
-    let (r, second) = cmp_expr(r)?;
-    Ok((
-        r,
-        Expression::new(
-            ExprEnum::And(Box::new(first), Box::new(second)),
-            calc_offset(i, r),
-        ),
-    ))
+/// A functor to create a function for a binary operator
+fn bin_op<'src>(
+    t: &'static str,
+    sub: impl Fn(Span<'src>) -> IResult<Span<'src>, Expression<'src>>,
+    cons: impl Fn(Box<Expression<'src>>, Box<Expression<'src>>) -> ExprEnum<'src>,
+) -> impl Fn(Span<'src>) -> IResult<Span<'src>, Expression<'src>> {
+    move |i| {
+        let sub = &sub;
+        let cons = &cons;
+        let (r, init) = sub.clone()(i)?;
+
+        fold_many0(
+            pair(delimited(multispace0, tag(t), multispace0), sub),
+            move || init.clone(),
+            move |acc: Expression, (_, val): (Span, Expression)| {
+                let span = i.subslice(
+                    i.offset(&acc.span),
+                    acc.span.offset(&val.span) + val.span.len(),
+                );
+                Expression::new(cons(Box::new(acc), Box::new(val)), span)
+            },
+        )(r)
+    }
 }
 
-fn and_expr(i: Span) -> IResult<Span, Expression> {
-    alt((and, cmp_expr))(i)
+fn bit_and(i: Span) -> IResult<Span, Expression> {
+    bin_op("&", cmp_expr, |lhs, rhs| ExprEnum::BitAnd(lhs, rhs))(i)
+}
+
+fn bit_xor(i: Span) -> IResult<Span, Expression> {
+    bin_op("^", bit_and, |lhs, rhs| ExprEnum::BitXor(lhs, rhs))(i)
+}
+
+fn bit_or(i: Span) -> IResult<Span, Expression> {
+    bin_op("|", bit_xor, |lhs, rhs| ExprEnum::BitOr(lhs, rhs))(i)
+}
+
+fn and(i: Span) -> IResult<Span, Expression> {
+    bin_op("&&", bit_or, |lhs, rhs| ExprEnum::And(lhs, rhs))(i)
 }
 
 fn or(i: Span) -> IResult<Span, Expression> {
-    let (r, first) = and_expr(i)?;
-    let (r, _) = delimited(multispace0, tag("||"), multispace0)(r)?;
-    let (r, second) = and_expr(r)?;
-    Ok((
-        r,
-        Expression::new(
-            ExprEnum::Or(Box::new(first), Box::new(second)),
-            calc_offset(i, r),
-        ),
-    ))
-}
-
-fn or_expr(i: Span) -> IResult<Span, Expression> {
-    alt((or, and_expr))(i)
+    bin_op("||", and, |lhs, rhs| ExprEnum::Or(lhs, rhs))(i)
 }
 
 fn assign_expr(i: Span) -> IResult<Span, Expression> {
-    alt((var_assign, or_expr))(i)
+    alt((var_assign, or))(i)
 }
 
 pub(crate) fn conditional_expr(i: Span) -> IResult<Span, Expression> {

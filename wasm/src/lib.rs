@@ -1,4 +1,3 @@
-use nom::Finish;
 use parser::*;
 use wasm_bindgen::prelude::*;
 

@@ -182,13 +182,21 @@ fn tc_expr<'src, 'b>(
                 ));
             }
         }
-        ExprEnum::Not(val) => tc_expr(val, ctx)?,
+        ExprEnum::Not(val) => {
+            tc_expr(val, ctx)?;
+            // The result of logical operator should be i32 (bool)
+            TypeDecl::I32
+        }
+        ExprEnum::BitNot(val) => tc_expr(val, ctx)?,
         ExprEnum::Add(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Add")?,
         ExprEnum::Sub(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Sub")?,
         ExprEnum::Mult(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Mult")?,
         ExprEnum::Div(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Div")?,
         ExprEnum::LT(lhs, rhs) => binary_cmp(&lhs, &rhs, ctx, "LT")?,
         ExprEnum::GT(lhs, rhs) => binary_cmp(&lhs, &rhs, ctx, "GT")?,
+        ExprEnum::BitAnd(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "BitAnd")?,
+        ExprEnum::BitXor(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "BitXor")?,
+        ExprEnum::BitOr(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "BitOr")?,
         ExprEnum::And(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "And")?,
         ExprEnum::Or(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Or")?,
         ExprEnum::Conditional(cond, true_branch, false_branch) => {

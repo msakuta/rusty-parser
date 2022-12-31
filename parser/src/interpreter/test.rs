@@ -176,7 +176,7 @@ fn cond_test() {
                         bnl(Value::I64(1), span.subslice(3, 1)),
                         bnl(Value::I64(2), span.subslice(8, 1)),
                     ),
-                    span.subslice(3, 7)
+                    span.subslice(3, 6)
                 )),
                 vec![Statement::Expression(*bnl(
                     Value::I64(2),
@@ -274,7 +274,7 @@ fn logic_test() {
                 bnl(Value::I64(0), span.subslice(1, 1)),
                 bnl(Value::I64(1), span.subslice(6, 1))
             ),
-            span
+            span.subslice(1, 6)
         )
     );
     let span = Span::new(" 1 || 2");
@@ -285,7 +285,41 @@ fn logic_test() {
                 bnl(Value::I64(1), span.subslice(1, 1)),
                 bnl(Value::I64(2), span.subslice(6, 1))
             ),
-            span
+            span.subslice(1, 6)
+        )
+    );
+    let span = Span::new(" 0 && 1 && 2 ");
+    assert_eq!(
+        conditional_expr(span).finish().unwrap().1,
+        Expression::new(
+            And(
+                Box::new(Expression::new(
+                    And(
+                        bnl(Value::I64(0), span.subslice(1, 1)),
+                        bnl(Value::I64(1), span.subslice(6, 1)),
+                    ),
+                    span.subslice(1, 6),
+                )),
+                bnl(Value::I64(2), span.subslice(11, 1)),
+            ),
+            span.subslice(1, 11)
+        )
+    );
+    let span = Span::new("0 || 1 || 2 ");
+    assert_eq!(
+        conditional_expr(span).finish().unwrap().1,
+        Expression::new(
+            Or(
+                Box::new(Expression::new(
+                    Or(
+                        bnl(Value::I64(0), span.subslice(0, 1)),
+                        bnl(Value::I64(1), span.subslice(5, 1)),
+                    ),
+                    span.subslice(0, 6),
+                )),
+                bnl(Value::I64(2), span.subslice(10, 1)),
+            ),
+            span.subslice(0, 11)
         )
     );
     let span = Span::new(" 1 && 2 || 3 && 4");
@@ -298,7 +332,7 @@ fn logic_test() {
                         bnl(Value::I64(1), span.subslice(1, 1)),
                         bnl(Value::I64(2), span.subslice(6, 1))
                     ),
-                    span.subslice(0, 8)
+                    span.subslice(1, 6)
                 )),
                 Box::new(Expression::new(
                     And(
@@ -308,7 +342,7 @@ fn logic_test() {
                     span.subslice(11, 6)
                 )),
             ),
-            span
+            span.subslice(1, 16)
         )
     );
     let span = Span::new(" 1 || !1");
@@ -322,7 +356,7 @@ fn logic_test() {
                     span.subslice(6, 2)
                 ))
             ),
-            span
+            span.subslice(1, 7)
         )
     );
     let span = Span::new(" !!1");
@@ -689,7 +723,7 @@ fn array_index_assign_test() {
                         var_r(span.subslice(7, 1)),
                         vec![nl(I64(0), span.subslice(9, 1))]
                     ),
-                    span.subslice(6, 5)
+                    span.subslice(7, 4)
                 )),
             ),
             span

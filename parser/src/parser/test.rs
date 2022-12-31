@@ -403,10 +403,169 @@ fn test_cmp_literal() {
 }
 
 #[test]
+fn test_bit_or() {
+    use nom::Finish;
+    let span = Span::new("1 | 2");
+    assert_eq!(
+        full_expression(span).finish().unwrap().1,
+        Expression::new(
+            ExprEnum::BitOr(
+                Box::new(Expression::new(
+                    ExprEnum::NumLiteral(Value::I64(1)),
+                    span.subslice(0, 1)
+                )),
+                Box::new(Expression::new(
+                    ExprEnum::NumLiteral(Value::I64(2)),
+                    span.subslice(4, 1)
+                ))
+            ),
+            span
+        )
+    );
+}
+
+#[test]
+fn test_bit_not() {
+    use nom::Finish;
+    let span = Span::new("~1");
+    assert_eq!(
+        full_expression(span).finish().unwrap().1,
+        Expression::new(
+            ExprEnum::BitNot(Box::new(Expression::new(
+                ExprEnum::NumLiteral(Value::I64(1)),
+                span.subslice(1, 1)
+            ))),
+            span
+        )
+    );
+}
+
+#[test]
+fn test_bit_or_var() {
+    use nom::Finish;
+    let span = Span::new("1 | 2 && 3");
+    assert_eq!(
+        full_expression(span).finish().unwrap().1,
+        Expression::new(
+            ExprEnum::And(
+                Box::new(Expression::new(
+                    ExprEnum::BitOr(
+                        Box::new(Expression::new(
+                            ExprEnum::NumLiteral(Value::I64(1)),
+                            span.subslice(0, 1)
+                        )),
+                        Box::new(Expression::new(
+                            ExprEnum::NumLiteral(Value::I64(2)),
+                            span.subslice(4, 1)
+                        ))
+                    ),
+                    span.subslice(0, 5)
+                )),
+                Box::new(Expression::new(
+                    ExprEnum::NumLiteral(Value::I64(3)),
+                    span.subslice(9, 1)
+                ))
+            ),
+            span
+        )
+    );
+}
+
+#[test]
+fn test_bit_and_var() {
+    use nom::Finish;
+    let span = Span::new("1 & 2 && 3");
+    assert_eq!(
+        full_expression(span).finish().unwrap().1,
+        Expression::new(
+            ExprEnum::And(
+                Box::new(Expression::new(
+                    ExprEnum::BitAnd(
+                        Box::new(Expression::new(
+                            ExprEnum::NumLiteral(Value::I64(1)),
+                            span.subslice(0, 1)
+                        )),
+                        Box::new(Expression::new(
+                            ExprEnum::NumLiteral(Value::I64(2)),
+                            span.subslice(4, 1)
+                        ))
+                    ),
+                    span.subslice(0, 5)
+                )),
+                Box::new(Expression::new(
+                    ExprEnum::NumLiteral(Value::I64(3)),
+                    span.subslice(9, 1)
+                ))
+            ),
+            span
+        )
+    );
+}
+
+#[test]
+fn test_bit_xor_var() {
+    use nom::Finish;
+    let span = Span::new("1 ^ 2 && 3");
+    assert_eq!(
+        full_expression(span).finish().unwrap().1,
+        Expression::new(
+            ExprEnum::And(
+                Box::new(Expression::new(
+                    ExprEnum::BitXor(
+                        Box::new(Expression::new(
+                            ExprEnum::NumLiteral(Value::I64(1)),
+                            span.subslice(0, 1)
+                        )),
+                        Box::new(Expression::new(
+                            ExprEnum::NumLiteral(Value::I64(2)),
+                            span.subslice(4, 1)
+                        ))
+                    ),
+                    span.subslice(0, 5)
+                )),
+                Box::new(Expression::new(
+                    ExprEnum::NumLiteral(Value::I64(3)),
+                    span.subslice(9, 1)
+                ))
+            ),
+            span
+        )
+    );
+}
+
+#[test]
+fn test_bit_or_arg() {
+    use nom::Finish;
+    let span = Span::new("a(1 | 2)");
+    assert_eq!(
+        full_expression(span).finish().unwrap().1,
+        Expression::new(
+            ExprEnum::FnInvoke(
+                "a",
+                vec![Expression::new(
+                    ExprEnum::BitOr(
+                        Box::new(Expression::new(
+                            ExprEnum::NumLiteral(Value::I64(1)),
+                            span.subslice(2, 1)
+                        )),
+                        Box::new(Expression::new(
+                            ExprEnum::NumLiteral(Value::I64(2)),
+                            span.subslice(6, 1)
+                        ))
+                    ),
+                    span.subslice(2, 5)
+                )]
+            ),
+            span
+        )
+    );
+}
+
+#[test]
 fn test_or_expr() {
     let span = Span::new("a < 100");
     assert_eq!(
-        or_expr(span).finish().unwrap().1,
+        or(span).finish().unwrap().1,
         Expression::new(
             LT(
                 Box::new(Expression::new(Variable("a"), span.take(1))),

@@ -1,9 +1,11 @@
 //! Bytecode interpreter, aka a Virtual Machine.
 
-use std::{cell::RefCell, collections::HashMap};
+use std::collections::HashMap;
 
 use crate::{
-    interpreter::{binary_op, binary_op_str, coerce_f64, coerce_i64, truthy, EvalError},
+    interpreter::{
+        binary_op, binary_op_int, binary_op_str, coerce_f64, coerce_i64, truthy, EvalError,
+    },
     Bytecode, FnBytecode, FnProto, OpCode, Value,
 };
 
@@ -83,7 +85,7 @@ fn interpret_fn(
     dbg_println!("size value: {}", std::mem::size_of::<Value>());
     dbg_println!(
         "size RefCell<Value>: {}",
-        std::mem::size_of::<RefCell<Value>>()
+        std::mem::size_of::<std::cell::RefCell<Value>>()
     );
     dbg_println!("size callInfo: {}", std::mem::size_of::<CallInfo>());
     dbg_println!("literals: {:?}", bytecode.literals);
@@ -157,7 +159,7 @@ fn interpret_fn(
                 let result = binary_op_str(
                     &vm.get(inst.arg0),
                     &vm.get(inst.arg1),
-                    |lhs, rhs| lhs + rhs,
+                    |lhs, rhs| Ok(lhs + rhs),
                     |lhs, rhs| lhs + rhs,
                     |lhs: &str, rhs: &str| Ok(lhs.to_string() + rhs),
                 )?;
@@ -190,6 +192,21 @@ fn interpret_fn(
                 )?;
                 vm.set(inst.arg0, result);
             }
+            OpCode::BitAnd => {
+                let result =
+                    binary_op_int(&vm.get(inst.arg0), &vm.get(inst.arg1), |lhs, rhs| lhs & rhs)?;
+                vm.set(inst.arg0, result);
+            }
+            OpCode::BitXor => {
+                let result =
+                    binary_op_int(&vm.get(inst.arg0), &vm.get(inst.arg1), |lhs, rhs| lhs ^ rhs)?;
+                vm.set(inst.arg0, result);
+            }
+            OpCode::BitOr => {
+                let result =
+                    binary_op_int(&vm.get(inst.arg0), &vm.get(inst.arg1), |lhs, rhs| lhs | rhs)?;
+                vm.set(inst.arg0, result);
+            }
             OpCode::And => {
                 let result = truthy(&vm.get(inst.arg0)) && truthy(&vm.get(inst.arg1));
                 vm.set(inst.arg0, Value::I32(result as i32));
@@ -201,6 +218,15 @@ fn interpret_fn(
             OpCode::Not => {
                 let result = !truthy(&vm.get(inst.arg0));
                 vm.set(inst.arg0, Value::I32(result as i32));
+            }
+            OpCode::BitNot => {
+                let val = vm.get(inst.arg0);
+                let result = match val {
+                    Value::I32(i) => Value::I32(!i),
+                    Value::I64(i) => Value::I64(!i),
+                    _ => return Err(format!("Bitwise not is not supported for {:?}", val)),
+                };
+                vm.set(inst.arg0, result);
             }
             OpCode::Get => {
                 let target_array = &vm.get(inst.arg0);
