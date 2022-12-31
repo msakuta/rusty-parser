@@ -723,7 +723,7 @@ fn array_index_assign_test() {
                         var_r(span.subslice(7, 1)),
                         vec![nl(I64(0), span.subslice(9, 1))]
                     ),
-                    span.subslice(6, 5)
+                    span.subslice(7, 4)
                 )),
             ),
             span

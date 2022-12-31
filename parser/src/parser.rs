@@ -4,7 +4,7 @@ use nom::{
     bytes::complete::{tag, take_until},
     character::complete::{alpha1, alphanumeric1, char, multispace0, multispace1, none_of},
     combinator::{map_res, opt, recognize},
-    multi::{fold_many0, many0, many1},
+    multi::{fold_many0, many0, many1, separated_list1},
     number::complete::recognize_float,
     sequence::{delimited, pair, preceded, terminated, tuple},
     IResult, InputTake, Offset,
@@ -430,11 +430,7 @@ impl<'a> Expression<'a> {
 ///
 /// Note: `i` shall start earlier than `r`, otherwise wrapping would occur.
 fn calc_offset<'a>(i: Span<'a>, r: Span<'a>) -> Span<'a> {
-    let rp = r.fragment().as_ptr() as usize;
-    let ip = i.fragment().as_ptr() as usize;
-    assert!(ip < rp);
-    let offset = rp - ip;
-    i.take(offset)
+    i.take(i.offset(&r))
 }
 
 /// An extension trait for writing subslice concisely
@@ -633,27 +629,27 @@ pub(crate) fn func_invoke(i: Span) -> IResult<Span, Expression> {
 }
 
 pub(crate) fn array_index(i: Span) -> IResult<Span, Expression> {
-    let (r, (prim, indices)) = pair(
-        primary_expression,
-        many1(delimited(
-            multispace0,
-            delimited(
-                tag("["),
-                many0(delimited(
-                    multispace0,
-                    full_expression,
-                    delimited(multispace0, opt(tag(",")), multispace0),
-                )),
-                tag("]"),
+    let (r, prim) = primary_expression(i)?;
+    let (r, indices) = many1(delimited(
+        multispace0,
+        delimited(
+            tag("["),
+            separated_list1(
+                delimited(multispace0, tag(","), multispace0),
+                full_expression,
             ),
-            multispace0,
-        )),
-    )(i)?;
-    let offset = r.fragment().as_ptr() as usize - i.fragment().as_ptr() as usize;
+            tag("]"),
+        ),
+        multispace0,
+    ))(r)?;
+    let prim_span = prim.span;
     Ok((
         r,
         indices.into_iter().fold(prim, |acc, v| {
-            Expression::new(ExprEnum::ArrIndex(Box::new(acc), v), i.take(offset))
+            Expression::new(
+                ExprEnum::ArrIndex(Box::new(acc), v),
+                i.subslice(i.offset(&prim_span), prim_span.offset(&r)),
+            )
         }),
     ))
 }
