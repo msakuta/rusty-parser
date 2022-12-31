@@ -1,6 +1,6 @@
 //! Bytecode interpreter, aka a Virtual Machine.
 
-use std::{cell::RefCell, collections::HashMap};
+use std::collections::HashMap;
 
 use crate::{
     interpreter::{
@@ -85,7 +85,7 @@ fn interpret_fn(
     dbg_println!("size value: {}", std::mem::size_of::<Value>());
     dbg_println!(
         "size RefCell<Value>: {}",
-        std::mem::size_of::<RefCell<Value>>()
+        std::mem::size_of::<std::cell::RefCell<Value>>()
     );
     dbg_println!("size callInfo: {}", std::mem::size_of::<CallInfo>());
     dbg_println!("literals: {:?}", bytecode.literals);
