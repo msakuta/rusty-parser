@@ -3,7 +3,9 @@
 use std::{cell::RefCell, collections::HashMap};
 
 use crate::{
-    interpreter::{binary_op, binary_op_str, coerce_f64, coerce_i64, truthy, EvalError},
+    interpreter::{
+        binary_op, binary_op_int, binary_op_str, coerce_f64, coerce_i64, truthy, EvalError,
+    },
     Bytecode, FnBytecode, FnProto, OpCode, Value,
 };
 
@@ -188,6 +190,21 @@ fn interpret_fn(
                     |lhs, rhs| lhs / rhs,
                     |lhs, rhs| lhs / rhs,
                 )?;
+                vm.set(inst.arg0, result);
+            }
+            OpCode::BitAnd => {
+                let result =
+                    binary_op_int(&vm.get(inst.arg0), &vm.get(inst.arg1), |lhs, rhs| lhs & rhs)?;
+                vm.set(inst.arg0, result);
+            }
+            OpCode::BitXor => {
+                let result =
+                    binary_op_int(&vm.get(inst.arg0), &vm.get(inst.arg1), |lhs, rhs| lhs ^ rhs)?;
+                vm.set(inst.arg0, result);
+            }
+            OpCode::BitOr => {
+                let result =
+                    binary_op_int(&vm.get(inst.arg0), &vm.get(inst.arg1), |lhs, rhs| lhs | rhs)?;
                 vm.set(inst.arg0, result);
             }
             OpCode::And => {

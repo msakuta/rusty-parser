@@ -73,6 +73,17 @@ fn cmp_eval_test() {
 }
 
 #[test]
+fn bit_op_test() {
+    assert_eq!(compile_and_run(" 0 & 1 "), Ok(Value::I64(0)));
+    assert_eq!(compile_and_run(" 0 | 1 "), Ok(Value::I64(1)));
+    assert_eq!(compile_and_run(" 1 & 0 | 1 "), Ok(Value::I64(1)));
+    assert_eq!(compile_and_run(" 1 & 0 | 0 "), Ok(Value::I64(0)));
+    assert_eq!(compile_and_run(" 1 & !0 "), Ok(Value::I64(1)));
+    assert_eq!(compile_and_run(" 1 ^ 2 "), Ok(Value::I64(3)));
+    assert_eq!(compile_and_run(" 3 ^ 2 "), Ok(Value::I64(1)));
+}
+
+#[test]
 fn logic_eval_test() {
     assert_eq!(compile_and_run(" 0 && 1 "), Ok(Value::I32(0)));
     assert_eq!(compile_and_run(" 0 || 1 "), Ok(Value::I32(1)));
