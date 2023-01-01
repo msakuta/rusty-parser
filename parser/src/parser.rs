@@ -4,7 +4,7 @@ use nom::{
     branch::alt,
     bytes::complete::{tag, take_until},
     character::complete::{alpha1, alphanumeric1, char, multispace0, multispace1, none_of, one_of},
-    combinator::{map_res, opt, peek, recognize},
+    combinator::{map_res, opt, recognize},
     multi::{fold_many0, many0, many1, separated_list1},
     sequence::{delimited, pair, preceded, terminated, tuple},
     IResult, InputTake, Offset,
@@ -231,15 +231,11 @@ fn decimal_value(i: Span) -> IResult<Span, (Value, Span)> {
     Ok((r, (Value::I64(parsed), v)))
 }
 
-fn nondots(i: Span) -> IResult<Span, ()> {
-    nom::combinator::not(peek(tag::<&str, Span, nom::error::Error<Span>>("..")))(i)
-}
-
 fn float(input: Span) -> IResult<Span, Span> {
     recognize(tuple((
         opt(one_of("+-")),
         decimal,
-        nondots,
+        nom::combinator::not(tag("..")),
         char('.'),
         opt(decimal),
     )))(input)
