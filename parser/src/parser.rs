@@ -3,10 +3,9 @@ use crate::{type_decl::TypeDecl, Value};
 use nom::{
     branch::alt,
     bytes::complete::{tag, take_until},
-    character::complete::{alpha1, alphanumeric1, char, multispace0, multispace1, none_of},
-    combinator::{map_res, opt, recognize},
+    character::complete::{alpha1, alphanumeric1, char, multispace0, multispace1, none_of, one_of},
+    combinator::{map_res, opt, peek, recognize},
     multi::{fold_many0, many0, many1, separated_list1},
-    number::complete::recognize_float,
     sequence::{delimited, pair, preceded, terminated, tuple},
     IResult, InputTake, Offset,
 };
@@ -217,32 +216,43 @@ fn var_decl(input: Span) -> IResult<Span, Statement> {
     Ok((r, Statement::VarDecl(*ident, ts, initializer)))
 }
 
+fn decimal(input: Span) -> IResult<Span, Span> {
+    recognize(many1(terminated(one_of("0123456789"), many0(char('_')))))(input)
+}
+
+fn decimal_value(i: Span) -> IResult<Span, (Value, Span)> {
+    let (r, v) = decimal(i)?;
+    let parsed = v.parse().map_err(|_| {
+        nom::Err::Error(nom::error::Error {
+            input: i,
+            code: nom::error::ErrorKind::Digit,
+        })
+    })?;
+    Ok((r, (Value::I64(parsed), v)))
+}
+
+fn nondots(i: Span) -> IResult<Span, ()> {
+    nom::combinator::not(peek(tag::<&str, Span, nom::error::Error<Span>>("..")))(i)
+}
+
+fn float(input: Span) -> IResult<Span, Span> {
+    recognize(tuple((decimal, nondots, char('.'), opt(decimal))))(input)
+}
+
+fn float_value(i: Span) -> IResult<Span, (Value, Span)> {
+    let (r, v) = float(i)?;
+    let parsed = v.parse().map_err(|_| {
+        nom::Err::Error(nom::error::Error {
+            input: i,
+            code: nom::error::ErrorKind::Digit,
+        })
+    })?;
+    Ok((r, (Value::F64(parsed), v)))
+}
+
 fn double_expr(input: Span) -> IResult<Span, Expression> {
-    let (r, v) = recognize_float(input)?;
-    // For now we have very simple conditinon to decide if it is a floating point literal
-    // by a presense of a period.
-    Ok((
-        r,
-        Expression::new(
-            ExprEnum::NumLiteral(if v.contains('.') {
-                let parsed = v.parse().map_err(|_| {
-                    nom::Err::Error(nom::error::Error {
-                        input,
-                        code: nom::error::ErrorKind::Digit,
-                    })
-                })?;
-                Value::F64(parsed)
-            } else {
-                Value::I64(v.parse().map_err(|_| {
-                    nom::Err::Error(nom::error::Error {
-                        input,
-                        code: nom::error::ErrorKind::Digit,
-                    })
-                })?)
-            }),
-            v,
-        ),
-    ))
+    let (r, (value, value_span)) = alt((float_value, decimal_value))(input)?;
+    Ok((r, Expression::new(ExprEnum::NumLiteral(value), value_span)))
 }
 
 fn numeric_literal_expression(input: Span) -> IResult<Span, Expression> {

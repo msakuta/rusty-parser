@@ -30,3 +30,5 @@ if 1 < 2 && !(4 < 3) && 10 > 5 {
 if 3 > 5 || 5 < 10 {
     print("correct");
 };
+
+print(if 1 < 2 { "This should print" } else { "This should not" });

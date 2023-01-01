@@ -1,6 +1,9 @@
 
-/* Right now the space between i, .. and 10 are necessary. */
-for i in 0 .. 10 {
+for i in 0..10 {
     print(i * i);
 }
 
+
+for i in 0 .. 10 {
+    print(0 - i * i);
+}

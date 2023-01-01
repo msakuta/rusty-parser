@@ -933,16 +933,16 @@ fn while_test() {
 
 #[test]
 fn for_test() {
-    let span = Span::new(" for i in 0 .. 10 { print(i); }");
+    let span = Span::new(" for i in 0..10 { print(i); }");
     assert_eq!(
         source(span).finish().unwrap().1,
         vec![Statement::For(
             "i",
             Expression::new(NumLiteral(Value::I64(0)), span.subslice(10, 1)),
-            Expression::new(NumLiteral(Value::I64(10)), span.subslice(15, 2)),
+            Expression::new(NumLiteral(Value::I64(10)), span.subslice(13, 2)),
             vec![Statement::Expression(Expression::new(
-                FnInvoke("print", vec![*var_r(span.subslice(26, 1))],),
-                span.subslice(20, 8)
+                FnInvoke("print", vec![*var_r(span.subslice(24, 1))],),
+                span.subslice(18, 8)
             ))]
         )]
     );
