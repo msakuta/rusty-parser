@@ -221,7 +221,7 @@ fn decimal(input: Span) -> IResult<Span, Span> {
 }
 
 fn decimal_value(i: Span) -> IResult<Span, (Value, Span)> {
-    let (r, v) = decimal(i)?;
+    let (r, v) = recognize(pair(opt(one_of("+-")), decimal))(i)?;
     let parsed = v.parse().map_err(|_| {
         nom::Err::Error(nom::error::Error {
             input: i,
@@ -236,7 +236,13 @@ fn nondots(i: Span) -> IResult<Span, ()> {
 }
 
 fn float(input: Span) -> IResult<Span, Span> {
-    recognize(tuple((decimal, nondots, char('.'), opt(decimal))))(input)
+    recognize(tuple((
+        opt(one_of("+-")),
+        decimal,
+        nondots,
+        char('.'),
+        opt(decimal),
+    )))(input)
 }
 
 fn float_value(i: Span) -> IResult<Span, (Value, Span)> {
