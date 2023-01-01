@@ -62,4 +62,4 @@ fn mandel(realstart imagstart realmag imagmag   nl) {
              imagstart, imagstart+imagmag*40, imagmag,  nl);
 }
 
-mandel(-2.3, -2.0, 0.025, 0.05, nl);
+mandel(-2.3, -2.0, 0.025, 0.05, nl, );

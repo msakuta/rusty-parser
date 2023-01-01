@@ -5,7 +5,8 @@ use nom::{
     bytes::complete::{tag, take_until},
     character::complete::{alpha1, alphanumeric1, char, multispace0, multispace1, none_of, one_of},
     combinator::{map_res, opt, recognize},
-    multi::{fold_many0, many0, many1, separated_list1},
+    error::ParseError,
+    multi::{fold_many0, many0, many1, separated_list0, separated_list1},
     sequence::{delimited, pair, preceded, terminated, tuple},
     IResult, InputTake, Offset,
 };
@@ -305,6 +306,17 @@ fn parens(i: Span) -> IResult<Span, Expression> {
     Ok((r, Expression::new(res.expr, r0.take(r0.offset(&r)))))
 }
 
+/// A combinator that takes a parser `inner` and produces a parser that also consumes both leading and
+/// trailing whitespace, returning the output of `inner`.
+fn ws<'a, F: 'a, O, E: ParseError<Span<'a>>>(
+    inner: F,
+) -> impl FnMut(Span<'a>) -> IResult<Span<'a>, O, E>
+where
+    F: Fn(Span<'a>) -> IResult<Span<'a>, O, E>,
+{
+    delimited(multispace0, inner, multispace0)
+}
+
 pub(crate) fn func_invoke(i: Span) -> IResult<Span, Expression> {
     let (r, ident) = delimited(multispace0, identifier, multispace0)(i)?;
     // println!("func_invoke ident: {}", ident);
@@ -312,11 +324,10 @@ pub(crate) fn func_invoke(i: Span) -> IResult<Span, Expression> {
         multispace0,
         delimited(
             tag("("),
-            many0(delimited(
-                multispace0,
-                full_expression,
-                delimited(multispace0, opt(tag(",")), multispace0),
-            )),
+            terminated(
+                separated_list0(ws(char(',')), full_expression),
+                opt(ws(char(','))),
+            ),
             tag(")"),
         ),
         multispace0,
@@ -336,10 +347,7 @@ pub(crate) fn array_index(i: Span) -> IResult<Span, Expression> {
         multispace0,
         delimited(
             tag("["),
-            separated_list1(
-                delimited(multispace0, tag(","), multispace0),
-                full_expression,
-            ),
+            separated_list1(ws(char(',')), full_expression),
             tag("]"),
         ),
         multispace0,
