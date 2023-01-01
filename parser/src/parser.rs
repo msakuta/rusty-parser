@@ -165,11 +165,7 @@ fn type_scalar(input: Span) -> IResult<Span, TypeDecl> {
 }
 
 fn type_array(input: Span) -> IResult<Span, TypeDecl> {
-    let (r, arr) = delimited(
-        delimited(multispace0, tag("["), multispace0),
-        alt((type_array, type_scalar)),
-        delimited(multispace0, tag("]"), multispace0),
-    )(input)?;
+    let (r, arr) = delimited(ws(char('[')), alt((type_array, type_scalar)), ws(char(']')))(input)?;
     Ok((r, TypeDecl::Array(Box::new(arr))))
 }
 
@@ -179,7 +175,7 @@ pub(crate) fn type_decl(input: Span) -> IResult<Span, TypeDecl> {
 
 fn cast(i: Span) -> IResult<Span, Expression> {
     let (r, res) = var_ref(i)?;
-    let (r, _) = delimited(multispace0, tag("as"), multispace0)(r)?;
+    let (r, _) = ws(tag("as"))(r)?;
     let (r, decl) = type_decl(r)?;
     let span = i.subslice(i.offset(&res.span), res.span.offset(&r));
     Ok((
@@ -189,11 +185,7 @@ fn cast(i: Span) -> IResult<Span, Expression> {
 }
 
 pub(crate) fn type_spec(input: Span) -> IResult<Span, TypeDecl> {
-    let (r, type_) = opt(delimited(
-        delimited(multispace0, tag(":"), multispace0),
-        type_decl,
-        multispace0,
-    ))(input)?;
+    let (r, type_) = opt(delimited(ws(char(':')), type_decl, multispace0))(input)?;
     Ok((
         r,
         if let Some(a) = type_ {
@@ -208,11 +200,7 @@ fn var_decl(input: Span) -> IResult<Span, Statement> {
     let (r, _) = multispace1(tag("var")(multispace0(input)?.0)?.0)?;
     let (r, ident) = identifier(r)?;
     let (r, ts) = type_spec(r)?;
-    let (r, initializer) = opt(delimited(
-        delimited(multispace0, tag("="), multispace0),
-        full_expression,
-        multispace0,
-    ))(r)?;
+    let (r, initializer) = opt(delimited(ws(char('=')), full_expression, multispace0))(r)?;
     let (r, _) = char(';')(multispace0(r)?.0)?;
     Ok((r, Statement::VarDecl(*ident, ts, initializer)))
 }
@@ -318,7 +306,7 @@ where
 }
 
 pub(crate) fn func_invoke(i: Span) -> IResult<Span, Expression> {
-    let (r, ident) = delimited(multispace0, identifier, multispace0)(i)?;
+    let (r, ident) = ws(identifier)(i)?;
     // println!("func_invoke ident: {}", ident);
     let (r, args) = delimited(
         multispace0,
@@ -456,21 +444,13 @@ fn cmp(i: Span) -> IResult<Span, Expression> {
 }
 
 pub(crate) fn conditional(i: Span) -> IResult<Span, Expression> {
-    let (r, _) = delimited(multispace0, tag("if"), multispace0)(i)?;
+    let (r, _) = ws(tag("if"))(i)?;
     let (r, cond) = or(r)?;
-    let (r, true_branch) = delimited(
-        delimited(multispace0, tag("{"), multispace0),
-        source,
-        delimited(multispace0, tag("}"), multispace0),
-    )(r)?;
+    let (r, true_branch) = delimited(ws(char('{')), source, ws(char('}')))(r)?;
     let (r, false_branch) = opt(preceded(
-        delimited(multispace0, tag("else"), multispace0),
+        ws(tag("else")),
         alt((
-            delimited(
-                delimited(multispace0, tag("{"), multispace0),
-                source,
-                delimited(multispace0, tag("}"), multispace0),
-            ),
+            delimited(ws(char('{')), source, ws(char('}'))),
             map_res(
                 conditional,
                 |v| -> Result<Vec<Statement>, nom::error::Error<&str>> {
@@ -513,7 +493,7 @@ fn bin_op<'src>(
         let (r, init) = sub.clone()(i)?;
 
         fold_many0(
-            pair(delimited(multispace0, tag(t), multispace0), sub),
+            pair(ws(tag(t)), sub),
             move || init.clone(),
             move |acc: Expression, (_, val): (Span, Expression)| {
                 let span = i.subslice(
@@ -555,9 +535,9 @@ pub(crate) fn conditional_expr(i: Span) -> IResult<Span, Expression> {
 }
 
 fn brace_expr(i: Span) -> IResult<Span, Expression> {
-    let (r, open_br) = delimited(multispace0, tag("{"), multispace0)(i)?;
+    let (r, open_br) = ws(tag("{"))(i)?;
     let (r, v) = source(r)?;
-    let (r, close_br) = delimited(multispace0, tag("}"), multispace0)(r)?;
+    let (r, close_br) = ws(tag("}"))(r)?;
     let span = i.subslice(
         i.offset(&open_br),
         open_br.offset(&close_br) + close_br.len(),
@@ -583,7 +563,7 @@ pub(crate) fn func_arg(input: Span) -> IResult<Span, ArgDecl> {
 }
 
 pub(crate) fn func_decl(input: Span) -> IResult<Span, Statement> {
-    let (r, _) = multispace1(tag("fn")(multispace0(input)?.0)?.0)?;
+    let (r, _) = ws(tag("fn"))(input)?;
     let (r, name) = identifier(r)?;
     let (r, args) = delimited(
         multispace0,
@@ -598,15 +578,8 @@ pub(crate) fn func_decl(input: Span) -> IResult<Span, Statement> {
         ),
         multispace0,
     )(r)?;
-    let (r, ret_type) = opt(preceded(
-        delimited(multispace0, tag("->"), multispace0),
-        type_decl,
-    ))(r)?;
-    let (r, stmts) = delimited(
-        delimited(multispace0, tag("{"), multispace0),
-        source,
-        delimited(multispace0, tag("}"), multispace0),
-    )(r)?;
+    let (r, ret_type) = opt(preceded(ws(tag("->")), type_decl))(r)?;
+    let (r, stmts) = delimited(ws(char('{')), source, ws(char('}')))(r)?;
     Ok((
         r,
         Statement::FnDecl {
@@ -619,43 +592,31 @@ pub(crate) fn func_decl(input: Span) -> IResult<Span, Statement> {
 }
 
 fn loop_stmt(input: Span) -> IResult<Span, Statement> {
-    let (r, _) = multispace0(tag("loop")(multispace0(input)?.0)?.0)?;
-    let (r, stmts) = delimited(
-        delimited(multispace0, tag("{"), multispace0),
-        source,
-        delimited(multispace0, tag("}"), multispace0),
-    )(r)?;
+    let (r, _) = ws(tag("loop"))(input)?;
+    let (r, stmts) = delimited(ws(char('{')), source, ws(char('}')))(r)?;
     Ok((r, Statement::Loop(stmts)))
 }
 
 fn while_stmt(input: Span) -> IResult<Span, Statement> {
-    let (r, _) = multispace0(tag("while")(multispace0(input)?.0)?.0)?;
+    let (r, _) = ws(tag("while"))(input)?;
     let (r, cond) = cmp_expr(r)?;
-    let (r, stmts) = delimited(
-        delimited(multispace0, tag("{"), multispace0),
-        source,
-        delimited(multispace0, tag("}"), multispace0),
-    )(r)?;
+    let (r, stmts) = delimited(ws(char('{')), source, ws(char('}')))(r)?;
     Ok((r, Statement::While(cond, stmts)))
 }
 
 fn for_stmt(input: Span) -> IResult<Span, Statement> {
-    let (r, _) = delimited(multispace0, tag("for"), multispace1)(input)?;
+    let (r, _) = ws(tag("for"))(input)?;
     let (r, iter) = identifier(r)?;
-    let (r, _) = delimited(multispace0, tag("in"), multispace0)(r)?;
+    let (r, _) = ws(tag("in"))(r)?;
     let (r, from) = expr(r)?;
-    let (r, _) = delimited(multispace0, tag(".."), multispace0)(r)?;
+    let (r, _) = ws(tag(".."))(r)?;
     let (r, to) = expr(r)?;
-    let (r, stmts) = delimited(
-        delimited(multispace0, tag("{"), multispace0),
-        source,
-        delimited(multispace0, tag("}"), multispace0),
-    )(r)?;
+    let (r, stmts) = delimited(ws(char('{')), source, ws(char('}')))(r)?;
     Ok((r, Statement::For(*iter, from, to, stmts)))
 }
 
 fn break_stmt(input: Span) -> IResult<Span, Statement> {
-    let (r, _) = delimited(multispace0, tag("break"), multispace0)(input)?;
+    let (r, _) = ws(tag("break"))(input)?;
     Ok((r, Statement::Break))
 }
 
