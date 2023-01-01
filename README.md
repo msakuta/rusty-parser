@@ -25,7 +25,13 @@ It can read a text file, parse it to an AST and run it.
     cd cli
     cargo run --release -- <script-file>.dragon
 
-Now we have our own bytecode format that you can compile.
+You can type check the script before running with `-t` switch.
+It will ensure that the declared types are correct before running the script.
+The language itself is still dynamically typed, but it will help writing robust software.
+
+    cargo run --release -- -t
+
+We have our own bytecode format that you can compile.
 
     cargo run --release -- -c <script-file>.dragon
 
@@ -74,7 +80,8 @@ In ascending order of difficulty.
 * [x] WebAssembly build target
 * [x] Function return types
 * [x] Static type checking (instead of runtime coercion)
-* [x] Type cast operator
+* [x] Type cast operator `as`
+* [ ] Type casting in bytecode
 * [ ] Proper error handling
 * [ ] Tuple types
 * [ ] Multi-dimensional arrays
