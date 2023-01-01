@@ -311,12 +311,12 @@ pub(crate) fn func_invoke(i: Span) -> IResult<Span, Expression> {
     let (r, args) = delimited(
         multispace0,
         delimited(
-            tag("("),
+            char('('),
             terminated(
                 separated_list0(ws(char(',')), full_expression),
                 opt(ws(char(','))),
             ),
-            tag(")"),
+            char(')'),
         ),
         multispace0,
     )(r)?;
@@ -569,11 +569,7 @@ pub(crate) fn func_decl(input: Span) -> IResult<Span, Statement> {
         multispace0,
         delimited(
             tag("("),
-            many0(delimited(
-                multispace0,
-                func_arg,
-                delimited(multispace0, opt(tag(",")), multispace0),
-            )),
+            terminated(separated_list0(ws(tag(",")), func_arg), opt(ws(char(',')))),
             tag(")"),
         ),
         multispace0,

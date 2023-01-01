@@ -41,7 +41,7 @@ fn mandelconverge(real, imag) {
 
 /* Compute and plot the mandelbrot set with the specified 2 dimensional range
  info. */
-fn mandelhelp(xmin xmax xstep   ymin ymax ystep   nl) {
+fn mandelhelp(xmin, xmax, xstep,   ymin, ymax, ystep,   nl) {
     var steps: i64 = (ymax - ymin) / ystep;
     print("xstep", xstep, "ysteps", steps, "ystep", ystep);
     for iy in 0 .. steps {
@@ -57,7 +57,7 @@ fn mandelhelp(xmin xmax xstep   ymin ymax ystep   nl) {
 
 /* mandel - This is a convenient helper function for plotting the mandelbrot set
  from the specified position with the specified Magnification. */
-fn mandel(realstart imagstart realmag imagmag   nl) {
+fn mandel(realstart, imagstart, realmag, imagmag,   nl,) {
   mandelhelp(realstart, realstart+realmag*78, realmag,
              imagstart, imagstart+imagmag*40, imagmag,  nl);
 }
