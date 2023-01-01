@@ -1,8 +1,9 @@
 use super::*;
 use crate::{
     compile,
-    parser::{expr, span_source, ArrayInt, Statement, TypeDecl},
-    Span,
+    parser::{expr, span_source, Statement},
+    value::ArrayInt,
+    Span, TypeDecl,
 };
 
 fn compile_expr(s: &str) -> Bytecode {

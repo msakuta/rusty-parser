@@ -9,7 +9,9 @@ use crate::{
     interpreter::{
         eval, s_hex_string, s_len, s_print, s_push, s_type, EvalContext, EvalError, RunResult,
     },
-    parser::{ArrayInt, ExprEnum, Expression, ReadError, Statement, TypeDecl, Value},
+    parser::{ExprEnum, Expression, ReadError, Statement},
+    value::ArrayInt,
+    TypeDecl, Value,
 };
 
 macro_rules! dbg_println {

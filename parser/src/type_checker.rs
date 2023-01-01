@@ -3,7 +3,8 @@ use std::{collections::HashMap, fmt::Display};
 use crate::{
     interpreter::{std_functions, FuncCode},
     parser::{ExprEnum, Expression, Statement},
-    FuncDef, Span, TypeDecl, Value,
+    type_decl::TypeDecl,
+    FuncDef, Span, Value,
 };
 
 #[derive(Debug)]
