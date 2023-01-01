@@ -235,6 +235,9 @@ pub(crate) fn eval<'a, 'b>(
             ctx.get_var_rc(str)
                 .ok_or_else(|| format!("Variable {} not found in scope", str))?,
         )),
+        ExprEnum::Cast(ex, decl) => {
+            RunResult::Yield(coerce_type(&unwrap_run!(eval(ex, ctx)?), decl)?)
+        }
         ExprEnum::VarAssign(lhs, rhs) => {
             let lhs_result = eval(lhs, ctx)?;
             let result = match lhs_result {

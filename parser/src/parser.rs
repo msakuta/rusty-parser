@@ -390,6 +390,7 @@ pub(crate) enum ExprEnum<'a> {
     StrLiteral(String),
     ArrLiteral(Vec<Expression<'a>>),
     Variable(&'a str),
+    Cast(Box<Expression<'a>>, TypeDecl),
     VarAssign(Box<Expression<'a>>, Box<Expression<'a>>),
     FnInvoke(&'a str, Vec<Expression<'a>>),
     ArrIndex(Box<Expression<'a>>, Vec<Expression<'a>>),
@@ -496,6 +497,17 @@ fn type_array(input: Span) -> IResult<Span, TypeDecl> {
 
 pub(crate) fn type_decl(input: Span) -> IResult<Span, TypeDecl> {
     alt((type_array, type_scalar))(input)
+}
+
+fn cast(i: Span) -> IResult<Span, Expression> {
+    let (r, res) = var_ref(i)?;
+    let (r, _) = delimited(multispace0, tag("as"), multispace0)(r)?;
+    let (r, decl) = type_decl(r)?;
+    let span = i.subslice(i.offset(&res.span), res.span.offset(&r));
+    Ok((
+        r,
+        Expression::new(ExprEnum::Cast(Box::new(res), decl), span),
+    ))
 }
 
 pub(crate) fn type_spec(input: Span) -> IResult<Span, TypeDecl> {
@@ -659,6 +671,7 @@ pub(crate) fn primary_expression(i: Span) -> IResult<Span, Expression> {
         numeric_literal_expression,
         str_literal,
         array_literal,
+        cast,
         var_ref,
         parens,
         brace_expr,

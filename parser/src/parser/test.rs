@@ -627,3 +627,12 @@ fn test_brace() {
         Expression::new(Brace(vec![]), span)
     );
 }
+
+#[test]
+fn test_cast() {
+    let span = Span::new("a as i32");
+    assert_eq!(
+        full_expression(span).finish().unwrap().1,
+        Expression::new(Cast(var_r(span.subslice(0, 1)), TypeDecl::I32), span)
+    );
+}

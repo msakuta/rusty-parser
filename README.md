@@ -74,7 +74,7 @@ In ascending order of difficulty.
 * [x] WebAssembly build target
 * [x] Function return types
 * [x] Static type checking (instead of runtime coercion)
-* [ ] Type cast operator
+* [x] Type cast operator
 * [ ] Proper error handling
 * [ ] Tuple types
 * [ ] Multi-dimensional arrays

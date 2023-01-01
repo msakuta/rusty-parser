@@ -29,7 +29,7 @@
 		"keywords": {
 			"patterns": [{
 				"name": "keyword.control.rpar",
-				"match": "\\b(if|while|for|return|fn|var)\\b"
+				"match": "\\b(if|while|for|return|fn|var|as)\\b"
 			}]
 		},
 		"builtInTypes": {

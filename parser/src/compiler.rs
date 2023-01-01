@@ -588,6 +588,7 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
                 return Err(format!("Variable {} not found in scope", str));
             }
         }
+        ExprEnum::Cast(ex, _decl) => emit_expr(ex, compiler),
         ExprEnum::Not(val) => {
             let val = emit_expr(val, compiler)?;
             compiler.bytecode.push_inst(OpCode::Not, val as u8, 0);

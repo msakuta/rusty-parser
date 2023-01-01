@@ -6,6 +6,7 @@ use crate::{
     FuncDef, Span, TypeDecl, Value,
 };
 
+#[derive(Debug)]
 pub struct TypeCheckError<'src> {
     msg: String,
     span: Span<'src>,
@@ -133,6 +134,10 @@ fn tc_expr<'src, 'b>(
                 ctx.source_file,
             )
         })?,
+        ExprEnum::Cast(ex, decl) => {
+            let res = tc_expr(ex, ctx)?;
+            tc_cast_type(&res, decl, ex.span, ctx)?
+        }
         ExprEnum::VarAssign(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Assignment")?,
         ExprEnum::FnInvoke(str, args) => {
             let args_ty = args
@@ -246,6 +251,40 @@ fn tc_coerce_type<'src>(
             return Err(TypeCheckError::new(
                 format!(
                     "Type check error! {:?} cannot be assigned to {:?}",
+                    value, target
+                ),
+                span,
+                ctx.source_file,
+            ))
+        }
+    })
+}
+
+fn tc_cast_type<'src>(
+    value: &TypeDecl,
+    target: &TypeDecl,
+    span: Span<'src>,
+    ctx: &TypeCheckContext<'src, '_, '_, '_>,
+) -> Result<TypeDecl, TypeCheckError<'src>> {
+    use TypeDecl::*;
+    Ok(match (value, target) {
+        (_, Any) => value.clone(),
+        (Any, _) => target.clone(),
+        (I32 | I64 | F32 | F64 | Integer | Float, F64) => F64,
+        (I32 | I64 | F32 | F64 | Integer | Float, F32) => F32,
+        (I32 | I64 | F32 | F64 | Integer | Float, I64) => I64,
+        (I32 | I64 | F32 | F64 | Integer | Float, I32) => I32,
+        (Str, Str) => Str,
+        (Array(v_inner), Array(t_inner)) => {
+            // Array doesn't recursively type cast for performance reasons.
+            Array(Box::new(tc_coerce_type(v_inner, t_inner, span, ctx)?))
+        }
+        (I32 | I64 | F32 | F64 | Integer | Float, Float) => Float,
+        (I32 | I64 | F32 | F64 | Integer | Float, Integer) => Integer,
+        _ => {
+            return Err(TypeCheckError::new(
+                format!(
+                    "Type check error! {:?} cannot be casted to {:?}",
                     value, target
                 ),
                 span,
@@ -412,4 +451,19 @@ fn binary_cmp_type(lhs: &TypeDecl, rhs: &TypeDecl) -> Result<TypeDecl, ()> {
         _ => return Err(()),
     };
     Ok(res)
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_cast() {
+        let span = Span::new("var a: i64; a as i32");
+        let (_, ast) = crate::parser::source(span).unwrap();
+        assert_eq!(
+            type_check(&ast, &mut TypeCheckContext::new(None)).unwrap(),
+            TypeDecl::I32
+        );
+    }
 }
