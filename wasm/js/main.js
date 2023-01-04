@@ -1,4 +1,4 @@
-import { type_check, run_script, parse_ast, compile, compile_and_run } from "../pkg/index.js";
+import { type_check, run_script, start_step, parse_ast, compile, compile_and_run } from "../pkg/index.js";
 
 
 async function runCommon(process) {
@@ -26,6 +26,13 @@ document.getElementById("typeCheck").addEventListener("click", () => runCommon(s
     document.getElementById("output").value = result;
 }));
 document.getElementById("run").addEventListener("click", () => runCommon(run_script));
+document.getElementById("startStep").addEventListener("click", () => runCommon((source) => {
+    vm = start_step(source);
+    sourceText = source;
+    document.getElementById("fixedInput").innerHTML = source;
+    updateButtonStates();
+    return runStep();
+}));
 document.getElementById("parseAst").addEventListener("click", () => runCommon(source => {
     const result = parse_ast(source);
     document.getElementById("output").value = result;

@@ -37,7 +37,7 @@ impl<'a> CallInfo<'a> {
     }
 }
 
-struct Vm {
+pub struct Vm {
     stack: Vec<Value>,
     stack_base: usize,
 }

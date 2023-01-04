@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use parser::*;
 use wasm_bindgen::prelude::*;
 
@@ -167,6 +169,24 @@ pub fn run_script(src: &str) -> Result<(), JsValue> {
     run(&parse_result.1, &mut ctx)
         .map_err(|e| JsValue::from_str(&format!("Error on execution: {:?}", e)))?;
     Ok(())
+}
+
+#[wasm_bindgen]
+pub struct VmHandle {
+    vm: Vm,
+    src: Rc<String>,
+}
+
+#[wasm_bindgen]
+pub fn start_step(src: String) -> Result<VmHandle, JsValue> {
+    let mut vm = EvalContext::new();
+    let src = Rc::new(src);
+    wasm_functions!(vm);
+    let parse_result = source(&src)
+        .map_err(|e| JsValue::from_str(&format!("Parse error: {:?}", e)))?;
+    let bytecode = parser::compile(&parse_result.1)
+        .map_err(|e| JsValue::from_str(&format!("Error on execution: {:?}", e)))?;
+    Ok(VmHandle { vm, src: src.clone() })
 }
 
 #[wasm_bindgen]

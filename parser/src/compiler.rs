@@ -11,7 +11,7 @@ use crate::{
     },
     parser::{ExprEnum, Expression, ReadError, Statement},
     value::ArrayInt,
-    TypeDecl, Value,
+    TypeDecl, Value, Span,
 };
 
 macro_rules! dbg_println {
@@ -231,18 +231,29 @@ impl Bytecode {
     }
 }
 
+
+type ByteSpan = (usize, usize);
+
 #[derive(Debug, Clone)]
 pub struct FnBytecode {
     pub(crate) literals: Vec<Value>,
     pub(crate) args: Vec<String>,
     pub(crate) instructions: Vec<Instruction>,
     pub(crate) stack_size: usize,
+    pub(crate) debug_info: Vec<ByteSpan>,
 }
 
 impl FnBytecode {
     fn push_inst(&mut self, op: OpCode, arg0: u8, arg1: u16) -> usize {
         let ret = self.instructions.len();
         self.instructions.push(Instruction::new(op, arg0, arg1));
+        ret
+    }
+
+    fn push_inst_dbg(&mut self, op: OpCode, arg0: u8, arg1: u16, span: ByteSpan) -> usize {
+        let ret = self.instructions.len();
+        self.instructions.push(Instruction::new(op, arg0, arg1));
+        self.debug_info.push(span);
         ret
     }
 
@@ -287,11 +298,26 @@ impl FnBytecode {
         let instructions = (0..instructions)
             .map(|_| Instruction::deserialize(reader))
             .collect::<Result<Vec<_>, _>>()?;
+
+        let mut debug_info = [0u8; std::mem::size_of::<usize>()];
+        reader.read_exact(&mut debug_info)?;
+        let debug_info = usize::from_le_bytes(debug_info);
+        let debug_info = (0..debug_info).map(|_| -> std::io::Result<_> {
+            let mut start = [0u8; std::mem::size_of::<usize>()];
+            reader.read_exact(&mut start)?;
+            let start = usize::from_le_bytes(start);
+            let mut end = [0u8; std::mem::size_of::<usize>()];
+            reader.read_exact(&mut end)?;
+            let end = usize::from_le_bytes(end);
+            Ok((start, end))
+        }).collect::<Result<Vec<_>, _>>()?;
+
         Ok(Self {
             literals,
             args,
             instructions,
             stack_size: usize::from_le_bytes(stack_size),
+            debug_info,
         })
     }
 }
@@ -338,6 +364,7 @@ impl Compiler {
                 args: args.iter().map(|arg| arg.name.to_owned()).collect(),
                 instructions: vec![],
                 stack_size: 0,
+                debug_info: vec![],
             },
             target_stack: (0..args.len() + 1)
                 .map(|i| {
@@ -554,6 +581,10 @@ fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> Result<Option<usi
     Ok(last_target)
 }
 
+fn span_bytes(s: Span) -> ByteSpan {
+    (s.location_offset(), s.location_offset() + s.fragment().len())
+}
+
 fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String> {
     match &expr.expr {
         ExprEnum::NumLiteral(val) => Ok(compiler.find_or_create_literal(val)),
@@ -593,12 +624,12 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
         ExprEnum::Cast(ex, _decl) => emit_expr(ex, compiler),
         ExprEnum::Not(val) => {
             let val = emit_expr(val, compiler)?;
-            compiler.bytecode.push_inst(OpCode::Not, val as u8, 0);
+            compiler.bytecode.push_inst_dbg(OpCode::Not, val as u8, 0, span_bytes(expr.span));
             Ok(val)
         }
         ExprEnum::BitNot(val) => {
             let val = emit_expr(val, compiler)?;
-            compiler.bytecode.push_inst(OpCode::BitNot, val as u8, 0);
+            compiler.bytecode.push_inst_dbg(OpCode::BitNot, val as u8, 0, span_bytes(expr.span));
             Ok(val)
         }
         ExprEnum::Add(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Add, lhs, rhs)),
@@ -633,7 +664,7 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
                 compiler.target_stack.push(Target::None);
                 compiler
                     .bytecode
-                    .push_inst(OpCode::Move, arg as u8, arg_target as u16);
+                    .push_inst_dbg(OpCode::Move, arg as u8, arg_target as u16, span_bytes(expr.span));
             }
 
             // let func = compiler
@@ -643,7 +674,7 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
 
             compiler
                 .bytecode
-                .push_inst(OpCode::Call, num_args as u8, stk_fname as u16);
+                .push_inst_dbg(OpCode::Call, num_args as u8, stk_fname as u16, span_bytes(expr.span));
             compiler.target_stack.push(Target::None);
             Ok(stk_fname)
         }
@@ -659,7 +690,7 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
                 let top = compiler.target_stack.len();
                 compiler
                     .bytecode
-                    .push_inst(OpCode::Move, arg as u8, top as u16);
+                    .push_inst_dbg(OpCode::Move, arg as u8, top as u16, span_bytes(expr.span));
                 compiler.target_stack.push(Target::None);
                 top
             } else {
@@ -667,7 +698,7 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
             };
             compiler
                 .bytecode
-                .push_inst(OpCode::Get, stk_ex as u8, arg as u16);
+                .push_inst_dbg(OpCode::Get, stk_ex as u8, arg as u16, span_bytes(expr.span));
             Ok(arg)
         }
         ExprEnum::LT(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Lt, lhs, rhs)),
@@ -680,20 +711,21 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
         ExprEnum::Conditional(cond, true_branch, false_branch) => {
             let cond = emit_expr(cond, compiler)?;
             let cond_inst_idx = compiler.bytecode.instructions.len();
-            compiler.bytecode.push_inst(OpCode::Jf, cond as u8, 0);
+            compiler.bytecode.push_inst_dbg(OpCode::Jf, cond as u8, 0, span_bytes(expr.span));
             let true_branch = emit_stmts(true_branch, compiler)?;
             if let Some(false_branch) = false_branch {
                 let true_inst_idx = compiler.bytecode.instructions.len();
-                compiler.bytecode.push_inst(OpCode::Jmp, 0, 0);
+                compiler.bytecode.push_inst_dbg(OpCode::Jmp, 0, 0, span_bytes(expr.span));
                 compiler.bytecode.instructions[cond_inst_idx].arg1 =
                     compiler.bytecode.instructions.len() as u16;
                 if let Some((false_branch, true_branch)) =
                     emit_stmts(false_branch, compiler)?.zip(true_branch)
                 {
-                    compiler.bytecode.push_inst(
+                    compiler.bytecode.push_inst_dbg(
                         OpCode::Move,
                         false_branch as u8,
                         true_branch as u16,
+                        span_bytes(expr.span),
                     );
                 }
                 compiler.bytecode.instructions[true_inst_idx].arg1 =
