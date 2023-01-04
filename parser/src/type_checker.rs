@@ -397,23 +397,24 @@ fn binary_op<'src, 'ast>(
 }
 
 fn binary_op_type(lhs: &TypeDecl, rhs: &TypeDecl) -> Result<TypeDecl, ()> {
+    use TypeDecl::*;
     let res = match (&lhs, &rhs) {
-        // Any type spreads contamination in the source code.
-        (TypeDecl::Any, _) => TypeDecl::Any,
-        (_, TypeDecl::Any) => TypeDecl::Any,
-        (TypeDecl::F64, TypeDecl::F64) => TypeDecl::F64,
-        (TypeDecl::F32, TypeDecl::F32) => TypeDecl::F32,
-        (TypeDecl::I64, TypeDecl::I64) => TypeDecl::I64,
-        (TypeDecl::I32, TypeDecl::I32) => TypeDecl::I32,
-        (TypeDecl::Str, TypeDecl::Str) => TypeDecl::Str,
-        (TypeDecl::Float, TypeDecl::Float) => TypeDecl::Float,
-        (TypeDecl::Integer, TypeDecl::Integer) => TypeDecl::Integer,
-        (TypeDecl::Float, TypeDecl::F64) | (TypeDecl::F64, TypeDecl::Float) => TypeDecl::F64,
-        (TypeDecl::Float, TypeDecl::F32) | (TypeDecl::F32, TypeDecl::Float) => TypeDecl::F32,
-        (TypeDecl::Integer, TypeDecl::I64) | (TypeDecl::I64, TypeDecl::Integer) => TypeDecl::I64,
-        (TypeDecl::Integer, TypeDecl::I32) | (TypeDecl::I32, TypeDecl::Integer) => TypeDecl::I32,
-        (TypeDecl::Array(lhs), TypeDecl::Array(rhs)) => {
-            return Ok(TypeDecl::Array(Box::new(binary_op_type(lhs, rhs)?)));
+        // `Any` type spreads contamination in the source code.
+        (Any, _) => Any,
+        (_, Any) => Any,
+        (F64, F64) => F64,
+        (F32, F32) => F32,
+        (I64, I64) => I64,
+        (I32, I32) => I32,
+        (Str, Str) => Str,
+        (Float, Float) => Float,
+        (Integer, Integer) => Integer,
+        (Float, F64) | (F64, Float) => F64,
+        (Float, F32) | (F32, Float) => F32,
+        (Integer, I64) | (I64, Integer) => I64,
+        (Integer, I32) | (I32, Integer) => I32,
+        (Array(lhs), Array(rhs)) => {
+            return Ok(Array(Box::new(binary_op_type(lhs, rhs)?)));
         }
         _ => return Err(()),
     };
@@ -431,22 +432,20 @@ fn binary_cmp<'src, 'ast>(
 
 /// Binary comparison operator type check. It will always return i32, which is used as a bool in this language.
 fn binary_cmp_type(lhs: &TypeDecl, rhs: &TypeDecl) -> Result<TypeDecl, ()> {
+    use TypeDecl::*;
     let res = match (&lhs, &rhs) {
-        // Any type spreads contamination in the source code.
-        (TypeDecl::Any, _) => TypeDecl::I32,
-        (_, TypeDecl::Any) => TypeDecl::I32,
-        (TypeDecl::F64, TypeDecl::F64) => TypeDecl::I32,
-        (TypeDecl::F32, TypeDecl::F32) => TypeDecl::I32,
-        (TypeDecl::I64, TypeDecl::I64) => TypeDecl::I32,
-        (TypeDecl::I32, TypeDecl::I32) => TypeDecl::I32,
-        (TypeDecl::Str, TypeDecl::Str) => TypeDecl::I32,
-        (TypeDecl::Float, TypeDecl::Float) => TypeDecl::I32,
-        (TypeDecl::Integer, TypeDecl::Integer) => TypeDecl::I32,
-        (TypeDecl::Float, TypeDecl::F64 | TypeDecl::F32)
-        | (TypeDecl::F64 | TypeDecl::F32, TypeDecl::Float) => TypeDecl::I32,
-        (TypeDecl::Integer, TypeDecl::I64 | TypeDecl::I32)
-        | (TypeDecl::I64 | TypeDecl::I32, TypeDecl::Integer) => TypeDecl::I32,
-        (TypeDecl::Array(lhs), TypeDecl::Array(rhs)) => {
+        (Any, _) => I32,
+        (_, Any) => I32,
+        (F64, F64) => I32,
+        (F32, F32) => I32,
+        (I64, I64) => I32,
+        (I32, I32) => I32,
+        (Str, Str) => I32,
+        (Float, Float) => I32,
+        (Integer, Integer) => I32,
+        (Float, F64 | F32) | (F64 | F32, Float) => I32,
+        (Integer, I64 | I32) | (I64 | I32, Integer) => I32,
+        (Array(lhs), Array(rhs)) => {
             return binary_cmp_type(lhs, rhs);
         }
         _ => return Err(()),
