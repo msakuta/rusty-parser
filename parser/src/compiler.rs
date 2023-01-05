@@ -79,7 +79,7 @@ macro_rules! impl_op_from {
 
                 match o {
                     $($op => Self::$op,)*
-                    _ => panic!("Opcode unrecognized!"),
+                    _ => panic!("Opcode \"{:02X}\" unrecognized!", o),
                 }
             }
         }
@@ -94,9 +94,13 @@ impl_op_from!(
     Sub,
     Mul,
     Div,
+    BitAnd,
+    BitXor,
+    BitOr,
     And,
     Or,
     Not,
+    BitNot,
     Get,
     Deref,
     Lt,
