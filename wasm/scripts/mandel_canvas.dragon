@@ -1,7 +1,7 @@
 
 fn printdensity(d: i64, x: i32, y: i32) {
   set_fill_style("#00" + hex_string(d) + "00");
-  rectangle(x * 5, y * 5, 5, 5);
+  rectangle(x * 4, y * 4, 4, 4);
 }
 
 /* Determine whether the specific location diverges. */
@@ -11,8 +11,9 @@ fn mandelconverger(real, imag, iters, creal, cimag) {
         if real*real + imag*imag > 4 {
             break;
         };
-        real = real*real - imag*imag + creal;
+        var next_r = real*real - imag*imag + creal;
         imag = 2*real*imag + cimag;
+        real = next_r;
     }
     iters
 }

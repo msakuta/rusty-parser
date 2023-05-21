@@ -28,8 +28,9 @@ fn mandelconverger(real, imag, iters, creal, cimag) {
         if real*real + imag*imag > 4 {
             break;
         };
-        real = real*real - imag*imag + creal;
+        var next_r = real*real - imag*imag + creal;
         imag = 2*real*imag + cimag;
+        real = next_r;
     }
     iters
 }
