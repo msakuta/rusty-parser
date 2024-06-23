@@ -542,7 +542,7 @@ fn test_bit_or_arg() {
         Expression::new(
             ExprEnum::FnInvoke(
                 "a",
-                vec![Expression::new(
+                vec![FnArg::new(Expression::new(
                     ExprEnum::BitOr(
                         Box::new(Expression::new(
                             ExprEnum::NumLiteral(Value::I64(1)),
@@ -554,7 +554,7 @@ fn test_bit_or_arg() {
                         ))
                     ),
                     span.subslice(2, 5)
-                )]
+                ))]
             ),
             span
         )

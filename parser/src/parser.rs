@@ -70,7 +70,7 @@ pub(crate) enum ExprEnum<'a> {
     Variable(&'a str),
     Cast(Box<Expression<'a>>, TypeDecl),
     VarAssign(Box<Expression<'a>>, Box<Expression<'a>>),
-    FnInvoke(&'a str, Vec<Expression<'a>>),
+    FnInvoke(&'a str, Vec<FnArg<'a>>),
     ArrIndex(Box<Expression<'a>>, Vec<Expression<'a>>),
     Not(Box<Expression<'a>>),
     BitNot(Box<Expression<'a>>),
@@ -102,6 +102,18 @@ pub struct Expression<'a> {
 impl<'a> Expression<'a> {
     pub(crate) fn new(expr: ExprEnum<'a>, span: Span<'a>) -> Self {
         Self { expr, span }
+    }
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct FnArg<'a> {
+    pub name: Option<Span<'a>>,
+    pub expr: Expression<'a>,
+}
+
+impl<'a> FnArg<'a> {
+    pub(crate) fn new(expr: Expression<'a>) -> Self {
+        Self { name: None, expr }
     }
 }
 
@@ -305,6 +317,18 @@ where
     delimited(multispace0, inner, multispace0)
 }
 
+pub(crate) fn fn_invoke_arg(i: Span) -> IResult<Span, FnArg> {
+    let (r, name) = opt(pair(ws(identifier), ws(tag(":"))))(i)?;
+    let (r, expr) = full_expression(r)?;
+    Ok((
+        r,
+        FnArg {
+            name: name.map(|(a, _)| a),
+            expr,
+        },
+    ))
+}
+
 pub(crate) fn func_invoke(i: Span) -> IResult<Span, Expression> {
     let (r, ident) = ws(identifier)(i)?;
     // println!("func_invoke ident: {}", ident);
@@ -313,7 +337,7 @@ pub(crate) fn func_invoke(i: Span) -> IResult<Span, Expression> {
         delimited(
             char('('),
             terminated(
-                separated_list0(ws(char(',')), full_expression),
+                separated_list0(ws(char(',')), fn_invoke_arg),
                 opt(ws(char(','))),
             ),
             char(')'),

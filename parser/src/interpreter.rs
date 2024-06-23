@@ -265,17 +265,46 @@ pub(crate) fn eval<'a, 'b>(
             RunResult::Yield(result)
         }
         ExprEnum::FnInvoke(str, args) => {
-            let args = args
+            // Collect unordered args first
+            let mut eval_args = args
                 .iter()
-                .map(|v| eval(v, ctx))
+                .filter(|v| v.name.is_none())
+                .map(|v| eval(&v.expr, ctx))
                 .collect::<Result<Vec<_>, _>>()?;
-            let mut subctx = EvalContext::push_stack(ctx);
+            let named_args: Vec<_> = args
+                .into_iter()
+                .filter_map(|arg| {
+                    if let Some(ref name) = arg.name {
+                        Some((name, &arg.expr))
+                    } else {
+                        None
+                    }
+                })
+                .map(|(name, expr)| Ok::<_, String>((name, eval(expr, ctx)?)))
+                .collect::<Result<Vec<_>, _>>()?;
+
+            println!("invoking \"{str}\", eval_args: {eval_args:?}, named_args: {named_args:?}");
+
             let func = ctx
                 .get_fn(*str)
                 .ok_or_else(|| format!("function {} is not defined.", str))?;
+            let mut subctx = EvalContext::push_stack(ctx);
             match func {
                 FuncDef::Code(func) => {
-                    for (k, v) in func.args.iter().zip(&args) {
+                    for (name, val) in named_args.into_iter() {
+                        if let Some((i, decl_arg)) =
+                            func.args.iter().enumerate().find(|f| f.1 .0 == **name)
+                        {
+                            if eval_args.len() <= i {
+                                eval_args.resize(i + 1, RunResult::Yield(Value::I32(0)));
+                            }
+                            eval_args[i] = val;
+                        } else {
+                            return Err(format!("No matching named parameter \"{name}\" is found in function \"{str}\""));
+                        }
+                    }
+
+                    for (k, v) in func.args.iter().zip(&eval_args) {
                         subctx.variables.borrow_mut().insert(
                             k.0,
                             Rc::new(RefCell::new(coerce_type(&unwrap_run!(v.clone()), &k.1)?)),
@@ -291,7 +320,7 @@ pub(crate) fn eval<'a, 'b>(
                     }
                 }
                 FuncDef::Native(native) => RunResult::Yield((native.code)(
-                    &args
+                    &eval_args
                         .into_iter()
                         .map(|e| {
                             Ok(match e {

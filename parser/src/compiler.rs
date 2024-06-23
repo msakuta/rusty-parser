@@ -625,7 +625,7 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
             // accidentally overwritten. I'm not sure this is the best way to avoid it.
             let args = argss
                 .iter()
-                .map(|v| emit_rvalue(v, compiler))
+                .map(|v| emit_rvalue(&v.expr, compiler))
                 .collect::<Result<Vec<_>, _>>()?;
             let num_args = args.len();
 

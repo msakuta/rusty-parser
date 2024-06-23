@@ -143,7 +143,7 @@ fn tc_expr<'src, 'b>(
         ExprEnum::FnInvoke(str, args) => {
             let args_ty = args
                 .iter()
-                .map(|v| tc_expr(v, ctx))
+                .map(|v| tc_expr(&v.expr, ctx))
                 .collect::<Result<Vec<_>, _>>()?;
             let func = ctx.get_fn(*str).ok_or_else(|| {
                 TypeCheckError::new(
@@ -154,7 +154,7 @@ fn tc_expr<'src, 'b>(
             })?;
             let args_decl = func.args();
             for ((arg_ty, arg), decl) in args_ty.iter().zip(args.iter()).zip(args_decl.iter()) {
-                tc_coerce_type(&arg_ty, &decl.1, arg.span, ctx)?;
+                tc_coerce_type(&arg_ty, &decl.1, arg.expr.span, ctx)?;
             }
             match func {
                 FuncDef::Code(code) => code.ret_type.clone().unwrap_or(TypeDecl::Any),
