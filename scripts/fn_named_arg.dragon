@@ -19,13 +19,9 @@ fn h(x: i64) -> i64 {
 
 print(h(x : 103));
 
-fn max(a: f64, b: f64) -> f64 {
-    if a < b {
-        b;
-    } else {
-        a;
-    }
+fn digits(a: f64, b: f64) -> f64 {
+    a + b * 10.
 }
 
-print(max(a: 3., b: 5.));
-print(max(b: 3., a: 5.));
+print(digits(a: 3., b: 5.));
+print(digits(b: 3., a: 5.));
