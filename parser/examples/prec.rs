@@ -10,10 +10,19 @@ fn main() {
     let input = "1 * 3";
     println!("source: {:?}, parsed: {:?}", input, expr(input));
 
+    let input = "1 + 2 + 3";
+    println!("source: {:?}, parsed: {:?}", input, expr(input));
+
+    let input = "1 - 2 + 3";
+    println!("source: {:?}, parsed: {:?}", input, expr(input));
+
     let input = "10 + 1 * 3";
     println!("source: {:?}, parsed: {:?}", input, expr(input));
 
     let input = "10 * 1 + 3";
+    println!("source: {:?}, parsed: {:?}", input, expr(input));
+
+    let input = "10 + 1 * 3 + 100";
     println!("source: {:?}, parsed: {:?}", input, expr(input));
 
     let input = "(123 + 456 ) + world";
@@ -39,6 +48,7 @@ fn peek_char(input: &str) -> Option<char> {
 #[derive(Debug, PartialEq, Clone, Copy)]
 enum OpCode {
     Add,
+    Sub,
     Mul,
 }
 
@@ -84,8 +94,19 @@ impl<'src> Expression<'src> {
 fn precedence(op: &OpCode) -> usize {
     match op {
         OpCode::Add => 1,
+        OpCode::Sub => 1,
         OpCode::Mul => 2,
     }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Associativity {
+    Left,
+    Right,
+}
+
+fn associativity(_op: &OpCode) -> Associativity {
+    Associativity::Left
 }
 
 fn expr(input: &str) -> Option<(&str, Expression)> {
@@ -125,13 +146,17 @@ fn bin_op(prec: usize) -> impl Fn(&str) -> Option<(&str, Expression)> {
             let (r, rhs) = token(next)?;
             println!("[{prec}] Next token: {rhs:?}");
             let mut rhs: Expression = rhs.try_into().ok()?;
-            let Some((_, p_lookahead)) = token(r) else {
+            let Some((p_next, p_lookahead)) = token(r) else {
                 println!("[{prec}] Exhausted input, returning {ret:?} and {rhs:?}");
                 return Some((r, Expression::bin_op(op, ret, rhs)));
             };
-            lookahead = p_lookahead;
+            println!("[{prec}] Inner lookahead: {p_lookahead:?}");
+            (next, lookahead) = (p_next, p_lookahead);
             while let Token::Op(next_op) = lookahead {
-                if precedence(&next_op) < precedence(&op) {
+                if precedence(&next_op) <= precedence(&op)
+                    && (precedence(&next_op) != precedence(&op)
+                        || associativity(&op) != Associativity::Right)
+                {
                     break;
                 }
                 let next_prec = precedence(&op)
@@ -140,12 +165,15 @@ fn bin_op(prec: usize) -> impl Fn(&str) -> Option<(&str, Expression)> {
                     } else {
                         0
                     };
+                println!("[{prec}] next_prec: {:?}", next_prec);
                 (next, rhs) = bin_op(next_prec)(next)?;
                 let Some((p_next, p_lookahead)) = token(next) else {
+                    println!("[{prec}] Inner Exhausted input, returning {ret:?} and {rhs:?}");
                     return Some((next, Expression::bin_op(op, ret, rhs)));
                 };
                 (next, lookahead) = (p_next, p_lookahead);
             }
+            println!("[{prec}] Combining bin_op outer: {ret:?}, {rhs:?}, next: {lookahead:?}");
             ret = Expression::bin_op(op, ret, rhs);
         }
 
@@ -226,6 +254,7 @@ fn number(mut input: &str) -> Option<(&str, Token)> {
 fn operator(input: &str) -> Option<(&str, Token)> {
     match peek_char(input) {
         Some('+') => Some((advance_char(input), Token::Op(OpCode::Add))),
+        Some('-') => Some((advance_char(input), Token::Op(OpCode::Sub))),
         Some('*') => Some((advance_char(input), Token::Op(OpCode::Mul))),
         _ => None,
     }
