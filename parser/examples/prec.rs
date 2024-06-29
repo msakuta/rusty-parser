@@ -1,3 +1,9 @@
+//! A demonstration of precedence climbing method
+//!
+//! It is a more stack-efficient way to parse binary operator expressions.
+//! It is also eaiser to adapt to custom operators with different precedence
+//! and associativity at runtime.
+
 use std::convert::TryFrom;
 
 fn main() {
@@ -310,6 +316,21 @@ mod test {
                         rhs: Box::new(Expression::NumLiteral(3.))
                     })
                 }
+            ))
+        );
+    }
+
+    #[test]
+    fn test_associativity() {
+        assert_eq!(
+            expr("1 - 2 + 3 "),
+            Some((
+                " ",
+                Expression::bin_op(
+                    OpCode::Add,
+                    Expression::bin_op(OpCode::Sub, Expression::NumLiteral(1.), Expression::NumLiteral(2.)),
+                    Expression::NumLiteral(3.),
+                )
             ))
         );
     }
