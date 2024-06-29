@@ -301,22 +301,15 @@ mod test {
         assert_eq!(number("123.45 "), Some((" ", Token::NumLiteral(123.45))));
     }
 
+    use Expression::bin_op as e_bin_op;
+    use Expression::NumLiteral as Lit;
+    use OpCode::*;
+
     #[test]
     fn test_expr() {
         assert_eq!(
             expr("1 + 2 * 3 "),
-            Some((
-                " ",
-                Expression::BinOp {
-                    op: OpCode::Add,
-                    lhs: Box::new(Expression::NumLiteral(1.)),
-                    rhs: Box::new(Expression::BinOp {
-                        op: OpCode::Mul,
-                        lhs: Box::new(Expression::NumLiteral(2.)),
-                        rhs: Box::new(Expression::NumLiteral(3.))
-                    })
-                }
-            ))
+            Some((" ", e_bin_op(Add, Lit(1.), e_bin_op(Mul, Lit(2.), Lit(3.)))))
         );
     }
 
@@ -326,11 +319,7 @@ mod test {
             expr("1 - 2 + 3 "),
             Some((
                 " ",
-                Expression::bin_op(
-                    OpCode::Add,
-                    Expression::bin_op(OpCode::Sub, Expression::NumLiteral(1.), Expression::NumLiteral(2.)),
-                    Expression::NumLiteral(3.),
-                )
+                e_bin_op(Add, e_bin_op(Sub, Lit(1.), Lit(2.)), Lit(3.),)
             ))
         );
     }
