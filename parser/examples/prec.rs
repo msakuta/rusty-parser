@@ -35,6 +35,7 @@ fn advance_char(input: &str) -> &str {
 fn peek_char(input: &str) -> Option<char> {
     input.chars().next()
 }
+
 #[derive(Debug, PartialEq, Clone, Copy)]
 enum OpCode {
     Add,
@@ -66,6 +67,16 @@ impl<'src> TryFrom<Token<'src>> for Expression<'src> {
             Token::Ident(id) => Ok(Expression::Ident(id)),
             Token::NumLiteral(num) => Ok(Expression::NumLiteral(num)),
             _ => Err(()),
+        }
+    }
+}
+
+impl<'src> Expression<'src> {
+    fn bin_op(op: OpCode, lhs: Self, rhs: Self) -> Self {
+        Self::BinOp {
+            op,
+            lhs: Box::new(lhs),
+            rhs: Box::new(rhs),
         }
     }
 }
@@ -116,14 +127,7 @@ fn bin_op(prec: usize) -> impl Fn(&str) -> Option<(&str, Expression)> {
             let mut rhs: Expression = rhs.try_into().ok()?;
             let Some((_, p_lookahead)) = token(r) else {
                 println!("[{prec}] Exhausted input, returning {ret:?} and {rhs:?}");
-                return Some((
-                    r,
-                    Expression::BinOp {
-                        op,
-                        lhs: Box::new(ret),
-                        rhs: Box::new(rhs),
-                    },
-                ));
+                return Some((r, Expression::bin_op(op, ret, rhs)));
             };
             lookahead = p_lookahead;
             while let Token::Op(next_op) = lookahead {
@@ -138,22 +142,11 @@ fn bin_op(prec: usize) -> impl Fn(&str) -> Option<(&str, Expression)> {
                     };
                 (next, rhs) = bin_op(next_prec)(next)?;
                 let Some((p_next, p_lookahead)) = token(next) else {
-                    return Some((
-                        next,
-                        Expression::BinOp {
-                            op,
-                            lhs: Box::new(ret),
-                            rhs: Box::new(rhs),
-                        },
-                    ));
+                    return Some((next, Expression::bin_op(op, ret, rhs)));
                 };
                 (next, lookahead) = (p_next, p_lookahead);
             }
-            ret = Expression::BinOp {
-                op,
-                lhs: Box::new(ret),
-                rhs: Box::new(rhs),
-            };
+            ret = Expression::bin_op(op, ret, rhs);
         }
 
         Some((next, ret))
