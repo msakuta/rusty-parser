@@ -181,9 +181,8 @@ macro_rules! dprintln {
 fn bin_op(prec: usize) -> impl Fn(&str) -> Option<(&str, Expression)> {
     use std::convert::TryInto;
     move |input: &str| {
-        let (mut outer_next, lhs) = token(input)?;
-        dprintln!("[{prec}] First token: {lhs:?}");
-        let mut ret: Expression = lhs.try_into().ok()?;
+        let (mut outer_next, mut ret) = term(input)?;
+        dprintln!("[{prec}] First token: {ret:?}");
         dprintln!("[{prec}] First expression: {ret:?} next: {outer_next:?}");
         let Some((_peek_next, mut lookahead)) = token(outer_next) else {
             return Some((outer_next, ret));
@@ -195,7 +194,7 @@ fn bin_op(prec: usize) -> impl Fn(&str) -> Option<(&str, Expression)> {
             }
             let (op_next, _) = token(outer_next)?;
             let mut inner_next = op_next;
-            let (rhs_next, rhs) = token(op_next)?;
+            let (rhs_next, rhs) = term(op_next)?;
             dprintln!("[{prec}] Outer loop Next token: {rhs:?}");
             let mut rhs: Expression = rhs.try_into().ok()?;
             let Some((p_next, p_lookahead)) = token(rhs_next) else {
