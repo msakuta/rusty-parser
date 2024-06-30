@@ -140,27 +140,30 @@ fn paren(input: &str) -> Option<(&str, Expression)> {
 fn bin_op(prec: usize) -> impl Fn(&str) -> Option<(&str, Expression)> {
     use std::convert::TryInto;
     move |input: &str| {
-        let (r, lhs) = token(input)?;
+        let (mut outer_next, lhs) = token(input)?;
         println!("[{prec}] First token: {lhs:?}");
         let mut ret: Expression = lhs.try_into().ok()?;
-        println!("[{prec}] First expression: {ret:?} next: {r:?}");
-        let Some((mut next, mut lookahead)) = token(r) else {
-            return Some((r, ret));
+        println!("[{prec}] First expression: {ret:?} next: {outer_next:?}");
+        let Some((_peek_next, mut lookahead)) = token(outer_next) else {
+            return Some((outer_next, ret));
         };
         println!("[{prec}] First op: {lookahead:?}");
         while let Token::Op(op) = lookahead {
             if precedence(&op) < prec {
                 break;
             }
-            let (r, rhs) = token(next)?;
-            println!("[{prec}] Next token: {rhs:?}");
+            let (op_next, _) = token(outer_next)?;
+            let mut inner_next = op_next;
+            let (rhs_next, rhs) = token(op_next)?;
+            println!("[{prec}] Outer loop Next token: {rhs:?}");
             let mut rhs: Expression = rhs.try_into().ok()?;
-            let Some((p_next, p_lookahead)) = token(r) else {
+            let Some((p_next, p_lookahead)) = token(rhs_next) else {
                 println!("[{prec}] Exhausted input, returning {ret:?} and {rhs:?}");
-                return Some((r, Expression::bin_op(op, ret, rhs)));
+                return Some((rhs_next, Expression::bin_op(op, ret, rhs)));
             };
-            println!("[{prec}] Inner lookahead: {p_lookahead:?}");
-            (next, lookahead) = (p_next, p_lookahead);
+            println!("[{prec}] Outer lookahead: {p_lookahead:?} outer_next: {p_next:?} next: {rhs_next:?}");
+            (outer_next, lookahead) = (rhs_next, p_lookahead);
+
             while let Token::Op(next_op) = lookahead {
                 if precedence(&next_op) <= precedence(&op)
                     && (precedence(&next_op) != precedence(&op)
@@ -174,19 +177,21 @@ fn bin_op(prec: usize) -> impl Fn(&str) -> Option<(&str, Expression)> {
                     } else {
                         0
                     };
-                println!("[{prec}] next_prec: {:?}", next_prec);
-                (next, rhs) = bin_op(next_prec)(next)?;
-                let Some((p_next, p_lookahead)) = token(next) else {
+                println!("[{prec}] Inner next_prec: {:?} inner_next: {inner_next:}, outer_next: {outer_next:?}", next_prec);
+                (inner_next, rhs) = bin_op(next_prec)(op_next)?;
+                let Some((_p_next, p_lookahead)) = token(inner_next) else {
                     println!("[{prec}] Inner Exhausted input, returning {ret:?} and {rhs:?}");
-                    return Some((next, Expression::bin_op(op, ret, rhs)));
+                    return Some((inner_next, Expression::bin_op(op, ret, rhs)));
                 };
-                (next, lookahead) = (p_next, p_lookahead);
+                lookahead = p_lookahead;
             }
             println!("[{prec}] Combining bin_op outer: {ret:?}, {rhs:?}, next: {lookahead:?}");
             ret = Expression::bin_op(op, ret, rhs);
         }
 
-        Some((next, ret))
+        println!("[{prec}] Exiting normally with {ret:?}");
+
+        Some((outer_next, ret))
     }
 }
 
@@ -304,15 +309,22 @@ mod test {
         assert_eq!(number("123.45 "), Some((" ", Token::NumLiteral(123.45))));
     }
 
-    use Expression::bin_op as e_bin_op;
     use Expression::NumLiteral as Lit;
     use OpCode::*;
+
+    fn e_bin_op<'src>(
+        op: OpCode,
+        lhs: Expression<'src>,
+        rhs: Expression<'src>,
+    ) -> Expression<'src> {
+        Expression::bin_op(op, lhs, rhs)
+    }
 
     #[test]
     fn test_expr() {
         assert_eq!(
-            expr("1 + 2 * 3 "),
-            Some((" ", e_bin_op(Add, Lit(1.), e_bin_op(Mul, Lit(2.), Lit(3.)))))
+            expr("1 + 2 * 3"),
+            Some(("", e_bin_op(Add, Lit(1.), e_bin_op(Mul, Lit(2.), Lit(3.)))))
         );
     }
 
