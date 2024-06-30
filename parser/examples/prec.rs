@@ -7,38 +7,28 @@
 use std::convert::TryFrom;
 
 fn main() {
-    let input = "123";
-    println!("source: {:?}, parsed: {:?}", input, expr(input));
+    test_case("123");
+    test_case("Hello + world");
+    test_case("1 * 3");
+    test_case("1 + 2 + 3");
+    test_case("1 - 2 + 3");
+    test_case("10 + 1 * 3");
+    test_case("10 * 1 + 3");
+    test_case("10 + 1 * 3 + 100");
+    test_case("(123 + 456 ) + world");
+    test_case("car + cdr + cdr");
+    test_case("((1 + 2) + (3 + 4)) + 5 + 6");
+}
 
-    let input = "Hello + world";
-    println!("source: {:?}, parsed: {:?}", input, expr(input));
-
-    let input = "1 * 3";
-    println!("source: {:?}, parsed: {:?}", input, expr(input));
-
-    let input = "1 + 2 + 3";
-    println!("source: {:?}, parsed: {:?}", input, expr(input));
-
-    let input = "1 - 2 + 3";
-    println!("source: {:?}, parsed: {:?}", input, expr(input));
-
-    let input = "10 + 1 * 3";
-    println!("source: {:?}, parsed: {:?}", input, expr(input));
-
-    let input = "10 * 1 + 3";
-    println!("source: {:?}, parsed: {:?}", input, expr(input));
-
-    let input = "10 + 1 * 3 + 100";
-    println!("source: {:?}, parsed: {:?}", input, expr(input));
-
-    let input = "(123 + 456 ) + world";
-    println!("source: {:?}, parsed: {:?}", input, expr(input));
-
-    let input = "car + cdr + cdr";
-    println!("source: {:?}, parsed: {:?}", input, expr(input));
-
-    let input = "((1 + 2) + (3 + 4)) + 5 + 6";
-    println!("source: {:?}, parsed: {:?}", input, expr(input));
+fn test_case(input: &str) {
+    match expr(input) {
+        Some((_, res)) => {
+            println!("source: {:?}, parsed: {}", input, res);
+        }
+        _ => {
+            println!("source: {input:?}, failed");
+        }
+    }
 }
 
 fn advance_char(input: &str) -> &str {
@@ -56,6 +46,20 @@ enum OpCode {
     Add,
     Sub,
     Mul,
+}
+
+impl std::fmt::Display for OpCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Add => "+",
+                Self::Sub => "-",
+                Self::Mul => "*",
+            }
+        )
+    }
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -83,6 +87,22 @@ impl<'src> TryFrom<Token<'src>> for Expression<'src> {
             Token::Ident(id) => Ok(Expression::Ident(id)),
             Token::NumLiteral(num) => Ok(Expression::NumLiteral(num)),
             _ => Err(()),
+        }
+    }
+}
+
+impl<'src> std::fmt::Display for Expression<'src> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Ident(id) => write!(f, "{id}"),
+            Self::NumLiteral(num) => write!(f, "{num}"),
+            Self::BinOp { op, lhs, rhs } => {
+                write!(f, "(")?;
+                lhs.fmt(f)?;
+                write!(f, " {op} ")?;
+                rhs.fmt(f)?;
+                write!(f, ")")
+            }
         }
     }
 }
