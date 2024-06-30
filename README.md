@@ -82,6 +82,7 @@ In ascending order of difficulty.
 * [x] Static type checking (instead of runtime coercion)
 * [x] Type cast operator `as`
 * [x] [Named arguments in function calls](https://github.com/msakuta/rusty-parser/wiki/Function-signature#named-argument-in-function-call)
+* [ ] [Default argument](https://github.com/msakuta/rusty-parser/wiki/Function-signature#default-argument)
 * [ ] Type casting in bytecode
 * [ ] Proper error handling
 * [ ] Tuple types
