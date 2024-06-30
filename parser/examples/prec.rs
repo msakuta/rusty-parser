@@ -7,6 +7,12 @@
 use std::convert::TryFrom;
 
 fn main() {
+    let args = std::env::args();
+    for arg in args {
+        if arg == "-d" {
+            DEBUG.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
     test_case("123");
     test_case("Hello + world");
     test_case("1 * 3");
@@ -157,17 +163,32 @@ fn paren(input: &str) -> Option<(&str, Expression)> {
     Some((next_input, expr))
 }
 
+static DEBUG: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[macro_export]
+macro_rules! dprintln {
+    ($fmt:literal) => {
+        if DEBUG.load(std::sync::atomic::Ordering::Relaxed) {
+            println!($fmt);
+        }
+    };
+    ($fmt:literal, $($args:expr),*) => {
+        if DEBUG.load(std::sync::atomic::Ordering::Relaxed) {
+            println!($fmt, $($args),*);
+        }
+    };
+}
 fn bin_op(prec: usize) -> impl Fn(&str) -> Option<(&str, Expression)> {
     use std::convert::TryInto;
     move |input: &str| {
         let (mut outer_next, lhs) = token(input)?;
-        println!("[{prec}] First token: {lhs:?}");
+        dprintln!("[{prec}] First token: {lhs:?}");
         let mut ret: Expression = lhs.try_into().ok()?;
-        println!("[{prec}] First expression: {ret:?} next: {outer_next:?}");
+        dprintln!("[{prec}] First expression: {ret:?} next: {outer_next:?}");
         let Some((_peek_next, mut lookahead)) = token(outer_next) else {
             return Some((outer_next, ret));
         };
-        println!("[{prec}] First op: {lookahead:?}");
+        dprintln!("[{prec}] First op: {lookahead:?}");
         while let Token::Op(op) = lookahead {
             if precedence(&op) < prec {
                 break;
@@ -175,13 +196,13 @@ fn bin_op(prec: usize) -> impl Fn(&str) -> Option<(&str, Expression)> {
             let (op_next, _) = token(outer_next)?;
             let mut inner_next = op_next;
             let (rhs_next, rhs) = token(op_next)?;
-            println!("[{prec}] Outer loop Next token: {rhs:?}");
+            dprintln!("[{prec}] Outer loop Next token: {rhs:?}");
             let mut rhs: Expression = rhs.try_into().ok()?;
             let Some((p_next, p_lookahead)) = token(rhs_next) else {
-                println!("[{prec}] Exhausted input, returning {ret:?} and {rhs:?}");
+                dprintln!("[{prec}] Exhausted input, returning {ret:?} and {rhs:?}");
                 return Some((rhs_next, Expression::bin_op(op, ret, rhs)));
             };
-            println!("[{prec}] Outer lookahead: {p_lookahead:?} outer_next: {p_next:?} next: {rhs_next:?}");
+            dprintln!("[{prec}] Outer lookahead: {p_lookahead:?} outer_next: {p_next:?} next: {rhs_next:?}");
             (outer_next, lookahead) = (rhs_next, p_lookahead);
 
             while let Token::Op(next_op) = lookahead {
@@ -197,19 +218,19 @@ fn bin_op(prec: usize) -> impl Fn(&str) -> Option<(&str, Expression)> {
                     } else {
                         0
                     };
-                println!("[{prec}] Inner next_prec: {:?} inner_next: {inner_next:}, outer_next: {outer_next:?}", next_prec);
+                dprintln!("[{prec}] Inner next_prec: {:?} inner_next: {inner_next:}, outer_next: {outer_next:?}", next_prec);
                 (inner_next, rhs) = bin_op(next_prec)(op_next)?;
                 let Some((_p_next, p_lookahead)) = token(inner_next) else {
-                    println!("[{prec}] Inner Exhausted input, returning {ret:?} and {rhs:?}");
+                    dprintln!("[{prec}] Inner Exhausted input, returning {ret:?} and {rhs:?}");
                     return Some((inner_next, Expression::bin_op(op, ret, rhs)));
                 };
                 lookahead = p_lookahead;
             }
-            println!("[{prec}] Combining bin_op outer: {ret:?}, {rhs:?}, next: {lookahead:?}");
+            dprintln!("[{prec}] Combining bin_op outer: {ret:?}, {rhs:?}, next: {lookahead:?}");
             ret = Expression::bin_op(op, ret, rhs);
         }
 
-        println!("[{prec}] Exiting normally with {ret:?}");
+        dprintln!("[{prec}] Exiting normally with {ret:?}");
 
         Some((outer_next, ret))
     }
