@@ -23,5 +23,5 @@ fn digits(a: f64, b: f64) -> f64 {
     a + b * 10.
 }
 
-print(digits(a: 3., b: 5.));
-print(digits(b: 3., a: 5.));
+print(digits(a: 1. + 2., b: 5.));
+print(digits(b: 1. + 2., a: 5.));

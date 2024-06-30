@@ -283,8 +283,6 @@ pub(crate) fn eval<'a, 'b>(
                 .map(|(name, expr)| Ok::<_, String>((name, eval(expr, ctx)?)))
                 .collect::<Result<Vec<_>, _>>()?;
 
-            println!("invoking \"{str}\", eval_args: {eval_args:?}, named_args: {named_args:?}");
-
             let func = ctx
                 .get_fn(*str)
                 .ok_or_else(|| format!("function {} is not defined.", str))?;
