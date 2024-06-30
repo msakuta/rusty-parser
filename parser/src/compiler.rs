@@ -145,6 +145,12 @@ impl Instruction {
     }
 }
 
+impl std::fmt::Display for Instruction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?} {} {}", self.op, self.arg0, self.arg1)
+    }
+}
+
 fn write_str(s: &str, writer: &mut impl Write) -> std::io::Result<()> {
     writer.write_all(&s.len().to_le_bytes())?;
     writer.write_all(&s.as_bytes())?;
@@ -298,6 +304,23 @@ impl FnBytecode {
             stack_size: usize::from_le_bytes(stack_size),
         })
     }
+
+    pub fn disasm(&self, f: &mut impl std::io::Write) -> Result<(), std::io::Error> {
+        writeln!(f, "Stack size: {}", self.stack_size)?;
+        writeln!(f, "Literals({}):", self.literals.len())?;
+        for (i, literal) in self.literals.iter().enumerate() {
+            writeln!(f, "  [{}] {}", i, literal)?;
+        }
+        writeln!(f, "Args({}):", self.args.len())?;
+        for (i, arg) in self.args.iter().enumerate() {
+            writeln!(f, "  [{}] {}", i, arg)?;
+        }
+        writeln!(f, "Instructions({}):", self.instructions.len())?;
+        for (i, inst) in self.instructions.iter().enumerate() {
+            writeln!(f, "  [{}] {}", i, inst)?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -404,7 +427,12 @@ pub fn compile<'src, 'ast>(stmts: &'ast [Statement<'src>]) -> Result<Bytecode, S
     }
     compiler.bytecode.stack_size = compiler.target_stack.len();
 
-    dbg_println!("compile stack: {:#?}", compiler.bytecode);
+    let mut disasm = Vec::<u8>::new();
+    let mut cursor = std::io::Cursor::new(&mut disasm);
+    compiler.bytecode.disasm(&mut cursor).map_err(|e| format!("{e}"))?;
+    if let Ok(s) = String::from_utf8(disasm) {
+        dbg_println!("Disassembly:\n{}", s);
+    }
 
     let mut functions = compiler.functions;
     functions.insert("".to_string(), FnProto::Code(compiler.bytecode));

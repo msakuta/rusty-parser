@@ -40,15 +40,16 @@ impl Default for Value {
     }
 }
 
-impl ToString for Value {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::F64(v) => v.to_string(),
-            Self::F32(v) => v.to_string(),
-            Self::I64(v) => v.to_string(),
-            Self::I32(v) => v.to_string(),
-            Self::Str(v) => v.clone(),
-            Self::Array(v) => format!(
+            Self::F64(v) => write!(f, "{v}"),
+            Self::F32(v) => write!(f, "{v}"),
+            Self::I64(v) => write!(f, "{v}"),
+            Self::I32(v) => write!(f, "{v}"),
+            Self::Str(v) => write!(f, "{v}"),
+            Self::Array(v) => write!(
+                f,
                 "[{}]",
                 &v.borrow().values.iter().fold("".to_string(), |acc, cur| {
                     if acc.is_empty() {
@@ -58,12 +59,12 @@ impl ToString for Value {
                     }
                 })
             ),
-            Self::Ref(v) => "&".to_string() + &v.borrow().to_string(),
+            Self::Ref(v) => write!(f, "&{}", v.borrow()),
             Self::ArrayRef(v, idx) => {
                 if let Some(v) = (*v.borrow()).values.get(*idx) {
-                    v.to_string()
+                    v.fmt(f)
                 } else {
-                    "Array index out of range".to_string()
+                    write!(f, "Array index out of range")
                 }
             }
         }
