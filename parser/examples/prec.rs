@@ -143,7 +143,10 @@ fn bin_op(prec: usize) -> impl Fn(&str) -> Option<(&str, Expression)> {
         let (r, lhs) = token(input)?;
         println!("[{prec}] First token: {lhs:?}");
         let mut ret: Expression = lhs.try_into().ok()?;
-        let (mut next, mut lookahead) = token(r)?;
+        println!("[{prec}] First expression: {ret:?} next: {r:?}");
+        let Some((mut next, mut lookahead)) = token(r) else {
+            return Some((r, ret));
+        };
         println!("[{prec}] First op: {lookahead:?}");
         while let Token::Op(op) = lookahead {
             if precedence(&op) < prec {
