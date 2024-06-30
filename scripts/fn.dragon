@@ -1,11 +1,14 @@
 var x: i32;
 x = 123;
 
+/* We do not allow closures with this syntax */
+/*
 fn f(y: i32) {
     x * y;
 }
 
 print(f(5 + 5));
+*/
 
 fn g(x: f64) -> f64 {
     x * 1.5;

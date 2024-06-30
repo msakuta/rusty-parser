@@ -460,7 +460,12 @@ fn compile_fn<'src, 'ast>(
     }
     compiler.bytecode.stack_size = compiler.target_stack.len();
 
-    dbg_println!("compile_fn stack: {:#?}", compiler.bytecode);
+    let mut disasm = Vec::<u8>::new();
+    let mut cursor = std::io::Cursor::new(&mut disasm);
+    compiler.bytecode.disasm(&mut cursor).map_err(|e| format!("{e}"))?;
+    if let Ok(s) = String::from_utf8(disasm) {
+        dbg_println!("compile_fn Disassembly:\n{}", s);
+    }
 
     let mut functions = compiler.functions;
     functions.insert("".to_string(), FnProto::Code(compiler.bytecode));
