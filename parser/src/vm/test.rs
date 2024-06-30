@@ -7,7 +7,11 @@ use crate::{
 };
 
 fn compile_expr(s: &str) -> Bytecode {
-    let bytecode = compile(&[Statement::Expression(expr(Span::new(s)).unwrap().1)]).unwrap();
+    let bytecode = compile(
+        &[Statement::Expression(expr(Span::new(s)).unwrap().1)],
+        HashMap::new(),
+    )
+    .unwrap();
     bytecode
 }
 

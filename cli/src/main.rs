@@ -2,8 +2,11 @@ use clap::Parser;
 use parser::*;
 
 use ::colored::Colorize;
-use std::fs::File;
-use std::io::{prelude::*, BufReader, BufWriter};
+use std::{
+    collections::HashMap,
+    fs::File,
+    io::{prelude::*, BufReader, BufWriter},
+};
 
 #[derive(Parser, Debug)]
 #[clap(author, version, about = "A CLI interpreter of dragon language")]
@@ -53,8 +56,8 @@ fn main() -> Result<(), String> {
         }
 
         if args.compile || args.compile_and_run {
-            let mut bytecode =
-                compile(&result.1).map_err(|e| format!("Error in compile(): {:?}", e))?;
+            let mut bytecode = compile(&result.1, HashMap::new())
+                .map_err(|e| format!("Error in compile(): {:?}", e))?;
             // println!("bytecode: {:#?}", bytecode);
             if let Ok(writer) = std::fs::File::create("out.cdragon") {
                 bytecode

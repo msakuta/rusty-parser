@@ -166,9 +166,11 @@ fn read_str(reader: &mut impl Read) -> Result<String, ReadError> {
     Ok(String::from_utf8(buf)?)
 }
 
+pub type NativeFn = Box<dyn Fn(&[Value]) -> Result<Value, EvalError>>;
+
 pub(crate) enum FnProto {
     Code(FnBytecode),
-    Native(Box<dyn Fn(&[Value]) -> Result<Value, EvalError>>),
+    Native(NativeFn),
 }
 
 impl FnProto {
@@ -265,6 +267,16 @@ pub struct FnBytecode {
 }
 
 impl FnBytecode {
+    /// Create a placeholder entry that will be filled later.
+    fn proto(args: Vec<String>) -> Self {
+        Self {
+            literals: vec![],
+            args,
+            instructions: vec![],
+            stack_size: 0,
+        }
+    }
+
     fn push_inst(&mut self, op: OpCode, arg0: u8, arg1: u16) -> usize {
         let ret = self.instructions.len();
         self.instructions.push(Instruction::new(op, arg0, arg1));
@@ -372,22 +384,31 @@ struct LocalVar {
     stack_idx: usize,
 }
 
-struct Compiler {
+struct CompilerEnv {
     functions: HashMap<String, FnProto>,
+}
+
+impl CompilerEnv {
+    fn new(mut functions: HashMap<String, FnProto>) -> Self {
+        std_functions(&mut |name, f| {
+            functions.insert(name, FnProto::Native(f));
+        });
+        Self { functions }
+    }
+}
+
+struct Compiler<'a> {
+    env: &'a mut CompilerEnv,
     bytecode: FnBytecode,
     target_stack: Vec<Target>,
     locals: Vec<Vec<LocalVar>>,
     break_ips: Vec<usize>,
 }
 
-impl Compiler {
-    fn new(args: Vec<LocalVar>) -> Self {
-        let mut functions = HashMap::new();
-        std_functions(&mut |name, f| {
-            functions.insert(name, FnProto::Native(f));
-        });
+impl<'a> Compiler<'a> {
+    fn new(args: Vec<LocalVar>, env: &'a mut CompilerEnv) -> Self {
         Self {
-            functions,
+            env,
             bytecode: FnBytecode {
                 literals: vec![],
                 args: args.iter().map(|arg| arg.name.to_owned()).collect(),
@@ -445,8 +466,20 @@ impl Compiler {
     }
 }
 
-pub fn compile<'src, 'ast>(stmts: &'ast [Statement<'src>]) -> Result<Bytecode, String> {
-    let mut compiler = Compiler::new(vec![]);
+pub fn compile<'src, 'ast>(
+    stmts: &'ast [Statement<'src>],
+    functions: HashMap<String, NativeFn>,
+) -> Result<Bytecode, String> {
+    let functions = functions
+        .into_iter()
+        .map(|(k, v)| (k, FnProto::Native(v)))
+        .collect();
+
+    let mut env = CompilerEnv::new(functions);
+
+    retrieve_fn_signatures(stmts, &mut env)?;
+
+    let mut compiler = Compiler::new(vec![], &mut env);
     if let Some(last_target) = emit_stmts(stmts, &mut compiler)? {
         compiler
             .bytecode
@@ -465,8 +498,10 @@ pub fn compile<'src, 'ast>(stmts: &'ast [Statement<'src>]) -> Result<Bytecode, S
         dbg_println!("Disassembly:\n{}", s);
     }
 
-    let mut functions = compiler.functions;
-    functions.insert("".to_string(), FnProto::Code(compiler.bytecode));
+    let bytecode = FnProto::Code(compiler.bytecode);
+
+    let mut functions = env.functions;
+    functions.insert("".to_string(), bytecode);
 
     #[cfg(debug_assertions)]
     for fun in &functions {
@@ -479,10 +514,11 @@ pub fn compile<'src, 'ast>(stmts: &'ast [Statement<'src>]) -> Result<Bytecode, S
 }
 
 fn compile_fn<'src, 'ast>(
+    env: &mut CompilerEnv,
     stmts: &'ast [Statement<'src>],
     args: Vec<LocalVar>,
-) -> Result<Bytecode, String> {
-    let mut compiler = Compiler::new(args);
+) -> Result<FnProto, String> {
+    let mut compiler = Compiler::new(args, env);
     if let Some(last_target) = emit_stmts(stmts, &mut compiler)? {
         compiler
             .bytecode
@@ -501,9 +537,27 @@ fn compile_fn<'src, 'ast>(
         dbg_println!("compile_fn Disassembly:\n{}", s);
     }
 
-    let mut functions = compiler.functions;
-    functions.insert("".to_string(), FnProto::Code(compiler.bytecode));
-    Ok(Bytecode { functions })
+    // let mut functions = env.functions;
+    // functions.insert("".to_string(), FnProto::Code(compiler.bytecode));
+    Ok(FnProto::Code(compiler.bytecode))
+}
+
+fn retrieve_fn_signatures(stmts: &[Statement], env: &mut CompilerEnv) -> Result<(), String> {
+    for stmt in stmts {
+        match stmt {
+            Statement::FnDecl {
+                name, args, stmts, ..
+            } => {
+                let args = args.iter().map(|arg| arg.0.to_string()).collect();
+                let bytecode = FnBytecode::proto(args);
+                env.functions
+                    .insert(name.to_string(), FnProto::Code(bytecode));
+                retrieve_fn_signatures(stmts, env)?;
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> Result<Option<usize>, String> {
@@ -547,15 +601,8 @@ fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> Result<Option<usi
                     })
                     .collect();
                 dbg_println!("Locals: {:?}", args);
-                let fun = compile_fn(stmts, args)?;
-                compiler.functions.insert(
-                    name.to_string(),
-                    fun.functions
-                        .into_iter()
-                        .find(|(fname, _)| fname.is_empty())
-                        .unwrap()
-                        .1,
-                );
+                let fun = compile_fn(&mut compiler.env, stmts, args)?;
+                compiler.env.functions.insert(name.to_string(), fun);
             }
             Statement::Expression(ref ex) => {
                 last_target = Some(emit_expr(ex, compiler)?);
@@ -712,7 +759,7 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
 
             let stk_fname = compiler.find_or_create_literal(&Value::Str(fname.to_string()));
 
-            let Some(fun) = compiler.functions.get(*fname) else {
+            let Some(fun) = compiler.env.functions.get(*fname) else {
                 return Err(format!("Function {fname} is not defined"));
             };
 

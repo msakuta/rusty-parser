@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use parser::*;
 use wasm_bindgen::prelude::*;
 
@@ -145,8 +147,8 @@ macro_rules! wasm_functions {
 pub fn type_check(src: &str) -> Result<JsValue, JsValue> {
     let mut ctx = TypeCheckContext::new(None);
     wasm_functions!(ctx);
-    let parse_result = source(src)
-        .map_err(|e| JsValue::from_str(&format!("Parse error: {:?}", e)))?;
+    let parse_result =
+        source(src).map_err(|e| JsValue::from_str(&format!("Parse error: {:?}", e)))?;
     parser::type_check(&parse_result.1, &mut ctx)
         .map_err(|e| JsValue::from_str(&format!("Error on type check: {}", e)))?;
     Ok(JsValue::from_str("Ok"))
@@ -156,8 +158,8 @@ pub fn type_check(src: &str) -> Result<JsValue, JsValue> {
 pub fn run_script(src: &str) -> Result<(), JsValue> {
     let mut ctx = EvalContext::new();
     wasm_functions!(ctx);
-    let parse_result = source(src)
-        .map_err(|e| JsValue::from_str(&format!("Parse error: {:?}", e)))?;
+    let parse_result =
+        source(src).map_err(|e| JsValue::from_str(&format!("Parse error: {:?}", e)))?;
     if 0 < parse_result.0.len() {
         return Err(JsValue::from_str(&format!(
             "Unexpected end of input at: {:?}",
@@ -171,16 +173,20 @@ pub fn run_script(src: &str) -> Result<(), JsValue> {
 
 #[wasm_bindgen]
 pub fn parse_ast(src: &str) -> Result<String, JsValue> {
-    let parse_result = source(src)
-        .map_err(|e| JsValue::from_str(&format!("Parse error: {:?}", e)))?;
+    let parse_result =
+        source(src).map_err(|e| JsValue::from_str(&format!("Parse error: {:?}", e)))?;
     Ok(format!("{:#?}", parse_result.1))
 }
 
 #[wasm_bindgen]
 pub fn compile(src: &str) -> Result<Vec<u8>, JsValue> {
-    let parse_result = source(src)
-        .map_err(|e| JsValue::from_str(&format!("Parse error: {:?}", e)))?;
-    let bytecode = parser::compile(&parse_result.1)
+    let parse_result =
+        source(src).map_err(|e| JsValue::from_str(&format!("Parse error: {:?}", e)))?;
+    let mut functions = HashMap::new();
+    extra_functions(&mut |name, f| {
+        functions.insert(name, f);
+    });
+    let bytecode = parser::compile(&parse_result.1, functions)
         .map_err(|e| JsValue::from_str(&format!("Error on execution: {:?}", e)))?;
     let mut bytes = vec![];
     bytecode
@@ -191,15 +197,25 @@ pub fn compile(src: &str) -> Result<Vec<u8>, JsValue> {
 
 #[wasm_bindgen]
 pub fn compile_and_run(src: &str) -> Result<(), JsValue> {
-    let parse_result = source(src)
-        .map_err(|e| JsValue::from_str(&format!("Parse error: {:?}", e)))?;
-    let mut bytecode = parser::compile(&parse_result.1)
+    let parse_result =
+        source(src).map_err(|e| JsValue::from_str(&format!("Parse error: {:?}", e)))?;
+    let mut functions = HashMap::new();
+    extra_functions(&mut |name, f| {
+        functions.insert(name, f);
+    });
+    let mut bytecode = parser::compile(&parse_result.1, functions)
         .map_err(|e| JsValue::from_str(&format!("Error on execution: {:?}", e)))?;
     bytecode.add_std_fn();
-    bytecode.add_ext_fn("print".to_string(), Box::new(s_print));
-    bytecode.add_ext_fn("puts".to_string(), Box::new(s_puts));
-    bytecode.add_ext_fn("set_fill_style".to_string(), Box::new(s_set_fill_style));
-    bytecode.add_ext_fn("rectangle".to_string(), Box::new(s_rectangle));
+    extra_functions(&mut |name, f| {
+        bytecode.add_ext_fn(name, f);
+    });
     interpret(&bytecode)?;
     Ok(())
+}
+
+fn extra_functions(f: &mut impl FnMut(String, Box<dyn Fn(&[Value]) -> Result<Value, EvalError>>)) {
+    f("print".to_string(), Box::new(s_print));
+    f("puts".to_string(), Box::new(s_puts));
+    f("set_fill_style".to_string(), Box::new(s_set_fill_style));
+    f("rectangle".to_string(), Box::new(s_rectangle));
 }
