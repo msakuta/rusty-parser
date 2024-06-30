@@ -171,6 +171,15 @@ pub(crate) enum FnProto {
     Native(Box<dyn Fn(&[Value]) -> Result<Value, EvalError>>),
 }
 
+impl FnProto {
+    pub fn args(&self) -> &[String] {
+        match self {
+            Self::Code(bytecode) => &bytecode.args,
+            _ => &[],
+        }
+    }
+}
+
 pub struct Bytecode {
     pub(crate) functions: HashMap<String, FnProto>,
 }
@@ -185,29 +194,8 @@ impl Bytecode {
         self.functions.insert(name, FnProto::Native(f));
     }
 
-    /// Add standard common functions, such as `print`, `len` and `push`, to this bytecode.
     pub fn add_std_fn(&mut self) {
-        self.add_ext_fn("print".to_string(), Box::new(s_print));
-        self.add_ext_fn(
-            "puts".to_string(),
-            Box::new(|values: &[Value]| -> Result<Value, EvalError> {
-                print!(
-                    "{}",
-                    values.iter().fold("".to_string(), |acc, cur: &Value| {
-                        if acc.is_empty() {
-                            cur.to_string()
-                        } else {
-                            acc + &cur.to_string()
-                        }
-                    })
-                );
-                Ok(Value::I64(0))
-            }),
-        );
-        self.add_ext_fn("type".to_string(), Box::new(&s_type));
-        self.add_ext_fn("len".to_string(), Box::new(s_len));
-        self.add_ext_fn("push".to_string(), Box::new(s_push));
-        self.add_ext_fn("hex_string".to_string(), Box::new(s_hex_string));
+        std_functions(&mut |name, f| self.add_ext_fn(name, f));
     }
 
     pub fn write(&self, writer: &mut impl Write) -> std::io::Result<()> {
@@ -239,6 +227,33 @@ impl Bytecode {
         }
         Ok(ret)
     }
+}
+
+/// Add standard common functions, such as `print`, `len` and `push`, to this bytecode.
+pub fn std_functions(
+    f: &mut impl FnMut(String, Box<dyn Fn(&[Value]) -> Result<Value, EvalError>>),
+) {
+    f("print".to_string(), Box::new(s_print));
+    f(
+        "puts".to_string(),
+        Box::new(|values: &[Value]| -> Result<Value, EvalError> {
+            print!(
+                "{}",
+                values.iter().fold("".to_string(), |acc, cur: &Value| {
+                    if acc.is_empty() {
+                        cur.to_string()
+                    } else {
+                        acc + &cur.to_string()
+                    }
+                })
+            );
+            Ok(Value::I64(0))
+        }),
+    );
+    f("type".to_string(), Box::new(&s_type));
+    f("len".to_string(), Box::new(s_len));
+    f("push".to_string(), Box::new(s_push));
+    f("hex_string".to_string(), Box::new(s_hex_string));
 }
 
 #[derive(Debug, Clone)]
@@ -317,7 +332,16 @@ impl FnBytecode {
         }
         writeln!(f, "Instructions({}):", self.instructions.len())?;
         for (i, inst) in self.instructions.iter().enumerate() {
-            writeln!(f, "  [{}] {}", i, inst)?;
+            match inst.op {
+                OpCode::LoadLiteral => {
+                    if let Some(literal) = self.literals.get(inst.arg0 as usize) {
+                        writeln!(f, "  [{}] {} ({:?})", i, inst, literal)?;
+                    } else {
+                        writeln!(f, "  [{}] {} ? (Literal index out of bound)", i, inst)?;
+                    }
+                }
+                _ => writeln!(f, "  [{}] {}", i, inst)?,
+            }
         }
         Ok(())
     }
