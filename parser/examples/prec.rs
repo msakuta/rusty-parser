@@ -23,11 +23,12 @@ fn main() {
     test_case("10 + 1 * 3 + 100");
     test_case("(123 + 456 ) + world");
     test_case("car + cdr + cdr");
-    test_case("((1 + 2) + (3 + 4)) + 5 + 6");
+    test_case("((1 + 2) + (3 + 4)) + 5 + 6 * 7");
 }
 
 fn test_case(input: &str) {
-    match expr(input) {
+    let lexer = Lexer::new(input);
+    match expr(lexer) {
         Some((_, res)) => {
             println!("source: {:?}, parsed: {}", input, res);
         }
@@ -73,6 +74,8 @@ enum Token<'src> {
     Ident(&'src str),
     NumLiteral(f64),
     Op(OpCode),
+    LParen,
+    RParen,
 }
 
 #[derive(Debug, PartialEq)]
@@ -141,26 +144,56 @@ fn associativity(_op: &OpCode) -> Associativity {
     Associativity::Left
 }
 
-fn expr(input: &str) -> Option<(&str, Expression)> {
-    if let Some(res) = bin_op(0)(input) {
-        return Some(res);
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Lexer<'src> {
+    cur: &'src str,
+}
+
+impl<'src> Lexer<'src> {
+    fn new(input: &'src str) -> Self {
+        Self { cur: input }
     }
 
-    if let Some(res) = term(input) {
+    fn next(&mut self) -> Option<Token<'src>> {
+        if let Some((r, res)) = token(self.cur) {
+            self.cur = r;
+            return Some(res);
+        }
+        None
+    }
+
+    fn peek(&self) -> Option<Token<'src>> {
+        if let Some((_, res)) = token(self.cur) {
+            return Some(res);
+        }
+        None
+    }
+}
+
+fn expr(lexer: Lexer) -> Option<(Lexer, Expression)> {
+    if let Some(res) = bin_op(0)(lexer) {
+        dprintln!("bin_op returned {:?}", res.0);
         return Some(res);
     }
 
     None
 }
 
-fn paren(input: &str) -> Option<(&str, Expression)> {
-    let next_input = lparen(whitespace(input))?;
+fn paren(mut lexer: Lexer) -> Option<(Lexer, Expression)> {
+    let Some(Token::LParen) = lexer.next() else {
+        return None;
+    };
 
-    let (next_input, expr) = expr(next_input)?;
+    let (next_lexer, expr) = expr(lexer)?;
+    lexer = next_lexer;
 
-    let next_input = rparen(whitespace(next_input))?;
+    dprintln!("paren got expr {expr}, lexer: {lexer:?}");
 
-    Some((next_input, expr))
+    let Some(Token::RParen) = lexer.next() else {
+        return None;
+    };
+
+    Some((lexer, expr))
 }
 
 static DEBUG: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -178,31 +211,36 @@ macro_rules! dprintln {
         }
     };
 }
-fn bin_op(prec: usize) -> impl Fn(&str) -> Option<(&str, Expression)> {
+fn bin_op<'src>(
+    prec: usize,
+) -> impl Fn(Lexer<'src>) -> Option<(Lexer<'src>, Expression<'src>)> + 'src {
     use std::convert::TryInto;
-    move |input: &str| {
-        let (mut outer_next, mut ret) = term(input)?;
+    move |mut lexer: Lexer| {
+        let (next, mut ret) = term(lexer)?;
+        lexer = next;
         dprintln!("[{prec}] First token: {ret:?}");
-        dprintln!("[{prec}] First expression: {ret:?} next: {outer_next:?}");
-        let Some((_peek_next, mut lookahead)) = token(outer_next) else {
-            return Some((outer_next, ret));
+        dprintln!("[{prec}] First expression: {ret:?} next: {lexer:?}");
+        let Some(mut lookahead) = lexer.peek() else {
+            return Some((lexer, ret));
         };
         dprintln!("[{prec}] First op: {lookahead:?}");
         while let Token::Op(op) = lookahead {
             if precedence(&op) < prec {
                 break;
             }
-            let (op_next, _) = token(outer_next)?;
-            let mut inner_next = op_next;
-            let (rhs_next, rhs) = term(op_next)?;
+            lexer.next()?;
+            let inner_next = lexer;
+            let (outer_next, rhs) = term(lexer)?;
+            lexer = outer_next;
             dprintln!("[{prec}] Outer loop Next token: {rhs:?}");
             let mut rhs: Expression = rhs.try_into().ok()?;
-            let Some((p_next, p_lookahead)) = token(rhs_next) else {
+            let Some(p_lookahead) = lexer.peek() else {
                 dprintln!("[{prec}] Exhausted input, returning {ret:?} and {rhs:?}");
-                return Some((rhs_next, Expression::bin_op(op, ret, rhs)));
+                return Some((lexer, Expression::bin_op(op, ret, rhs)));
             };
-            dprintln!("[{prec}] Outer lookahead: {p_lookahead:?} outer_next: {p_next:?} next: {rhs_next:?}");
-            (outer_next, lookahead) = (rhs_next, p_lookahead);
+            dprintln!("[{prec}] Outer lookahead: {p_lookahead:?} next: {lexer:?}");
+            // (outer_next, lookahead) = (rhs_next, p_lookahead);
+            lookahead = p_lookahead;
 
             while let Token::Op(next_op) = lookahead {
                 if precedence(&next_op) <= precedence(&op)
@@ -217,42 +255,51 @@ fn bin_op(prec: usize) -> impl Fn(&str) -> Option<(&str, Expression)> {
                     } else {
                         0
                     };
-                dprintln!("[{prec}] Inner next_prec: {:?} inner_next: {inner_next:}, outer_next: {outer_next:?}", next_prec);
-                (inner_next, rhs) = bin_op(next_prec)(op_next)?;
-                let Some((_p_next, p_lookahead)) = token(inner_next) else {
+                dprintln!(
+                    "[{prec}] Inner next_prec: {:?} , inner_next: {inner_next:?}",
+                    next_prec
+                );
+                (lexer, rhs) = bin_op(next_prec)(inner_next)?;
+                let Some(p_lookahead) = lexer.peek() else {
                     dprintln!("[{prec}] Inner Exhausted input, returning {ret:?} and {rhs:?}");
-                    return Some((inner_next, Expression::bin_op(op, ret, rhs)));
+                    return Some((lexer, Expression::bin_op(op, ret, rhs)));
                 };
                 lookahead = p_lookahead;
             }
-            dprintln!("[{prec}] Combining bin_op outer: {ret:?}, {rhs:?}, next: {lookahead:?}");
+            dprintln!("[{prec}] Combining bin_op outer: {ret:?}, {rhs:?}, next: {lexer:?} lookahead: {lookahead:?}");
             ret = Expression::bin_op(op, ret, rhs);
         }
 
         dprintln!("[{prec}] Exiting normally with {ret:?}");
 
-        Some((outer_next, ret))
+        Some((lexer, ret))
     }
 }
 
-fn term(input: &str) -> Option<(&str, Expression)> {
-    if let Some(res) = paren(input) {
+fn term<'src>(mut lexer: Lexer<'src>) -> Option<(Lexer<'src>, Expression<'src>)> {
+    if let Some(res) = paren(lexer) {
         return Some(res);
     }
 
-    if let Some(res) = token(input) {
-        let ex = match res.1 {
+    if let Some(res) = lexer.next() {
+        let ex = match res {
             Token::Ident(id) => Expression::Ident(id),
             Token::NumLiteral(num) => Expression::NumLiteral(num),
             _ => return None,
         };
-        return Some((res.0, ex));
+        return Some((lexer, ex));
     }
 
     None
 }
 
 fn token(input: &str) -> Option<(&str, Token)> {
+    if let Some(r) = lparen(whitespace(input)) {
+        return Some((r, Token::LParen));
+    }
+    if let Some(r) = rparen(whitespace(input)) {
+        return Some((r, Token::RParen));
+    }
     if let Some(res) = ident(whitespace(input)) {
         return Some(res);
     }
@@ -363,17 +410,20 @@ mod test {
     #[test]
     fn test_expr() {
         assert_eq!(
-            expr("1 + 2 * 3"),
-            Some(("", e_bin_op(Add, Lit(1.), e_bin_op(Mul, Lit(2.), Lit(3.)))))
+            expr(Lexer::new("1 + 2 * 3")),
+            Some((
+                Lexer::new(""),
+                e_bin_op(Add, Lit(1.), e_bin_op(Mul, Lit(2.), Lit(3.)))
+            ))
         );
     }
 
     #[test]
     fn test_associativity() {
         assert_eq!(
-            expr("1 - 2 + 3 "),
+            expr(Lexer::new("1 - 2 + 3 ")),
             Some((
-                " ",
+                Lexer::new(" "),
                 e_bin_op(Add, e_bin_op(Sub, Lit(1.), Lit(2.)), Lit(3.),)
             ))
         );
