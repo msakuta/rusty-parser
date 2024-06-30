@@ -470,6 +470,37 @@ pub fn compile<'src, 'ast>(
     stmts: &'ast [Statement<'src>],
     functions: HashMap<String, NativeFn>,
 ) -> Result<Bytecode, String> {
+    #[cfg(debug_assertions)]
+    {
+        let mut disasm = Vec::<u8>::new();
+        let mut cursor = std::io::Cursor::new(&mut disasm);
+        let ret = compile_int(stmts, functions, &mut cursor)?;
+        if let Ok(s) = String::from_utf8(disasm) {
+            dbg_println!("Disassembly:\n{}", s);
+        }
+        Ok(ret)
+    }
+    #[cfg(not(debug_assertions))]
+    compile_int(stmts, functions, &mut std::io::sink())
+}
+
+pub fn disasm<'src, 'ast>(
+    stmts: &'ast [Statement<'src>],
+    functions: HashMap<String, NativeFn>,
+) -> Result<String, String> {
+    let mut disasm = Vec::<u8>::new();
+    let mut cursor = std::io::Cursor::new(&mut disasm);
+
+    compile_int(stmts, functions, &mut cursor)?;
+
+    Ok(String::from_utf8(disasm).map_err(|e| e.to_string())?)
+}
+
+fn compile_int<'src, 'ast>(
+    stmts: &'ast [Statement<'src>],
+    functions: HashMap<String, NativeFn>,
+    disasm: &mut impl Write,
+) -> Result<Bytecode, String> {
     let functions = functions
         .into_iter()
         .map(|(k, v)| (k, FnProto::Native(v)))
@@ -488,20 +519,25 @@ pub fn compile<'src, 'ast>(
     }
     compiler.bytecode.stack_size = compiler.target_stack.len();
 
-    let mut disasm = Vec::<u8>::new();
-    let mut cursor = std::io::Cursor::new(&mut disasm);
-    compiler
-        .bytecode
-        .disasm(&mut cursor)
-        .map_err(|e| format!("{e}"))?;
-    if let Ok(s) = String::from_utf8(disasm) {
-        dbg_println!("Disassembly:\n{}", s);
-    }
-
     let bytecode = FnProto::Code(compiler.bytecode);
 
     let mut functions = env.functions;
     functions.insert("".to_string(), bytecode);
+
+    (|| -> std::io::Result<()> {
+        for (fname, fnproto) in &functions {
+            if let FnProto::Code(bytecode) = fnproto {
+                if fname.is_empty() {
+                    writeln!(disasm, "\nFunction <toplevel> disassembly:")?;
+                } else {
+                    writeln!(disasm, "\nFunction {fname} disassembly:")?;
+                }
+                bytecode.disasm(disasm)?;
+            }
+        }
+        Ok(())
+    })()
+    .map_err(|e| format!("{e}"))?;
 
     #[cfg(debug_assertions)]
     for fun in &functions {
@@ -527,18 +563,6 @@ fn compile_fn<'src, 'ast>(
     }
     compiler.bytecode.stack_size = compiler.target_stack.len();
 
-    let mut disasm = Vec::<u8>::new();
-    let mut cursor = std::io::Cursor::new(&mut disasm);
-    compiler
-        .bytecode
-        .disasm(&mut cursor)
-        .map_err(|e| format!("{e}"))?;
-    if let Ok(s) = String::from_utf8(disasm) {
-        dbg_println!("compile_fn Disassembly:\n{}", s);
-    }
-
-    // let mut functions = env.functions;
-    // functions.insert("".to_string(), FnProto::Code(compiler.bytecode));
     Ok(FnProto::Code(compiler.bytecode))
 }
 

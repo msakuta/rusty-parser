@@ -1,4 +1,4 @@
-import { type_check, run_script, parse_ast, compile, compile_and_run } from "../pkg/index.js";
+import { type_check, run_script, parse_ast, compile, disasm, compile_and_run } from "../pkg/index.js";
 
 
 async function runCommon(process) {
@@ -32,6 +32,10 @@ document.getElementById("parseAst").addEventListener("click", () => runCommon(so
 }));
 document.getElementById("compile").addEventListener("click", () => runCommon(source => {
     const result = compile(source);
+    document.getElementById("output").value = result;
+}));
+document.getElementById("disasm").addEventListener("click", () => runCommon(source => {
+    const result = disasm(source);
     document.getElementById("output").value = result;
 }));
 document.getElementById("compileAndRun").addEventListener("click", () => runCommon(source => {

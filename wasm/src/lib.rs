@@ -196,6 +196,19 @@ pub fn compile(src: &str) -> Result<Vec<u8>, JsValue> {
 }
 
 #[wasm_bindgen]
+pub fn disasm(src: &str) -> Result<String, JsValue> {
+    let parse_result =
+        source(src).map_err(|e| JsValue::from_str(&format!("Parse error: {:?}", e)))?;
+    let mut functions = HashMap::new();
+    extra_functions(&mut |name, f| {
+        functions.insert(name, f);
+    });
+    let disasm_code = parser::disasm(&parse_result.1, functions)
+        .map_err(|e| JsValue::from_str(&format!("Error on execution: {:?}", e)))?;
+    Ok(disasm_code)
+}
+
+#[wasm_bindgen]
 pub fn compile_and_run(src: &str) -> Result<(), JsValue> {
     let parse_result =
         source(src).map_err(|e| JsValue::from_str(&format!("Parse error: {:?}", e)))?;
