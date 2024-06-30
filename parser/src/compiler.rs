@@ -382,8 +382,12 @@ struct Compiler {
 
 impl Compiler {
     fn new(args: Vec<LocalVar>) -> Self {
+        let mut functions = HashMap::new();
+        std_functions(&mut |name, f| {
+            functions.insert(name, FnProto::Native(f));
+        });
         Self {
-            functions: HashMap::new(),
+            functions,
             bytecode: FnBytecode {
                 literals: vec![],
                 args: args.iter().map(|arg| arg.name.to_owned()).collect(),
@@ -453,7 +457,10 @@ pub fn compile<'src, 'ast>(stmts: &'ast [Statement<'src>]) -> Result<Bytecode, S
 
     let mut disasm = Vec::<u8>::new();
     let mut cursor = std::io::Cursor::new(&mut disasm);
-    compiler.bytecode.disasm(&mut cursor).map_err(|e| format!("{e}"))?;
+    compiler
+        .bytecode
+        .disasm(&mut cursor)
+        .map_err(|e| format!("{e}"))?;
     if let Ok(s) = String::from_utf8(disasm) {
         dbg_println!("Disassembly:\n{}", s);
     }
@@ -486,7 +493,10 @@ fn compile_fn<'src, 'ast>(
 
     let mut disasm = Vec::<u8>::new();
     let mut cursor = std::io::Cursor::new(&mut disasm);
-    compiler.bytecode.disasm(&mut cursor).map_err(|e| format!("{e}"))?;
+    compiler
+        .bytecode
+        .disasm(&mut cursor)
+        .map_err(|e| format!("{e}"))?;
     if let Ok(s) = String::from_utf8(disasm) {
         dbg_println!("compile_fn Disassembly:\n{}", s);
     }
@@ -680,13 +690,62 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
             // Function arguments have value semantics, even if it was an array element.
             // Unless we emit `Deref` here, we might leave a reference in the stack that can be
             // accidentally overwritten. I'm not sure this is the best way to avoid it.
-            let args = argss
+            let unnamed_args = argss
                 .iter()
+                .filter(|v| v.name.is_none())
                 .map(|v| emit_rvalue(&v.expr, compiler))
                 .collect::<Result<Vec<_>, _>>()?;
-            let num_args = args.len();
+            let named_args = argss
+                .iter()
+                .filter_map(|v| {
+                    if let Some(name) = v.name {
+                        match emit_rvalue(&v.expr, compiler) {
+                            Ok(res) => Some(Ok((name, res))),
+                            Err(e) => Some(Err(e)),
+                        }
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let num_args = unnamed_args.len() + named_args.len();
 
             let stk_fname = compiler.find_or_create_literal(&Value::Str(fname.to_string()));
+
+            let Some(fun) = compiler.functions.get(*fname) else {
+                return Err(format!("Function {fname} is not defined"));
+            };
+
+            let fn_args = fun.args();
+            dbg_println!("FnProto found for: {fname}, args: {:?}", fn_args);
+
+            // Prepare a buffer for actual arguments. It could be a mix of unnamed and named arguments.
+            // Unnamed arguments are indexed from 0, while named arguments can appear at any index.
+            let mut args = vec![None; fn_args.len().max(num_args)];
+
+            // First, fill the buffer with unnamed arguments. Technically it could be more optimized by
+            // allocating and initializing at the same time, but we do not pursue performance that much yet.
+            for (arg, un_arg) in args.iter_mut().zip(unnamed_args.iter()) {
+                *arg = Some(*un_arg);
+            }
+
+            // Second, fill the buffer with named arguments.
+            for (_, arg) in named_args.iter().enumerate() {
+                if let Some((f_idx, _)) = fn_args
+                    .iter()
+                    .enumerate()
+                    .find(|(_, fn_arg_name)| *fn_arg_name == *arg.0)
+                {
+                    args[f_idx] = Some(arg.1);
+                }
+            }
+
+            // If a named argument is duplicate, you would have a hole in actual args.
+            // Until we have the default parameter value, it would be a compile error.
+            let args = args
+                .into_iter()
+                .collect::<Option<Vec<_>>>()
+                .ok_or_else(|| format!("Named arguments does not cover all required args"))?;
 
             // Align arguments to the stack to prepare a call.
             for arg in args {
