@@ -40,7 +40,7 @@ fn parens_eval_test() {
 }
 
 fn compile_and_run(src: &str) -> Result<Value, EvalError> {
-    interpret(&compile(&span_source(src).unwrap().1).unwrap())
+    interpret(&compile(&span_source(src).unwrap().1, HashMap::new()).unwrap())
 }
 
 #[test]
@@ -125,7 +125,7 @@ fn brace_shadowing_test() {
 }
 
 fn compile_and_run_with(src: &str, fun: impl Fn(&[Value]) + 'static) -> Result<Value, EvalError> {
-    let mut bytecode = compile(&span_source(src).unwrap().1).unwrap();
+    let mut bytecode = compile(&span_source(src).unwrap().1, HashMap::new()).unwrap();
     bytecode.add_ext_fn(
         "print".to_string(),
         Box::new(move |vals| {
