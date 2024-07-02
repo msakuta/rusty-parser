@@ -21,6 +21,7 @@ fn main() {
     test_case("10 + 1 * 3");
     test_case("10 * 1 + 3");
     test_case("10 + 1 * 3 + 100");
+    test_case("9 / 3 / 3");
     test_case("(123 + 456 ) + world");
     test_case("car + cdr + cdr");
     test_case("((1 + 2) + (3 + 4)) + 5 + 6 * 7");
@@ -53,6 +54,7 @@ enum OpCode {
     Add,
     Sub,
     Mul,
+    Div,
 }
 
 impl std::fmt::Display for OpCode {
@@ -64,6 +66,7 @@ impl std::fmt::Display for OpCode {
                 Self::Add => "+",
                 Self::Sub => "-",
                 Self::Mul => "*",
+                Self::Div => "/",
             }
         )
     }
@@ -131,6 +134,7 @@ fn precedence(op: &OpCode) -> usize {
         OpCode::Add => 1,
         OpCode::Sub => 1,
         OpCode::Mul => 2,
+        OpCode::Div => 2,
     }
 }
 
@@ -357,6 +361,7 @@ fn operator(input: &str) -> Option<(&str, Token)> {
         Some('+') => Some((advance_char(input), Token::Op(OpCode::Add))),
         Some('-') => Some((advance_char(input), Token::Op(OpCode::Sub))),
         Some('*') => Some((advance_char(input), Token::Op(OpCode::Mul))),
+        Some('/') => Some((advance_char(input), Token::Op(OpCode::Div))),
         _ => None,
     }
 }
