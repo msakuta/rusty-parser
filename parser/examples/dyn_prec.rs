@@ -41,13 +41,13 @@ fn test_case(input: &str) {
     }
 }
 
-fn standard_ops() -> Vec<OpCode> {
+fn standard_ops() -> Vec<OpDef> {
     vec![
-        OpCode::new("+", 1, Associativity::Left),
-        OpCode::new("-", 1, Associativity::Left),
-        OpCode::new("*", 2, Associativity::Left),
-        OpCode::new("/", 2, Associativity::Left),
-        OpCode::new("^", 3, Associativity::Right),
+        OpDef::new("+", 1, Associativity::Left),
+        OpDef::new("-", 1, Associativity::Left),
+        OpDef::new("*", 2, Associativity::Left),
+        OpDef::new("/", 2, Associativity::Left),
+        OpDef::new("^", 3, Associativity::Right),
     ]
 }
 
@@ -62,19 +62,19 @@ fn peek_char(input: &str) -> Option<char> {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-struct OpCode {
+struct OpDef {
     code: String,
     prec: usize,
     assoc: Associativity,
 }
 
-impl std::fmt::Display for OpCode {
+impl std::fmt::Display for OpDef {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.code)
     }
 }
 
-impl OpCode {
+impl OpDef {
     fn new(code: impl Into<String>, prec: usize, assoc: Associativity) -> Self {
         Self {
             code: code.into(),
@@ -84,13 +84,13 @@ impl OpCode {
     }
 }
 
-type OpCodes = Vec<OpCode>;
+type OpDefs = Vec<OpDef>;
 
 #[derive(Debug, PartialEq, Clone)]
 enum Token<'src> {
     Ident(&'src str),
     NumLiteral(f64),
-    Op(OpCode),
+    Op(OpDef),
     LParen,
     RParen,
 }
@@ -100,7 +100,7 @@ enum Expression<'src> {
     Ident(&'src str),
     NumLiteral(f64),
     BinOp {
-        op: OpCode,
+        op: OpDef,
         lhs: Box<Expression<'src>>,
         rhs: Box<Expression<'src>>,
     },
@@ -134,7 +134,7 @@ impl<'src> std::fmt::Display for Expression<'src> {
 }
 
 impl<'src> Expression<'src> {
-    fn bin_op(op: OpCode, lhs: Self, rhs: Self) -> Self {
+    fn bin_op(op: OpDef, lhs: Self, rhs: Self) -> Self {
         Self::BinOp {
             op,
             lhs: Box::new(lhs),
@@ -143,7 +143,7 @@ impl<'src> Expression<'src> {
     }
 }
 
-fn precedence(op: &OpCode) -> usize {
+fn precedence(op: &OpDef) -> usize {
     op.prec
 }
 
@@ -155,12 +155,12 @@ enum Associativity {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Lexer<'src> {
-    op_defs: &'src OpCodes,
+    op_defs: &'src OpDefs,
     cur: &'src str,
 }
 
 impl<'src> Lexer<'src> {
-    fn new(op_defs: &'src OpCodes, input: &'src str) -> Self {
+    fn new(op_defs: &'src OpDefs, input: &'src str) -> Self {
         Self {
             op_defs,
             cur: input,
@@ -305,7 +305,7 @@ fn term<'src>(mut lexer: Lexer<'src>) -> Option<(Lexer<'src>, Expression<'src>)>
     None
 }
 
-fn token(op_defs: &OpCodes) -> impl Fn(&str) -> Option<(&str, Token)> + '_ {
+fn token(op_defs: &OpDefs) -> impl Fn(&str) -> Option<(&str, Token)> + '_ {
     move |input: &str| {
         if let Some(r) = lparen(whitespace(input)) {
             return Some((r, Token::LParen));
@@ -366,7 +366,7 @@ fn number(mut input: &str) -> Option<(&str, Token)> {
     }
 }
 
-fn operator(op_defs: &OpCodes) -> impl Fn(&str) -> Option<(&str, Token)> + '_ {
+fn operator(op_defs: &OpDefs) -> impl Fn(&str) -> Option<(&str, Token)> + '_ {
     move |input: &str| {
         for op_def in op_defs {
             if op_def.code.len() <= input.len() && &input[..op_def.code.len()] == op_def.code {
@@ -413,13 +413,9 @@ mod test {
     }
 
     use Expression::NumLiteral as Lit;
-    use OpCode::*;
+    use OpDef::*;
 
-    fn e_bin_op<'src>(
-        op: OpCode,
-        lhs: Expression<'src>,
-        rhs: Expression<'src>,
-    ) -> Expression<'src> {
+    fn e_bin_op<'src>(op: OpDef, lhs: Expression<'src>, rhs: Expression<'src>) -> Expression<'src> {
         Expression::bin_op(op, lhs, rhs)
     }
 
