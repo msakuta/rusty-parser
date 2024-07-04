@@ -364,11 +364,13 @@ enum Target {
     None,
     /// Literal value with literal index.
     /// Right now whether the target is literal is not utilized, but we may use it for optimization.
+    #[allow(unused)]
     Literal(usize),
     /// If it is an allocated stack slot for a local variable, it will contain the index
     /// into locals array. We use it to keep track of which is local variable so that
     /// we won't destroy it by accident.
     /// **NOTE** that it is not a stack index.
+    #[allow(unused)]
     Local(usize),
 }
 

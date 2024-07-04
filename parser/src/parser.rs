@@ -112,6 +112,7 @@ pub struct FnArg<'a> {
 }
 
 impl<'a> FnArg<'a> {
+    #[allow(dead_code)]
     pub(crate) fn new(expr: Expression<'a>) -> Self {
         Self { name: None, expr }
     }
@@ -514,7 +515,7 @@ fn bin_op<'src>(
     move |i| {
         let sub = &sub;
         let cons = &cons;
-        let (r, init) = sub.clone()(i)?;
+        let (r, init) = sub(i)?;
 
         fold_many0(
             pair(ws(tag(t)), sub),

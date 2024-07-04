@@ -290,7 +290,7 @@ pub(crate) fn eval<'a, 'b>(
             match func {
                 FuncDef::Code(func) => {
                     for (name, val) in named_args.into_iter() {
-                        if let Some((i, decl_arg)) =
+                        if let Some((i, _decl_arg)) =
                             func.args.iter().enumerate().find(|f| f.1 .0 == **name)
                         {
                             if eval_args.len() <= i {
