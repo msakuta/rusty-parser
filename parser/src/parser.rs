@@ -170,11 +170,13 @@ pub(crate) fn var_ref(input: Span) -> IResult<Span, Expression> {
 }
 
 fn type_scalar(input: Span) -> IResult<Span, TypeDecl> {
-    let (r, type_) = opt(delimited(
-        multispace0,
-        alt((tag("f64"), tag("f32"), tag("i64"), tag("i32"), tag("str"))),
-        multispace0,
-    ))(input)?;
+    let (r, type_) = opt(ws(alt((
+        tag("f64"),
+        tag("f32"),
+        tag("i64"),
+        tag("i32"),
+        tag("str"),
+    ))))(input)?;
     Ok((
         r,
         match type_.map(|ty| *ty) {
@@ -222,10 +224,10 @@ pub(crate) fn type_spec(input: Span) -> IResult<Span, TypeDecl> {
 
 fn var_decl(input: Span) -> IResult<Span, Statement> {
     let (r, _) = multispace1(tag("var")(multispace0(input)?.0)?.0)?;
-    let (r, ident) = identifier(r)?;
+    let (r, ident) = ident_space(r)?;
     let (r, ts) = type_spec(r)?;
-    let (r, initializer) = opt(delimited(ws(char('=')), full_expression, multispace0))(r)?;
-    let (r, _) = char(';')(multispace0(r)?.0)?;
+    let (r, initializer) = opt(preceded(ws(char('=')), full_expression))(r)?;
+    let (r, _) = char(';')(ws_comment(r)?.0)?;
     Ok((r, Statement::VarDecl(*ident, ts, initializer)))
 }
 

@@ -8,10 +8,12 @@ fn add          // inline comment
     a + b
 }
 
-var a // inline comment
+var // inline comment
+    a // inline comment
     = 123;
 
 var b = // inline comment
-    456;
+    456 // inline comment
+    ;
 
 print(add(a, 456));
