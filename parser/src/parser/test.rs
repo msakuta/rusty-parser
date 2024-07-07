@@ -330,7 +330,7 @@ fn fn_decl_test() {
         func_decl(span).finish().unwrap().1,
         Statement::FnDecl {
             name: "f",
-            args: vec![ArgDecl("a", TypeDecl::Any)],
+            args: vec![ArgDecl::new("a", TypeDecl::Any)],
             ret_type: None,
             stmts: vec![
                 Statement::Expression(Expression::new(
@@ -352,14 +352,14 @@ fn fn_decl_test() {
     );
     assert_eq!(
         func_arg(Span::new("a: i32")).finish().unwrap().1,
-        ArgDecl("a", TypeDecl::I32)
+        ArgDecl::new("a", TypeDecl::I32)
     );
     let span = Span::new("fn f(a: i32) { a * 2 }");
     assert_eq!(
         func_decl(span).finish().unwrap().1,
         Statement::FnDecl {
             name: "f",
-            args: vec![ArgDecl("a", TypeDecl::I32)],
+            args: vec![ArgDecl::new("a", TypeDecl::I32)],
             ret_type: None,
             stmts: vec![Statement::Expression(Expression::new(
                 Mult(
@@ -378,7 +378,7 @@ fn fn_decl_test() {
         func_decl(span).finish().unwrap().1,
         Statement::FnDecl {
             name: "f",
-            args: vec![ArgDecl("a", TypeDecl::I32)],
+            args: vec![ArgDecl::new("a", TypeDecl::I32)],
             ret_type: Some(TypeDecl::F64),
             stmts: vec![Statement::Expression(Expression::new(
                 Mult(

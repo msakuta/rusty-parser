@@ -43,7 +43,19 @@ impl From<ReadError> for String {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct ArgDecl<'a>(pub &'a str, pub TypeDecl);
+pub struct ArgDecl<'a>{
+    pub name: &'a str,
+    pub ty: TypeDecl,
+    pub init: Option<Expression<'a>>,
+}
+
+impl<'a> ArgDecl<'a> {
+    pub fn new(name: &'a str, ty: TypeDecl) -> Self {
+        Self {
+            name, ty, init: None
+        }
+    }
+}
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Statement<'a> {
@@ -603,9 +615,15 @@ fn expression_statement(input: Span) -> IResult<Span, Statement> {
     Ok((r, Statement::Expression(val)))
 }
 
-pub(crate) fn func_arg(input: Span) -> IResult<Span, ArgDecl> {
-    let (r, v) = pair(identifier, opt(ws(type_spec)))(input)?;
-    Ok((r, ArgDecl(*v.0, v.1.unwrap_or(TypeDecl::F64))))
+pub(crate) fn func_arg(r: Span) -> IResult<Span, ArgDecl> {
+    let (r, id) = identifier(r)?;
+    let (r, ty) = opt(ws(type_spec))(r)?;
+    let (r, init) = opt(preceded(ws(char('=')), full_expression))(r)?;
+    Ok((r, ArgDecl{
+        name: *id,
+        ty: ty.unwrap_or(TypeDecl::F64),
+        init,
+    }))
 }
 
 pub(crate) fn func_decl(input: Span) -> IResult<Span, Statement> {

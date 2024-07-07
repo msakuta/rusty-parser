@@ -291,7 +291,7 @@ pub(crate) fn eval<'a, 'b>(
                 FuncDef::Code(func) => {
                     for (name, val) in named_args.into_iter() {
                         if let Some((i, _decl_arg)) =
-                            func.args.iter().enumerate().find(|f| f.1 .0 == **name)
+                            func.args.iter().enumerate().find(|f| f.1 .name == **name)
                         {
                             if eval_args.len() <= i {
                                 eval_args.resize(i + 1, RunResult::Yield(Value::I32(0)));
@@ -304,8 +304,8 @@ pub(crate) fn eval<'a, 'b>(
 
                     for (k, v) in func.args.iter().zip(&eval_args) {
                         subctx.variables.borrow_mut().insert(
-                            k.0,
-                            Rc::new(RefCell::new(coerce_type(&unwrap_run!(v.clone()), &k.1)?)),
+                            k.name,
+                            Rc::new(RefCell::new(coerce_type(&unwrap_run!(v.clone()), &k.ty)?)),
                         );
                     }
                     let run_result = run(func.stmts, &mut subctx)?;
@@ -737,13 +737,13 @@ pub(crate) fn std_functions<'src, 'ast, 'native>() -> HashMap<String, FuncDef<'s
     );
     functions.insert(
         "puts".to_string(),
-        FuncDef::new_native(&s_puts, vec![ArgDecl("val", TypeDecl::Any)], None),
+        FuncDef::new_native(&s_puts, vec![ArgDecl::new("val", TypeDecl::Any)], None),
     );
     functions.insert(
         "type".to_string(),
         FuncDef::new_native(
             &s_type,
-            vec![ArgDecl("value", TypeDecl::Any)],
+            vec![ArgDecl::new("value", TypeDecl::Any)],
             Some(TypeDecl::Str),
         ),
     );
@@ -751,7 +751,7 @@ pub(crate) fn std_functions<'src, 'ast, 'native>() -> HashMap<String, FuncDef<'s
         "len".to_string(),
         FuncDef::new_native(
             &s_len,
-            vec![ArgDecl("array", TypeDecl::Array(Box::new(TypeDecl::Any)))],
+            vec![ArgDecl::new("array", TypeDecl::Array(Box::new(TypeDecl::Any)))],
             Some(TypeDecl::I64),
         ),
     );
@@ -760,8 +760,8 @@ pub(crate) fn std_functions<'src, 'ast, 'native>() -> HashMap<String, FuncDef<'s
         FuncDef::new_native(
             &s_push,
             vec![
-                ArgDecl("array", TypeDecl::Array(Box::new(TypeDecl::Any))),
-                ArgDecl("value", TypeDecl::Any),
+                ArgDecl::new("array", TypeDecl::Array(Box::new(TypeDecl::Any))),
+                ArgDecl::new("value", TypeDecl::Any),
             ],
             None,
         ),
@@ -770,7 +770,7 @@ pub(crate) fn std_functions<'src, 'ast, 'native>() -> HashMap<String, FuncDef<'s
         "hex_string".to_string(),
         FuncDef::new_native(
             &s_hex_string,
-            vec![ArgDecl("value", TypeDecl::I64)],
+            vec![ArgDecl::new("value", TypeDecl::I64)],
             Some(TypeDecl::Str),
         ),
     );

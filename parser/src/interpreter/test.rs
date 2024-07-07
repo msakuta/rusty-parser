@@ -632,7 +632,7 @@ fn fn_array_decl_test() {
         func_decl(span).finish().unwrap().1,
         Statement::FnDecl {
             name: "f",
-            args: vec![ArgDecl("a", TypeDecl::Array(Box::new(TypeDecl::I32)))],
+            args: vec![ArgDecl::new("a", TypeDecl::Array(Box::new(TypeDecl::I32)))],
             ret_type: None,
             stmts: vec![Statement::Expression(Expression::new(
                 VarAssign(

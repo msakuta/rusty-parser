@@ -154,7 +154,7 @@ fn tc_expr<'src, 'b>(
             })?;
             let args_decl = func.args();
             for ((arg_ty, arg), decl) in args_ty.iter().zip(args.iter()).zip(args_decl.iter()) {
-                tc_coerce_type(&arg_ty, &decl.1, arg.expr.span, ctx)?;
+                tc_coerce_type(&arg_ty, &decl.ty, arg.expr.span, ctx)?;
             }
             match func {
                 FuncDef::Code(code) => code.ret_type.clone().unwrap_or(TypeDecl::Any),
@@ -324,7 +324,7 @@ pub fn type_check<'src, 'ast>(
                 );
                 let mut subctx = TypeCheckContext::push_stack(ctx);
                 for arg in args.iter() {
-                    subctx.variables.insert(arg.0, arg.1.clone());
+                    subctx.variables.insert(arg.name, arg.ty.clone());
                 }
                 let last_stmt = type_check(stmts, &mut subctx)?;
                 if let Some((ret_type, Statement::Expression(ret_expr))) =

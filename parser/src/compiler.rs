@@ -574,7 +574,7 @@ fn retrieve_fn_signatures(stmts: &[Statement], env: &mut CompilerEnv) -> Result<
             Statement::FnDecl {
                 name, args, stmts, ..
             } => {
-                let args = args.iter().map(|arg| arg.0.to_string()).collect();
+                let args = args.iter().map(|arg| arg.name.to_string()).collect();
                 let bytecode = FnBytecode::proto(args);
                 env.functions
                     .insert(name.to_string(), FnProto::Code(bytecode));
@@ -619,7 +619,7 @@ fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> Result<Option<usi
                         // The 0th index is used for function name / return value, so the args start with 1.
                         let target = idx + 1;
                         let local = LocalVar {
-                            name: arg.0.to_owned(),
+                            name: arg.name.to_owned(),
                             stack_idx: target,
                         };
                         compiler.target_stack.push(Target::Local(target));
