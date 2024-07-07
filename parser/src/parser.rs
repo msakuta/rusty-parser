@@ -136,15 +136,15 @@ impl<'a> Subslice for Span<'a> {
     }
 }
 
-fn block_comment(input: Span) -> IResult<Span, Statement> {
+fn block_comment<'a, E: ParseError<Span<'a>>>(input: Span<'a>) -> IResult<Span, Span, E> {
     let (r, _) = multispace0(input)?;
     delimited(tag("/*"), take_until("*/"), tag("*/"))(r)
-        .map(|(r, s)| (r, Statement::Comment(s.fragment())))
 }
 
-fn comment(input: Span) -> IResult<Span, Statement> {
-    if let Ok((r, s)) = block_comment(input) {
-        return Ok((r, s));
+/// Usually comments are discarded from AST, but in certain places it is preserved for inspection.
+fn comment_stmt(input: Span) -> IResult<Span, Statement> {
+    if let Ok((r, s)) = block_comment::<nom::error::Error<Span>>(input) {
+        return Ok((r, Statement::Comment(s.fragment())));
     }
 
     match line_comment(input) {
@@ -161,7 +161,7 @@ pub fn identifier(input: Span) -> IResult<Span, Span> {
 }
 
 fn ident_space(input: Span) -> IResult<Span, Span> {
-    delimited(multispace0, identifier, multispace0)(input)
+    ws(identifier)(input)
 }
 
 pub(crate) fn var_ref(input: Span) -> IResult<Span, Expression> {
@@ -323,8 +323,10 @@ fn line_comment<'a, E: ParseError<Span<'a>>>(input: Span<'a>) -> IResult<Span, S
     delimited(tag("//"), take_until("\n"), tag("\n"))(r)
 }
 
-fn ws_comment<'a, E: ParseError<Span<'a>>>(i: Span<'a>) -> IResult<Span, Span, E> {
-    alt((line_comment, multispace0))(i)
+fn ws_comment<'a, E: ParseError<Span<'a>>>(i: Span<'a>) -> IResult<Span, (), E> {
+    let (r, _) = many0(alt((line_comment, block_comment, multispace1)))(i)?;
+
+    Ok((r, ()))
 }
 
 /// A combinator that takes a parser `inner` and produces a parser that also consumes both leading and
@@ -333,7 +335,7 @@ fn ws<'a, F: 'a, O, E: ParseError<Span<'a>>>(
     inner: F,
 ) -> impl FnMut(Span<'a>) -> IResult<Span<'a>, O, E>
 where
-    F: Fn(Span<'a>) -> IResult<Span<'a>, O, E>,
+    F: FnMut(Span<'a>) -> IResult<Span<'a>, O, E>,
 {
     delimited(ws_comment, inner, ws_comment)
 }
@@ -600,25 +602,18 @@ fn expression_statement(input: Span) -> IResult<Span, Statement> {
 }
 
 pub(crate) fn func_arg(input: Span) -> IResult<Span, ArgDecl> {
-    let (r, v) = pair(
-        identifier,
-        opt(delimited(multispace0, type_spec, multispace0)),
-    )(input)?;
+    let (r, v) = pair(identifier, opt(ws(type_spec)))(input)?;
     Ok((r, ArgDecl(*v.0, v.1.unwrap_or(TypeDecl::F64))))
 }
 
 pub(crate) fn func_decl(input: Span) -> IResult<Span, Statement> {
     let (r, _) = ws(tag("fn"))(input)?;
     let (r, name) = identifier(r)?;
-    let (r, args) = delimited(
-        multispace0,
-        delimited(
-            tag("("),
-            terminated(separated_list0(ws(tag(",")), func_arg), opt(ws(char(',')))),
-            tag(")"),
-        ),
-        multispace0,
-    )(r)?;
+    let (r, args) = ws(delimited(
+        tag("("),
+        terminated(separated_list0(ws(tag(",")), func_arg), opt(ws(char(',')))),
+        tag(")"),
+    ))(r)?;
     let (r, ret_type) = opt(preceded(ws(tag("->")), type_decl))(r)?;
     let (r, stmts) = delimited(ws(char('{')), source, ws(char('}')))(r)?;
     Ok((
@@ -679,7 +674,7 @@ fn general_statement<'a>(last: bool) -> impl Fn(Span<'a>) -> IResult<Span<'a>, S
             for_stmt,
             terminated(break_stmt, terminator),
             terminated(expression_statement, terminator),
-            comment,
+            comment_stmt,
         ))(input)
     }
 }

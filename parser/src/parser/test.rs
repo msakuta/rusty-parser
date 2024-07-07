@@ -6,19 +6,52 @@ use ExprEnum::*;
 
 #[test]
 fn test_comments() {
-    let res = comment(Span::new("/* x * y */")).unwrap();
+    let res = comment_stmt(Span::new("/* x * y */")).unwrap();
     assert_eq!(res.0.fragment(), &"");
     assert_eq!(res.1, Statement::Comment(" x * y "));
 }
 
 #[test]
 fn test_comments_error() {
-    if let Err(e) = comment(Span::new("/* x * y")).finish() {
-        assert_eq!(e.input.fragment(), &" x * y");
-        assert_eq!(e.code, nom::error::ErrorKind::TakeUntil);
+    if let Err(e) = comment_stmt(Span::new("/* x * y")).finish() {
+        assert_eq!(e.input.fragment(), &"/* x * y");
+        assert_eq!(e.code, nom::error::ErrorKind::Tag);
     } else {
         panic!();
     };
+}
+
+#[test]
+fn test_line_comment() {
+    let span = Span::new(" // hey  \n");
+    assert_eq!(
+        line_comment::<nom::error::Error<Span>>(span)
+            .finish()
+            .unwrap()
+            .1,
+        span.subslice(3, 6)
+    );
+}
+
+#[test]
+fn test_block_comment() {
+    let span = Span::new(" /* hey  */\n");
+    assert_eq!(
+        block_comment::<nom::error::Error<Span>>(span)
+            .finish()
+            .unwrap()
+            .1,
+        span.subslice(3, 6)
+    );
+}
+
+#[test]
+fn test_comment() {
+    let span = Span::new("/* hey  */");
+    assert_eq!(
+        ws_comment::<nom::error::Error<Span>>(span).finish(),
+        Ok((span.subslice(span.len(), 0), ()))
+    );
 }
 
 #[test]
