@@ -136,10 +136,21 @@ impl<'a> Subslice for Span<'a> {
     }
 }
 
-fn comment(input: Span) -> IResult<Span, Statement> {
+fn block_comment(input: Span) -> IResult<Span, Statement> {
     let (r, _) = multispace0(input)?;
     delimited(tag("/*"), take_until("*/"), tag("*/"))(r)
         .map(|(r, s)| (r, Statement::Comment(s.fragment())))
+}
+
+fn comment(input: Span) -> IResult<Span, Statement> {
+    if let Ok((r, s)) = block_comment(input) {
+        return Ok((r, s));
+    }
+
+    match line_comment(input) {
+        Ok((r, s)) => Ok((r, Statement::Comment(s.fragment()))),
+        Err(e) => Err(e),
+    }
 }
 
 pub fn identifier(input: Span) -> IResult<Span, Span> {
@@ -307,6 +318,15 @@ fn parens(i: Span) -> IResult<Span, Expression> {
     Ok((r, Expression::new(res.expr, r0.take(r0.offset(&r)))))
 }
 
+fn line_comment<'a, E: ParseError<Span<'a>>>(input: Span<'a>) -> IResult<Span, Span, E> {
+    let (r, _) = multispace0(input)?;
+    delimited(tag("//"), take_until("\n"), tag("\n"))(r)
+}
+
+fn ws_comment<'a, E: ParseError<Span<'a>>>(i: Span<'a>) -> IResult<Span, Span, E> {
+    alt((line_comment, multispace0))(i)
+}
+
 /// A combinator that takes a parser `inner` and produces a parser that also consumes both leading and
 /// trailing whitespace, returning the output of `inner`.
 fn ws<'a, F: 'a, O, E: ParseError<Span<'a>>>(
@@ -315,7 +335,7 @@ fn ws<'a, F: 'a, O, E: ParseError<Span<'a>>>(
 where
     F: Fn(Span<'a>) -> IResult<Span<'a>, O, E>,
 {
-    delimited(multispace0, inner, multispace0)
+    delimited(ws_comment, inner, ws_comment)
 }
 
 pub(crate) fn fn_invoke_arg(i: Span) -> IResult<Span, FnArg> {

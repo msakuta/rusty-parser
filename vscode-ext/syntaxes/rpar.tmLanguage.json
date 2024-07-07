@@ -15,6 +15,9 @@
 			"include": "#blockComment"
 		},
 		{
+			"include": "#lineComment"
+		},
+		{
 			"include": "#constants"
 		},
 		{
@@ -59,6 +62,12 @@
 					"match": "\\\\."
 				}
 			]
+		},
+		"lineComment": {
+			"patterns": [{
+				"name": "comment.line.double-slash.rpar",
+				"match": "\/\/[^\n]*"
+			}]
 		},
 		"constants": {
 			"patterns": [{
