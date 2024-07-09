@@ -38,16 +38,16 @@ impl<'src> TypeCheckError<'src> {
 }
 
 #[derive(Clone)]
-pub struct TypeCheckContext<'src, 'ast, 'native, 'ctx> {
+pub struct TypeCheckContext<'src, 'native, 'ctx> {
     /// Variables table for type checking.
     variables: HashMap<&'src str, TypeDecl>,
     /// Function names are owned strings because it can be either from source or native.
-    functions: HashMap<String, FuncDef<'src, 'ast, 'native>>,
-    super_context: Option<&'ctx TypeCheckContext<'src, 'ast, 'native, 'ctx>>,
+    functions: HashMap<String, FuncDef<'src, 'native>>,
+    super_context: Option<&'ctx TypeCheckContext<'src, 'native, 'ctx>>,
     source_file: Option<&'src str>,
 }
 
-impl<'src, 'ast, 'native, 'ctx> TypeCheckContext<'src, 'ast, 'native, 'ctx> {
+impl<'src, 'native, 'ctx> TypeCheckContext<'src, 'native, 'ctx> {
     pub fn new(source_file: Option<&'src str>) -> Self {
         Self {
             variables: HashMap::new(),
@@ -67,11 +67,11 @@ impl<'src, 'ast, 'native, 'ctx> TypeCheckContext<'src, 'ast, 'native, 'ctx> {
         }
     }
 
-    pub fn set_fn(&mut self, name: &str, fun: FuncDef<'src, 'ast, 'native>) {
+    pub fn set_fn(&mut self, name: &str, fun: FuncDef<'src, 'native>) {
         self.functions.insert(name.to_string(), fun);
     }
 
-    fn get_fn(&self, name: &str) -> Option<&FuncDef<'src, 'ast, 'native>> {
+    fn get_fn(&self, name: &str) -> Option<&FuncDef<'src, 'native>> {
         if let Some(val) = self.functions.get(name) {
             Some(val)
         } else if let Some(super_ctx) = self.super_context {
@@ -93,7 +93,7 @@ impl<'src, 'ast, 'native, 'ctx> TypeCheckContext<'src, 'ast, 'native, 'ctx> {
 
 fn tc_expr<'src, 'b>(
     e: &'b Expression<'src>,
-    ctx: &mut TypeCheckContext<'src, 'b, '_, '_>,
+    ctx: &mut TypeCheckContext<'src, '_, '_>,
 ) -> Result<TypeDecl, TypeCheckError<'src>> {
     Ok(match &e.expr {
         ExprEnum::NumLiteral(val) => match val {
@@ -232,7 +232,7 @@ fn tc_coerce_type<'src>(
     value: &TypeDecl,
     target: &TypeDecl,
     span: Span<'src>,
-    ctx: &TypeCheckContext<'src, '_, '_, '_>,
+    ctx: &TypeCheckContext<'src, '_, '_>,
 ) -> Result<TypeDecl, TypeCheckError<'src>> {
     use TypeDecl::*;
     Ok(match (value, target) {
@@ -265,7 +265,7 @@ fn tc_cast_type<'src>(
     value: &TypeDecl,
     target: &TypeDecl,
     span: Span<'src>,
-    ctx: &TypeCheckContext<'src, '_, '_, '_>,
+    ctx: &TypeCheckContext<'src, '_, '_>,
 ) -> Result<TypeDecl, TypeCheckError<'src>> {
     use TypeDecl::*;
     Ok(match (value, target) {
@@ -297,7 +297,7 @@ fn tc_cast_type<'src>(
 
 pub fn type_check<'src, 'ast>(
     stmts: &'ast Vec<Statement<'src>>,
-    ctx: &mut TypeCheckContext<'src, 'ast, '_, '_>,
+    ctx: &mut TypeCheckContext<'src, '_, '_>,
 ) -> Result<TypeDecl, TypeCheckError<'src>> {
     let mut res = TypeDecl::Any;
     for stmt in stmts {
@@ -320,7 +320,7 @@ pub fn type_check<'src, 'ast>(
                 // Function declaration needs to be added first to allow recursive calls
                 ctx.functions.insert(
                     name.to_string(),
-                    FuncDef::Code(FuncCode::new(stmts, args, ret_type.clone())),
+                    FuncDef::Code(FuncCode::new(stmts.clone(), args.clone(), ret_type.clone())),
                 );
                 let mut subctx = TypeCheckContext::push_stack(ctx);
                 for arg in args.iter() {
@@ -369,7 +369,7 @@ pub fn type_check<'src, 'ast>(
 fn binary_op_gen<'src, 'ast>(
     lhs: &'ast Expression<'src>,
     rhs: &'ast Expression<'src>,
-    ctx: &mut TypeCheckContext<'src, 'ast, '_, '_>,
+    ctx: &mut TypeCheckContext<'src, '_, '_>,
     op: &str,
     mut f: impl FnMut(&TypeDecl, &TypeDecl) -> Result<TypeDecl, ()>,
 ) -> Result<TypeDecl, TypeCheckError<'src>> {
@@ -390,7 +390,7 @@ fn binary_op_gen<'src, 'ast>(
 fn binary_op<'src, 'ast>(
     lhs: &'ast Expression<'src>,
     rhs: &'ast Expression<'src>,
-    ctx: &mut TypeCheckContext<'src, 'ast, '_, '_>,
+    ctx: &mut TypeCheckContext<'src, '_, '_>,
     op: &str,
 ) -> Result<TypeDecl, TypeCheckError<'src>> {
     binary_op_gen(lhs, rhs, ctx, op, binary_op_type)
@@ -424,7 +424,7 @@ fn binary_op_type(lhs: &TypeDecl, rhs: &TypeDecl) -> Result<TypeDecl, ()> {
 fn binary_cmp<'src, 'ast>(
     lhs: &'ast Expression<'src>,
     rhs: &'ast Expression<'src>,
-    ctx: &mut TypeCheckContext<'src, 'ast, '_, '_>,
+    ctx: &mut TypeCheckContext<'src, '_, '_>,
     op: &str,
 ) -> Result<TypeDecl, TypeCheckError<'src>> {
     binary_op_gen(lhs, rhs, ctx, op, binary_cmp_type)

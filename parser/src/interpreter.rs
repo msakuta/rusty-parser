@@ -212,10 +212,13 @@ pub fn coerce_type(value: &Value, target: &TypeDecl) -> Result<Value, EvalError>
     })
 }
 
-pub(crate) fn eval<'a, 'b>(
-    e: &'b Expression<'a>,
-    ctx: &mut EvalContext<'a, 'b, '_, '_>,
-) -> Result<RunResult, EvalError> {
+pub(crate) fn eval<'src, 'native>(
+    e: &Expression<'src>,
+    ctx: &mut EvalContext<'src, 'native, '_>,
+) -> Result<RunResult, EvalError>
+where
+    'native: 'src,
+{
     Ok(match &e.expr {
         ExprEnum::NumLiteral(val) => RunResult::Yield(val.clone()),
         ExprEnum::StrLiteral(val) => RunResult::Yield(Value::Str(val.clone())),
@@ -265,11 +268,30 @@ pub(crate) fn eval<'a, 'b>(
             RunResult::Yield(result)
         }
         ExprEnum::FnInvoke(str, args) => {
+            let default_args = {
+                let fn_args = ctx
+                    .get_fn(*str)
+                    .ok_or_else(|| format!("function {} is not defined.", str))?
+                    .args();
+
+                if args.len() <= fn_args.len() {
+                    let fn_args = fn_args[args.len()..].to_vec();
+
+                    fn_args
+                        .into_iter()
+                        .filter_map(|arg| arg.init.as_ref().map(|init| eval(init, ctx)))
+                        .collect::<Result<Vec<_>, _>>()?
+                } else {
+                    vec![]
+                }
+            };
+
             // Collect unordered args first
             let mut eval_args = args
                 .iter()
                 .filter(|v| v.name.is_none())
                 .map(|v| eval(&v.expr, ctx))
+                .chain(default_args.into_iter().map(Ok))
                 .collect::<Result<Vec<_>, _>>()?;
             let named_args: Vec<_> = args
                 .into_iter()
@@ -286,12 +308,13 @@ pub(crate) fn eval<'a, 'b>(
             let func = ctx
                 .get_fn(*str)
                 .ok_or_else(|| format!("function {} is not defined.", str))?;
+
             let mut subctx = EvalContext::push_stack(ctx);
             match func {
                 FuncDef::Code(func) => {
                     for (name, val) in named_args.into_iter() {
                         if let Some((i, _decl_arg)) =
-                            func.args.iter().enumerate().find(|f| f.1 .name == **name)
+                            func.args.iter().enumerate().find(|f| f.1.name == **name)
                         {
                             if eval_args.len() <= i {
                                 eval_args.resize(i + 1, RunResult::Yield(Value::I32(0)));
@@ -308,7 +331,7 @@ pub(crate) fn eval<'a, 'b>(
                             Rc::new(RefCell::new(coerce_type(&unwrap_run!(v.clone()), &k.ty)?)),
                         );
                     }
-                    let run_result = run(func.stmts, &mut subctx)?;
+                    let run_result = run(&func.stmts, &mut subctx)?;
                     match unwrap_deref(run_result) {
                         RunResult::Yield(v) => match &func.ret_type {
                             Some(ty) => RunResult::Yield(coerce_type(&v, ty)?),
@@ -586,16 +609,18 @@ pub(crate) fn s_hex_string(vals: &[Value]) -> Result<Value, EvalError> {
 }
 
 #[derive(Clone)]
-pub struct FuncCode<'src, 'ast> {
-    args: &'ast Vec<ArgDecl<'src>>,
+pub struct FuncCode<'src> {
+    args: Vec<ArgDecl<'src>>,
     pub(crate) ret_type: Option<TypeDecl>,
-    stmts: &'ast Vec<Statement<'src>>,
+    /// Owning a clone of AST of statements is not quite efficient, but we could not get
+    /// around the borrow checker.
+    stmts: Vec<Statement<'src>>,
 }
 
-impl<'src, 'ast> FuncCode<'src, 'ast> {
+impl<'src> FuncCode<'src> {
     pub(crate) fn new(
-        stmts: &'ast Vec<Statement<'src>>,
-        args: &'ast Vec<ArgDecl<'src>>,
+        stmts: Vec<Statement<'src>>,
+        args: Vec<ArgDecl<'src>>,
         ret_type: Option<TypeDecl>,
     ) -> Self {
         Self {
@@ -628,12 +653,12 @@ impl<'native> NativeCode<'native> {
 }
 
 #[derive(Clone)]
-pub enum FuncDef<'src, 'ast, 'native> {
-    Code(FuncCode<'src, 'ast>),
+pub enum FuncDef<'src, 'native> {
+    Code(FuncCode<'src>),
     Native(NativeCode<'native>),
 }
 
-impl<'src, 'ast, 'native> FuncDef<'src, 'ast, 'native> {
+impl<'src, 'ast, 'native> FuncDef<'src, 'native> {
     pub fn new_native(
         code: &'native dyn Fn(&[Value]) -> Result<Value, EvalError>,
         args: Vec<ArgDecl<'native>>,
@@ -664,7 +689,7 @@ impl<'src, 'ast, 'native> FuncDef<'src, 'ast, 'native> {
 /// In general, they all can have different lifetimes. For example,
 /// usually AST is created after the source.
 #[derive(Clone)]
-pub struct EvalContext<'src, 'ast, 'native, 'ctx> {
+pub struct EvalContext<'src, 'native, 'ctx> {
     /// RefCell to allow mutation in super context.
     /// Also, the inner values must be Rc of RefCell because a reference could be returned from
     /// a function so that the variable scope may have been ended.
@@ -672,11 +697,11 @@ pub struct EvalContext<'src, 'ast, 'native, 'ctx> {
     /// Function names are owned strings because it can be either from source or native.
     /// Unlike variables, functions cannot be overwritten in the outer scope, so it does not
     /// need to be wrapped in a RefCell.
-    functions: HashMap<String, FuncDef<'src, 'ast, 'native>>,
-    super_context: Option<&'ctx EvalContext<'src, 'ast, 'native, 'ctx>>,
+    functions: HashMap<String, FuncDef<'src, 'native>>,
+    super_context: Option<&'ctx EvalContext<'src, 'native, 'ctx>>,
 }
 
-impl<'src, 'ast, 'native, 'ctx> EvalContext<'src, 'ast, 'native, 'ctx> {
+impl<'src, 'ast, 'native, 'ctx> EvalContext<'src, 'native, 'ctx> {
     pub fn new() -> Self {
         Self {
             variables: RefCell::new(HashMap::new()),
@@ -685,7 +710,7 @@ impl<'src, 'ast, 'native, 'ctx> EvalContext<'src, 'ast, 'native, 'ctx> {
         }
     }
 
-    pub fn set_fn(&mut self, name: &str, fun: FuncDef<'src, 'ast, 'native>) {
+    pub fn set_fn(&mut self, name: &str, fun: FuncDef<'src, 'native>) {
         self.functions.insert(name.to_string(), fun);
     }
 
@@ -717,7 +742,7 @@ impl<'src, 'ast, 'native, 'ctx> EvalContext<'src, 'ast, 'native, 'ctx> {
         }
     }
 
-    fn get_fn(&self, name: &str) -> Option<&FuncDef<'src, 'ast, 'native>> {
+    fn get_fn(&self, name: &str) -> Option<&FuncDef<'src, 'native>> {
         if let Some(val) = self.functions.get(name) {
             Some(val)
         } else if let Some(super_ctx) = self.super_context {
@@ -728,8 +753,7 @@ impl<'src, 'ast, 'native, 'ctx> EvalContext<'src, 'ast, 'native, 'ctx> {
     }
 }
 
-pub(crate) fn std_functions<'src, 'ast, 'native>() -> HashMap<String, FuncDef<'src, 'ast, 'native>>
-{
+pub(crate) fn std_functions<'src, 'native>() -> HashMap<String, FuncDef<'src, 'native>> {
     let mut functions = HashMap::new();
     functions.insert(
         "print".to_string(),
@@ -751,7 +775,10 @@ pub(crate) fn std_functions<'src, 'ast, 'native>() -> HashMap<String, FuncDef<'s
         "len".to_string(),
         FuncDef::new_native(
             &s_len,
-            vec![ArgDecl::new("array", TypeDecl::Array(Box::new(TypeDecl::Any)))],
+            vec![ArgDecl::new(
+                "array",
+                TypeDecl::Array(Box::new(TypeDecl::Any)),
+            )],
             Some(TypeDecl::I64),
         ),
     );
@@ -786,10 +813,13 @@ macro_rules! unwrap_break {
     };
 }
 
-pub fn run<'src, 'ast>(
-    stmts: &'ast Vec<Statement<'src>>,
-    ctx: &mut EvalContext<'src, 'ast, '_, '_>,
-) -> Result<RunResult, EvalError> {
+pub fn run<'src, 'native>(
+    stmts: &Vec<Statement<'src>>,
+    ctx: &mut EvalContext<'src, 'native, '_>,
+) -> Result<RunResult, EvalError>
+where
+    'native: 'src,
+{
     let mut res = RunResult::Yield(Value::I32(0));
     for stmt in stmts {
         match stmt {
@@ -812,11 +842,7 @@ pub fn run<'src, 'ast>(
             } => {
                 ctx.functions.insert(
                     name.to_string(),
-                    FuncDef::Code(FuncCode {
-                        args,
-                        ret_type: ret_type.clone(),
-                        stmts,
-                    }),
+                    FuncDef::Code(FuncCode::new(stmts.clone(), args.clone(), ret_type.clone())),
                 );
             }
             Statement::Expression(e) => {
