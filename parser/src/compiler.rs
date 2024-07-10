@@ -211,7 +211,14 @@ impl Bytecode {
     }
 
     pub fn write(&self, writer: &mut impl Write) -> std::io::Result<()> {
-        writer.write_all(&self.functions.len().to_le_bytes())?;
+        writer.write_all(
+            &self
+                .functions
+                .iter()
+                .filter(|f| matches!(f.1, FnProto::Code(_)))
+                .count()
+                .to_le_bytes(),
+        )?;
         for (fname, func) in self.functions.iter() {
             if let FnProto::Code(func) = func {
                 write_str(fname, writer)?;
