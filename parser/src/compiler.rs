@@ -176,6 +176,23 @@ fn read_bool(reader: &mut impl Read) -> Result<bool, ReadError> {
     Ok(buf[0] != 0)
 }
 
+fn write_opt_value(value: &Option<Value>, writer: &mut impl Write) -> std::io::Result<()> {
+    write_bool(value.is_some(), writer)?;
+    if let Some(value) = value {
+        value.serialize(writer)?;
+    }
+    Ok(())
+}
+
+fn read_opt_value(reader: &mut impl Read) -> Result<Option<Value>, ReadError> {
+    let has_value = read_bool(reader)?;
+    Ok(if has_value {
+        Some(Value::deserialize(reader)?)
+    } else {
+        None
+    })
+}
+
 pub type NativeFn = Box<dyn Fn(&[Value]) -> Result<Value, EvalError>>;
 
 pub(crate) enum FnProto {
@@ -321,10 +338,7 @@ impl FnBytecode {
         writer.write_all(&self.args.len().to_le_bytes())?;
         for arg in &self.args {
             write_str(&arg.name, writer)?;
-            write_bool(arg.init.is_some(), writer)?;
-            if let Some(ref init) = arg.init {
-                init.serialize(writer)?;
-            }
+            write_opt_value(&arg.init, writer)?;
         }
         writer.write_all(&self.instructions.len().to_le_bytes())?;
         for inst in &self.instructions {
@@ -350,11 +364,7 @@ impl FnBytecode {
         let args = (0..num_args)
             .map(|_| -> Result<_, ReadError> {
                 let name = read_str(reader)?;
-                let init = if read_bool(reader)? {
-                    Some(Value::deserialize(reader)?)
-                } else {
-                    None
-                };
+                let init = read_opt_value(reader)?;
                 Ok(BytecodeArg { name, init })
             })
             .collect::<Result<Vec<_>, _>>()?;
