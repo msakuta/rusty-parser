@@ -1,3 +1,4 @@
+use nom::Finish;
 use parser::*;
 use std::{cell::RefCell, collections::HashMap, io::Write, rc::Rc};
 
@@ -27,7 +28,7 @@ output(double());
 }
 
 fn parse_compile_interpret(src: &str, expected: &[u8]) {
-    let (_, ast) = source(src).unwrap();
+    let (_, ast) = source(src).finish().unwrap();
     let buf = Rc::new(RefCell::new(vec![]));
     let output = s_writer(buf.clone());
     let mut funcs = HashMap::new();
