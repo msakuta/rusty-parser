@@ -279,7 +279,11 @@ where
 
                     fn_args
                         .into_iter()
-                        .filter_map(|arg| arg.init.as_ref().map(|init| eval(init, ctx)))
+                        .filter_map(|arg| {
+                            arg.init
+                                .as_ref()
+                                .map(|init| eval(init, &mut EvalContext::new()))
+                        })
                         .collect::<Result<Vec<_>, _>>()?
                 } else {
                     vec![]
