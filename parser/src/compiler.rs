@@ -1028,3 +1028,6 @@ fn emit_binary_op(
     });
     lhs
 }
+
+#[cfg(test)]
+mod test;
