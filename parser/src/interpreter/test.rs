@@ -140,6 +140,7 @@ fn fn_default_test() {
     assert!(stmts.is_ok());
 }
 
+/// Tests non-const default argument expression will fail to evaluate
 #[test]
 fn fn_default_failure_test() {
     let span = Span::new("var b = 1; fn f(a: i32 = b) { a; } f()");

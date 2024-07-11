@@ -280,6 +280,10 @@ where
                     fn_args
                         .into_iter()
                         .filter_map(|arg| {
+                            // We use a new temporary EvalContext to avoid referencing outer variables, i.e. make it
+                            // a constant expression, in order to match the semantics with the bytecode compiler.
+                            // Theoretically, it is possible to evaluate the expression ahead of time to reduce
+                            // computation, but our priority is bytecode compiler which already does constant folding.
                             arg.init
                                 .as_ref()
                                 .map(|init| eval(init, &mut EvalContext::new()))
@@ -684,14 +688,12 @@ impl<'src, 'ast, 'native> FuncDef<'src, 'native> {
 
 /// A context stat for evaluating a script.
 ///
-/// It has 4 lifetime arguments:
+/// It has 3 lifetime arguments:
 ///  * the source code ('src)
-///  * the AST ('ast),
 ///  * the native function code ('native) and
 ///  * the parent eval context ('ctx)
 ///
-/// In general, they all can have different lifetimes. For example,
-/// usually AST is created after the source.
+/// In general, they all can have different lifetimes.
 #[derive(Clone)]
 pub struct EvalContext<'src, 'native, 'ctx> {
     /// RefCell to allow mutation in super context.
