@@ -117,13 +117,13 @@ macro_rules! wasm_functions {
         $ctx.set_fn("print", FuncDef::new_native(&s_print, vec![], None));
         $ctx.set_fn(
             "puts",
-            FuncDef::new_native(&s_puts, vec![ArgDecl("val", TypeDecl::Any)], None),
+            FuncDef::new_native(&s_puts, vec![ArgDecl::new("val", TypeDecl::Any)], None),
         );
         $ctx.set_fn(
             "set_fill_style",
             FuncDef::new_native(
                 &s_set_fill_style,
-                vec![ArgDecl("style", TypeDecl::Str)],
+                vec![ArgDecl::new("style", TypeDecl::Str)],
                 None,
             ),
         );
@@ -132,10 +132,10 @@ macro_rules! wasm_functions {
             FuncDef::new_native(
                 &s_rectangle,
                 vec![
-                    ArgDecl("x0", TypeDecl::I64),
-                    ArgDecl("y0", TypeDecl::I64),
-                    ArgDecl("x1", TypeDecl::I64),
-                    ArgDecl("y1", TypeDecl::I64),
+                    ArgDecl::new("x0", TypeDecl::I64),
+                    ArgDecl::new("y0", TypeDecl::I64),
+                    ArgDecl::new("x1", TypeDecl::I64),
+                    ArgDecl::new("y1", TypeDecl::I64),
                 ],
                 None,
             ),
