@@ -666,7 +666,7 @@ pub enum FuncDef<'src, 'native> {
     Native(NativeCode<'native>),
 }
 
-impl<'src, 'ast, 'native> FuncDef<'src, 'native> {
+impl<'src, 'native> FuncDef<'src, 'native> {
     pub fn new_native(
         code: &'native dyn Fn(&[Value]) -> Result<Value, EvalError>,
         args: Vec<ArgDecl<'native>>,
