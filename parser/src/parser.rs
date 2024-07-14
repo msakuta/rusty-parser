@@ -203,7 +203,9 @@ fn type_scalar(input: Span) -> IResult<Span, TypeDecl> {
             Some("i32") => TypeDecl::I32,
             Some("i64") => TypeDecl::I64,
             Some("str") => TypeDecl::Str,
-            Some(unknown) => panic!("Unknown type: \"{}\"", unknown),
+            Some(unknown) => {
+                unreachable!("Type should have recognized by the parser: \"{}\"", unknown)
+            }
         },
     ))
 }
