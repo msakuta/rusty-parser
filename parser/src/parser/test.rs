@@ -332,7 +332,7 @@ fn fn_decl_test() {
             name: "f",
             args: vec![ArgDecl::new("a", TypeDecl::Any)],
             ret_type: None,
-            stmts: vec![
+            stmts: Rc::new(vec![
                 Statement::Expression(Expression::new(
                     VarAssign(
                         var_r(span.subslice(14, 1)),
@@ -347,7 +347,7 @@ fn fn_decl_test() {
                     Mult(var_r(span.subslice(27, 1)), var_r(span.subslice(31, 1))),
                     span.subslice(27, 5)
                 ))
-            ]
+            ])
         }
     );
     assert_eq!(
@@ -361,7 +361,7 @@ fn fn_decl_test() {
             name: "f",
             args: vec![ArgDecl::new("a", TypeDecl::I32)],
             ret_type: None,
-            stmts: vec![Statement::Expression(Expression::new(
+            stmts: Rc::new(vec![Statement::Expression(Expression::new(
                 Mult(
                     var_r(span.subslice(15, 1)),
                     Box::new(Expression::new(
@@ -370,7 +370,7 @@ fn fn_decl_test() {
                     ))
                 ),
                 span.subslice(15, 5)
-            ))]
+            ))])
         }
     );
     let span = Span::new("fn f(a: i32) -> f64 { a * 2 }");
@@ -380,7 +380,7 @@ fn fn_decl_test() {
             name: "f",
             args: vec![ArgDecl::new("a", TypeDecl::I32)],
             ret_type: Some(TypeDecl::F64),
-            stmts: vec![Statement::Expression(Expression::new(
+            stmts: Rc::new(vec![Statement::Expression(Expression::new(
                 Mult(
                     var_r(span.subslice(22, 1)),
                     Box::new(Expression::new(
@@ -389,7 +389,7 @@ fn fn_decl_test() {
                     ))
                 ),
                 span.subslice(22, 5)
-            ))]
+            ))])
         }
     );
 }

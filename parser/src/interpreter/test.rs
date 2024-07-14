@@ -650,13 +650,13 @@ fn fn_array_decl_test() {
             name: "f",
             args: vec![ArgDecl::new("a", TypeDecl::Array(Box::new(TypeDecl::I32)))],
             ret_type: None,
-            stmts: vec![Statement::Expression(Expression::new(
+            stmts: Rc::new(vec![Statement::Expression(Expression::new(
                 VarAssign(
                     var_r(span.subslice(17, 1)),
                     bnl(Value::I64(123), span.subslice(21, 3))
                 ),
                 span.subslice(17, 7)
-            ))]
+            ))])
         }
     );
 }

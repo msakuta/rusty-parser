@@ -11,7 +11,7 @@ use nom::{
     IResult, InputTake, Offset,
 };
 use nom_locate::LocatedSpan;
-use std::string::FromUtf8Error;
+use std::{rc::Rc, string::FromUtf8Error};
 
 pub type Span<'a> = LocatedSpan<&'a str>;
 
@@ -67,7 +67,7 @@ pub enum Statement<'a> {
         name: &'a str,
         args: Vec<ArgDecl<'a>>,
         ret_type: Option<TypeDecl>,
-        stmts: Vec<Statement<'a>>,
+        stmts: Rc<Vec<Statement<'a>>>,
     },
     Expression(Expression<'a>),
     Loop(Vec<Statement<'a>>),
@@ -647,7 +647,7 @@ pub(crate) fn func_decl(input: Span) -> IResult<Span, Statement> {
             name: *name,
             args,
             ret_type,
-            stmts,
+            stmts: Rc::new(stmts),
         },
     ))
 }

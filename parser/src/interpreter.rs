@@ -622,12 +622,12 @@ pub struct FuncCode<'src> {
     pub(crate) ret_type: Option<TypeDecl>,
     /// Owning a clone of AST of statements is not quite efficient, but we could not get
     /// around the borrow checker.
-    stmts: Vec<Statement<'src>>,
+    stmts: Rc<Vec<Statement<'src>>>,
 }
 
 impl<'src> FuncCode<'src> {
     pub(crate) fn new(
-        stmts: Vec<Statement<'src>>,
+        stmts: Rc<Vec<Statement<'src>>>,
         args: Vec<ArgDecl<'src>>,
         ret_type: Option<TypeDecl>,
     ) -> Self {
