@@ -53,10 +53,11 @@ If you have a pre-compiled bytecode file, you can just run it without compiling 
 You can also build a wasm package and run the interpreter on the browser.
 
     cd wasm
-    wasm-pack build --target web
+    npm run build
 
 To launch the application, you can use `npx`
 
+    cd dist
     npx serve
 
 and browse http://localhost:5000.
