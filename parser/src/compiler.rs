@@ -377,7 +377,11 @@ fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> CompileResult<Opt
             Statement::For(iter, from, to, stmts) => {
                 let stk_from = emit_expr(from, compiler)?;
                 let stk_to = emit_expr(to, compiler)?;
-                let local_iter = compiler.locals.last().unwrap().len();
+                let local_iter = compiler
+                    .locals
+                    .last()
+                    .ok_or_else(|| CompileError::LocalsStackUnderflow)?
+                    .len();
                 let stk_check = compiler.target_stack.len();
 
                 // stack: [stk_from, stk_to, stk_check]
@@ -386,10 +390,14 @@ fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> CompileResult<Opt
                 //     and stk_check is the value to store the result of comparison
 
                 let inst_loop_start = compiler.bytecode.instructions.len();
-                compiler.locals.last_mut().unwrap().push(LocalVar {
-                    name: iter.to_string(),
-                    stack_idx: stk_from,
-                });
+                compiler
+                    .locals
+                    .last_mut()
+                    .ok_or_else(|| CompileError::LocalsStackUnderflow)?
+                    .push(LocalVar {
+                        name: iter.to_string(),
+                        stack_idx: stk_from,
+                    });
                 compiler.target_stack[stk_from] = Target::Local(local_iter);
                 compiler.target_stack.push(Target::None);
                 compiler
@@ -484,10 +492,10 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> CompileResult<usize>
             compiler.bytecode.push_inst(OpCode::BitNot, val as u8, 0);
             Ok(val)
         }
-        ExprEnum::Add(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Add, lhs, rhs)),
-        ExprEnum::Sub(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Sub, lhs, rhs)),
-        ExprEnum::Mult(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Mul, lhs, rhs)),
-        ExprEnum::Div(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Div, lhs, rhs)),
+        ExprEnum::Add(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Add, lhs, rhs)?),
+        ExprEnum::Sub(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Sub, lhs, rhs)?),
+        ExprEnum::Mult(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Mul, lhs, rhs)?),
+        ExprEnum::Div(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Div, lhs, rhs)?),
         ExprEnum::VarAssign(lhs, rhs) => {
             let lhs_result = emit_expr(lhs, compiler)?;
             let rhs_result = emit_expr(rhs, compiler)?;
@@ -628,13 +636,13 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> CompileResult<usize>
                 .push_inst(OpCode::Get, stk_ex as u8, arg as u16);
             Ok(arg)
         }
-        ExprEnum::LT(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Lt, lhs, rhs)),
-        ExprEnum::GT(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Gt, lhs, rhs)),
-        ExprEnum::BitAnd(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::BitAnd, lhs, rhs)),
-        ExprEnum::BitXor(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::BitXor, lhs, rhs)),
-        ExprEnum::BitOr(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::BitOr, lhs, rhs)),
-        ExprEnum::And(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::And, lhs, rhs)),
-        ExprEnum::Or(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Or, lhs, rhs)),
+        ExprEnum::LT(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Lt, lhs, rhs)?),
+        ExprEnum::GT(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Gt, lhs, rhs)?),
+        ExprEnum::BitAnd(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::BitAnd, lhs, rhs)?),
+        ExprEnum::BitXor(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::BitXor, lhs, rhs)?),
+        ExprEnum::BitOr(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::BitOr, lhs, rhs)?),
+        ExprEnum::And(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::And, lhs, rhs)?),
+        ExprEnum::Or(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Or, lhs, rhs)?),
         ExprEnum::Conditional(cond, true_branch, false_branch) => {
             let cond = emit_expr(cond, compiler)?;
             let cond_inst_idx = compiler.bytecode.instructions.len();
@@ -682,9 +690,9 @@ fn emit_binary_op(
     op: OpCode,
     lhs: &Expression,
     rhs: &Expression,
-) -> usize {
-    let lhs = emit_expr(&lhs, compiler).unwrap();
-    let rhs = emit_expr(&rhs, compiler).unwrap();
+) -> CompileResult<usize> {
+    let lhs = emit_expr(&lhs, compiler)?;
+    let rhs = emit_expr(&rhs, compiler)?;
     let lhs = if matches!(compiler.target_stack[lhs], Target::Local(_)) {
         // We move the local variable to another slot because our instructions are destructive
         let top = compiler.target_stack.len();
@@ -701,5 +709,5 @@ fn emit_binary_op(
         arg0: lhs as u8,
         arg1: rhs as u16,
     });
-    lhs
+    Ok(lhs)
 }
