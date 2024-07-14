@@ -4,8 +4,10 @@ use std::collections::HashMap;
 
 use crate::{
     interpreter::{
-        binary_op, binary_op_int, binary_op_str, coerce_f64, coerce_i64, truthy, EvalError,
+        binary_op, binary_op_int, binary_op_str, coerce_f64, coerce_i64, coerce_type, truthy,
+        EvalError,
     },
+    type_decl::TypeDecl,
     Bytecode, FnBytecode, FnProto, OpCode, Value,
 };
 
@@ -345,6 +347,16 @@ fn interpret_fn(
                 } else {
                     return Err("Call stack underflow!".to_string());
                 }
+            }
+            OpCode::Cast => {
+                let target_var = &vm.get(inst.arg0);
+                let target_type = coerce_i64(vm.get(inst.arg1))
+                    .map_err(|e| format!("arg1 of Cast was not number: {e:?}"))?;
+                let tt_buf = target_type.to_le_bytes();
+                let tt = TypeDecl::deserialize(&mut &tt_buf[..])
+                    .map_err(|e| format!("arg1 of Cast was not a TypeDecl: {e:?}"))?;
+                let new_val = coerce_type(target_var, &tt)?;
+                vm.set(inst.arg0, new_val);
             }
         }
 

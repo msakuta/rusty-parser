@@ -68,6 +68,9 @@ pub enum OpCode {
     Call,
     /// Returns from current call stack.
     Ret,
+    /// Casts a value at arg0 to a type indicated by arg1. I'm feeling this should be a standard library function
+    /// rather than a opcode, but let's finish implementation compatible with AST interpreter first.
+    Cast,
 }
 
 macro_rules! impl_op_from {
@@ -109,7 +112,8 @@ impl_op_from!(
     Jt,
     Jf,
     Call,
-    Ret
+    Ret,
+    Cast
 );
 
 #[derive(Debug, Clone, Copy)]
@@ -810,7 +814,24 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
                 return Err(format!("Variable {} not found in scope", str));
             }
         }
-        ExprEnum::Cast(ex, _decl) => emit_expr(ex, compiler),
+        ExprEnum::Cast(ex, decl) => {
+            let val = emit_expr(ex, compiler)?;
+            // Make a copy of the value to avoid overwriting original variable
+            let val_copy = compiler.target_stack.len();
+            compiler
+                .bytecode
+                .push_inst(OpCode::Move, val as u8, val_copy as u16);
+            compiler.target_stack.push(Target::None);
+            let mut decl_buf = [0u8; std::mem::size_of::<i64>()];
+            decl.serialize(&mut std::io::Cursor::new(&mut decl_buf[..]))
+                .map_err(|e| e.to_string())?;
+            let decl_stk =
+                compiler.find_or_create_literal(&Value::I64(i64::from_le_bytes(decl_buf)));
+            compiler
+                .bytecode
+                .push_inst(OpCode::Cast, val_copy as u8, decl_stk as u16);
+            Ok(val_copy)
+        }
         ExprEnum::Not(val) => {
             let val = emit_expr(val, compiler)?;
             compiler.bytecode.push_inst(OpCode::Not, val as u8, 0);
