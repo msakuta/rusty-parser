@@ -220,7 +220,7 @@ pub fn compile_and_run(src: &str) -> Result<(), JsValue> {
     extra_functions(&mut |name, f| {
         bytecode.add_ext_fn(name, f);
     });
-    interpret(&bytecode)?;
+    interpret(&bytecode).map_err(|e| JsValue::from_str(&e.to_string()))?;
     Ok(())
 }
 

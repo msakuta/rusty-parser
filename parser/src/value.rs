@@ -4,7 +4,7 @@ use std::{
     rc::Rc,
 };
 
-use crate::{type_decl::TypeDecl, type_tags::*, EvalError, ReadError};
+use crate::{interpreter::EvalResult, type_decl::TypeDecl, type_tags::*, EvalError, ReadError};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct ArrayInt {
@@ -186,9 +186,9 @@ impl Value {
                 if (idx as usize) < array_int.values.len() {
                     Value::ArrayRef(array.clone(), idx as usize)
                 } else {
-                    return Err(format!(
-                        "array index out of range: {idx} is larger than array length {}",
-                        array_int.values.len()
+                    return Err(EvalError::ArrayOutOfBounds(
+                        idx as usize,
+                        array_int.values.len(),
                     ));
                 }
             }
@@ -197,15 +197,10 @@ impl Value {
                 array_int
                     .values
                     .get(*idx2)
-                    .ok_or_else(|| {
-                        format!(
-                            "array index out of range: {idx2} is larger than array length {}",
-                            array_int.values.len()
-                        )
-                    })?
+                    .ok_or_else(|| EvalError::ArrayOutOfBounds(*idx2, array_int.values.len()))?
                     .array_get_ref(idx)?
             }
-            _ => return Err("array index must be called for an array".to_string()),
+            _ => return Err(EvalError::IndexNonArray),
         })
     }
 
@@ -216,16 +211,16 @@ impl Value {
                 array.borrow_mut().values.push(value.deref());
                 Ok(())
             }
-            _ => Err("push() must be called for an array".to_string()),
+            _ => Err("push() must be called for an array".to_string().into()),
         }
     }
 
     /// Returns the length of an array, dereferencing recursively if the value was a reference.
-    pub fn array_len(&self) -> usize {
+    pub fn array_len(&self) -> EvalResult<usize> {
         match self {
             Value::Ref(rc) => rc.borrow().array_len(),
-            Value::Array(array) => array.borrow().values.len(),
-            _ => panic!("len() must be called for an array"),
+            Value::Array(array) => Ok(array.borrow().values.len()),
+            _ => Err("len() must be called for an array".to_string().into()),
         }
     }
 

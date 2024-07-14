@@ -7,7 +7,7 @@ use crate::{
     interpreter::{eval, EvalContext, RunResult},
     parser::{ExprEnum, Expression, Statement},
     value::ArrayInt,
-    TypeDecl, Value,
+    EvalError, TypeDecl, Value,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -121,12 +121,13 @@ impl<'a> Compiler<'a> {
 
 type CompileResult<T> = Result<T, CompileError>;
 
+#[non_exhaustive]
 #[derive(Debug)]
 pub enum CompileError {
     LocalsStackUnderflow,
     BreakInArrayLiteral,
     DisallowedBreak,
-    EvalError(String),
+    EvalError(EvalError),
     VarNotFound(String),
     FnNotFound(String),
     InsufficientNamedArgs,

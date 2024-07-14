@@ -7,7 +7,99 @@ pub enum RunResult {
     Break,
 }
 
-pub type EvalError = String;
+pub type EvalResult<T> = Result<T, EvalError>;
+
+/// Error type for the AST intepreter and bytecode interpreter.
+/// Note that it is shared among 2 kinds of interpreters, so some of them only happen in either kind.
+/// Also note that it is supposed to be displayed with Display or "{}" format, not with Debug or "{:?}".
+///
+/// It owns the value so it is not bounded by a lifetime.
+/// The information about the error shold be converted to a string (by `format!("{:?}")`) before wrapping it
+/// into `EvalError`.
+#[non_exhaustive]
+#[derive(Debug, PartialEq, Eq)]
+pub enum EvalError {
+    Other(String),
+    CoerceError(String, String),
+    OpError(String, String),
+    CmpError(String, String),
+    FloatOpError(String, String),
+    StrOpError(String, String),
+    DisallowedBreak,
+    VarNotFound(String),
+    FnNotFound(String),
+    ArrayOutOfBounds(usize, usize),
+    IndexNonArray,
+    NeedRef(String),
+    NoMatchingArg(String, String),
+    BreakInToplevel,
+    BreakInFnArg,
+    NonIntegerIndex,
+    NonIntegerBitwise(String),
+    NoMainFound,
+    NonNameFnRef(String),
+    CallStackUndeflow,
+}
+
+impl std::error::Error for EvalError {}
+
+impl std::fmt::Display for EvalError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Other(e) => write!(f, "Unknown error: {e}"),
+            Self::CoerceError(from, to) => {
+                write!(f, "Coercing from {from:?} to {to:?} is disallowed")
+            }
+            Self::OpError(lhs, rhs) => {
+                write!(f, "Unsupported operation between {lhs:?} and {rhs:?}")
+            }
+            Self::CmpError(lhs, rhs) => {
+                write!(f, "Unsupported comparison between {lhs:?} and {rhs:?}",)
+            }
+            Self::FloatOpError(lhs, rhs) => {
+                write!(f, "Unsupported float operation between {lhs:?} and {rhs:?}")
+            }
+            Self::StrOpError(lhs, rhs) => write!(
+                f,
+                "Unsupported string operation between {lhs:?} and {rhs:?}"
+            ),
+            Self::DisallowedBreak => write!(f, "Break in array literal not supported"),
+            Self::VarNotFound(name) => write!(f, "Variable {name} not found in scope"),
+            Self::FnNotFound(name) => write!(f, "Function {name} not found in scope"),
+            Self::ArrayOutOfBounds(idx, len) => write!(
+                f,
+                "ArrayRef index out of range: {idx} is larger than array length {len}"
+            ),
+            Self::IndexNonArray => write!(f, "array index must be called for an array"),
+            Self::NeedRef(name) => write!(
+                f,
+                "We need variable reference on lhs to assign. Actually we got {name:?}"
+            ),
+            Self::NoMatchingArg(arg, fun) => write!(
+                f,
+                "No matching named parameter \"{arg}\" is found in function \"{fun}\""
+            ),
+            Self::BreakInToplevel => write!(f, "break in function toplevel"),
+            Self::BreakInFnArg => write!(f, "Break in function argument is not supported yet!"),
+            Self::NonIntegerIndex => write!(f, "Subscript type should be integer types"),
+            Self::NonIntegerBitwise(val) => {
+                write!(f, "Bitwise operation is not supported for {val}")
+            }
+            Self::NoMainFound => write!(f, "No main function found"),
+            Self::NonNameFnRef(val) => write!(
+                f,
+                "Function can be only specified by a name (yet), but got {val}"
+            ),
+            Self::CallStackUndeflow => write!(f, "Call stack underflow!"),
+        }
+    }
+}
+
+impl From<String> for EvalError {
+    fn from(value: String) -> Self {
+        Self::Other(value)
+    }
+}
 
 fn unwrap_deref(e: RunResult) -> RunResult {
     match &e {
@@ -39,7 +131,7 @@ pub(crate) fn binary_op_str(
     d: impl Fn(f64, f64) -> Result<f64, EvalError>,
     i: impl Fn(i64, i64) -> i64,
     s: impl Fn(&str, &str) -> Result<String, EvalError>,
-) -> Result<Value, EvalError> {
+) -> EvalResult<Value> {
     Ok(match (lhs, rhs) {
         // "Deref" the references before binary
         (Value::Ref(lhs), ref rhs) => binary_op_str(&lhs.borrow(), rhs, d, i, s)?,
@@ -59,12 +151,7 @@ pub(crate) fn binary_op_str(
         (Value::I32(lhs), Value::I64(rhs)) => Value::I64(i(*lhs as i64, *rhs)),
         (Value::I32(lhs), Value::I32(rhs)) => Value::I32(i(*lhs as i64, *rhs as i64) as i32),
         (Value::Str(lhs), Value::Str(rhs)) => Value::Str(s(lhs, rhs)?),
-        _ => {
-            return Err(format!(
-                "Unsupported addition between {:?} and {:?}",
-                lhs, rhs
-            ))
-        }
+        _ => return Err(EvalError::OpError(lhs.to_string(), rhs.to_string())),
     })
 }
 
@@ -73,13 +160,13 @@ pub(crate) fn binary_op(
     rhs: &Value,
     d: impl Fn(f64, f64) -> f64,
     i: impl Fn(i64, i64) -> i64,
-) -> Result<Value, EvalError> {
+) -> EvalResult<Value> {
     binary_op_str(
         lhs,
         rhs,
         |lhs, rhs| Ok(d(lhs, rhs)),
         i,
-        |_lhs, _rhs| Err("This operator is not supported for strings".to_string()),
+        |lhs, rhs| Err(EvalError::StrOpError(lhs.to_string(), rhs.to_string())),
     )
 }
 
@@ -87,13 +174,13 @@ pub(crate) fn binary_op_int(
     lhs: &Value,
     rhs: &Value,
     i: impl Fn(i64, i64) -> i64,
-) -> Result<Value, EvalError> {
+) -> EvalResult<Value> {
     binary_op_str(
         lhs,
         rhs,
-        |_lhs, _rhs| Err("This operator is not supported for double".to_string()),
+        |lhs, rhs| Err(EvalError::FloatOpError(lhs.to_string(), rhs.to_string())),
         i,
-        |_lhs, _rhs| Err("This operator is not supported for strings".to_string()),
+        |lhs, rhs| Err(EvalError::StrOpError(lhs.to_string(), rhs.to_string())),
     )
 }
 
@@ -108,7 +195,7 @@ pub(crate) fn truthy(a: &Value) -> bool {
     }
 }
 
-pub(crate) fn coerce_f64(a: &Value) -> Result<f64, EvalError> {
+pub(crate) fn coerce_f64(a: &Value) -> EvalResult<f64> {
     Ok(match a {
         Value::F64(v) => *v as f64,
         Value::F32(v) => *v as f64,
@@ -119,7 +206,7 @@ pub(crate) fn coerce_f64(a: &Value) -> Result<f64, EvalError> {
     })
 }
 
-pub(crate) fn coerce_i64(a: &Value) -> Result<i64, EvalError> {
+pub(crate) fn coerce_i64(a: &Value) -> EvalResult<i64> {
     Ok(match a {
         Value::F64(v) => *v as i64,
         Value::F32(v) => *v as i64,
@@ -130,14 +217,19 @@ pub(crate) fn coerce_i64(a: &Value) -> Result<i64, EvalError> {
     })
 }
 
-fn coerce_str(a: &Value) -> Result<String, EvalError> {
+fn coerce_str(a: &Value) -> EvalResult<String> {
     Ok(match a {
         Value::F64(v) => v.to_string(),
         Value::F32(v) => v.to_string(),
         Value::I64(v) => v.to_string(),
         Value::I32(v) => v.to_string(),
         Value::Str(v) => v.clone(),
-        _ => return Err("Can't convert array to str".to_string()),
+        _ => {
+            return Err(EvalError::CoerceError(
+                "array".to_string(),
+                "str".to_string(),
+            ))
+        }
     })
 }
 
@@ -159,7 +251,10 @@ fn _coerce_var(value: &Value, target: &Value) -> Result<Value, EvalError> {
                         return Ok(value.clone());
                     }
                 }
-                return Err("Cannot coerce type to empty array".to_string());
+                return Err(EvalError::CoerceError(
+                    "array".to_string(),
+                    "empty array".to_string(),
+                ));
             } else {
                 if let Value::Array(array) = value {
                     Value::Array(ArrayInt::new(
@@ -168,11 +263,14 @@ fn _coerce_var(value: &Value, target: &Value) -> Result<Value, EvalError> {
                             .borrow()
                             .values
                             .iter()
-                            .map(|val| -> Result<_, String> { Ok(coerce_type(val, inner_type)?) })
+                            .map(|val| -> EvalResult<_> { Ok(coerce_type(val, inner_type)?) })
                             .collect::<Result<_, _>>()?,
                     ))
                 } else {
-                    return Err("Cannot coerce scalar to array".to_string());
+                    return Err(EvalError::CoerceError(
+                        "scalar".to_string(),
+                        "array".to_string(),
+                    ));
                 }
             }
         }
@@ -204,7 +302,10 @@ pub fn coerce_type(value: &Value, target: &TypeDecl) -> Result<Value, EvalError>
                         .collect::<Result<Vec<_>, _>>()?,
                 ))
             } else {
-                return Err(format!("Incompatible type to array! {:?}", value));
+                return Err(EvalError::CoerceError(
+                    value.to_string(),
+                    "array".to_string(),
+                ));
             }
         }
         TypeDecl::Float => Value::F64(coerce_f64(value)?),
@@ -215,7 +316,7 @@ pub fn coerce_type(value: &Value, target: &TypeDecl) -> Result<Value, EvalError>
 pub(crate) fn eval<'src, 'native>(
     e: &Expression<'src>,
     ctx: &mut EvalContext<'src, 'native, '_>,
-) -> Result<RunResult, EvalError>
+) -> EvalResult<RunResult>
 where
     'native: 'src,
 {
@@ -229,14 +330,14 @@ where
                     if let RunResult::Yield(y) = eval(v, ctx)? {
                         Ok(y)
                     } else {
-                        Err("Break in array literal not supported".to_string())
+                        Err(EvalError::DisallowedBreak)
                     }
                 })
                 .collect::<Result<Vec<_>, _>>()?,
         ))),
         ExprEnum::Variable(str) => RunResult::Yield(Value::Ref(
             ctx.get_var_rc(str)
-                .ok_or_else(|| format!("Variable {} not found in scope", str))?,
+                .ok_or_else(|| EvalError::VarNotFound(str.to_string()))?,
         )),
         ExprEnum::Cast(ex, decl) => {
             RunResult::Yield(coerce_type(&unwrap_run!(eval(ex, ctx)?), decl)?)
@@ -250,19 +351,17 @@ where
                     rhs_value
                 }
                 RunResult::Yield(Value::ArrayRef(rc, idx)) => {
-                    if let Some(mref) = rc.borrow_mut().values.get_mut(idx) {
+                    let mut array_int = rc.borrow_mut();
+                    if let Some(mref) = array_int.values.get_mut(idx) {
                         let rhs_value = unwrap_run!(eval(rhs, ctx)?);
                         *mref = rhs_value.clone();
                         rhs_value
                     } else {
-                        return Err(format!("ArrayRef index out of range",));
+                        return Err(EvalError::ArrayOutOfBounds(idx, array_int.values.len()));
                     }
                 }
                 _ => {
-                    return Err(format!(
-                        "We need variable reference on lhs to assign. Actually we got {:?}",
-                        lhs_result
-                    ));
+                    return Err(EvalError::NeedRef(format!("{lhs_result:?}")));
                 }
             };
             RunResult::Yield(result)
@@ -271,7 +370,7 @@ where
             let default_args = {
                 let fn_args = ctx
                     .get_fn(*str)
-                    .ok_or_else(|| format!("function {} is not defined.", str))?
+                    .ok_or_else(|| EvalError::FnNotFound(str.to_string()))?
                     .args();
 
                 if args.len() <= fn_args.len() {
@@ -310,12 +409,12 @@ where
                         None
                     }
                 })
-                .map(|(name, expr)| Ok::<_, String>((name, eval(expr, ctx)?)))
+                .map(|(name, expr)| Ok::<_, EvalError>((name, eval(expr, ctx)?)))
                 .collect::<Result<Vec<_>, _>>()?;
 
             let func = ctx
                 .get_fn(*str)
-                .ok_or_else(|| format!("function {} is not defined.", str))?;
+                .ok_or_else(|| EvalError::FnNotFound(str.to_string()))?;
 
             let mut subctx = EvalContext::push_stack(ctx);
             match func {
@@ -329,7 +428,10 @@ where
                             }
                             eval_args[i] = val;
                         } else {
-                            return Err(format!("No matching named parameter \"{name}\" is found in function \"{str}\""));
+                            return Err(EvalError::NoMatchingArg(
+                                name.to_string(),
+                                str.to_string(),
+                            ));
                         }
                     }
 
@@ -345,7 +447,7 @@ where
                             Some(ty) => RunResult::Yield(coerce_type(&v, ty)?),
                             None => RunResult::Yield(v),
                         },
-                        RunResult::Break => return Err("break in function toplevel".to_string()),
+                        RunResult::Break => return Err(EvalError::BreakInToplevel),
                     }
                 }
                 FuncDef::Native(native) => RunResult::Yield((native.code)(
@@ -354,10 +456,7 @@ where
                         .map(|e| {
                             Ok(match e {
                                 RunResult::Yield(v) => v.clone(),
-                                RunResult::Break => {
-                                    return Err("Break in function argument is not supported yet!"
-                                        .to_string())
-                                }
+                                RunResult::Break => return Err(EvalError::BreakInFnArg),
                             })
                         })
                         .collect::<Result<Vec<_>, _>>()?,
@@ -374,7 +473,7 @@ where
                     if let Value::I64(idx) = coerce_type(&v, &TypeDecl::I64)? {
                         idx as u64
                     } else {
-                        return Err("Subscript type should be integer types".to_string());
+                        return Err(EvalError::NonIntegerIndex);
                     }
                 }
                 RunResult::Break => {
@@ -396,7 +495,7 @@ where
             RunResult::Yield(match val {
                 Value::I32(i) => Value::I32(!i),
                 Value::I64(i) => Value::I64(!i),
-                _ => return Err(format!("Bitwise not is not supported for {:?}", val)),
+                _ => return Err(EvalError::NonIntegerBitwise(format!("{val:?}"))),
             })
         }
         ExprEnum::Add(lhs, rhs) => {
@@ -590,7 +689,7 @@ pub(crate) fn s_type(vals: &[Value]) -> Result<Value, EvalError> {
 
 pub(crate) fn s_len(vals: &[Value]) -> Result<Value, EvalError> {
     if let [val, ..] = vals {
-        Ok(Value::I64(val.array_len() as i64))
+        Ok(Value::I64(val.array_len()? as i64))
     } else {
         Ok(Value::I32(0))
     }
@@ -609,7 +708,9 @@ pub(crate) fn s_hex_string(vals: &[Value]) -> Result<Value, EvalError> {
     if let [val, ..] = vals {
         match coerce_type(val, &TypeDecl::I64).unwrap() {
             Value::I64(i) => Ok(Value::Str(format!("{:02x}", i))),
-            _ => Err("hex_string() could not convert argument to i64".to_string()),
+            _ => Err(EvalError::Other(
+                "hex_string() could not convert argument to i64".to_string(),
+            )),
         }
     } else {
         Ok(Value::Str("".to_string()))

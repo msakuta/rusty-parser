@@ -23,7 +23,7 @@ pub fn interpret(bytecode: &Bytecode) -> Result<Value, EvalError> {
     if let Some(FnProto::Code(main)) = bytecode.functions.get("") {
         interpret_fn(main, &bytecode.functions)
     } else {
-        Err("Main function not found".to_string())
+        Err(EvalError::NoMainFound)
     }
 }
 
@@ -227,7 +227,7 @@ fn interpret_fn(
                 let result = match val {
                     Value::I32(i) => Value::I32(!i),
                     Value::I64(i) => Value::I64(!i),
-                    _ => return Err(format!("Bitwise not is not supported for {:?}", val)),
+                    _ => return Err(EvalError::NonIntegerBitwise(format!("{val:?}"))),
                 };
                 vm.set(inst.arg0, result);
             }
@@ -247,12 +247,13 @@ fn interpret_fn(
                         *target = cloned;
                     }
                     Value::ArrayRef(a, idx) => {
+                        let a = a.borrow();
                         let cloned = a
-                            .borrow()
                             .values
                             .get(*idx)
-                            .ok_or_else(|| "Deref instruction failed with ArrayRef out of bounds")?
+                            .ok_or_else(|| EvalError::ArrayOutOfBounds(*idx, a.values.len()))?
                             .clone();
+                        drop(a);
                         *target = cloned;
                     }
                     _ => (),
@@ -300,7 +301,7 @@ fn interpret_fn(
                 let arg_name = if let Value::Str(s) = arg_name {
                     s
                 } else {
-                    return Err("Function can be only specified by a name (yet)".to_string());
+                    return Err(EvalError::NonNameFnRef(format!("{arg_name:?}")));
                 };
                 let fun = functions.iter().find(|(fname, _)| *fname == arg_name);
                 if let Some((_, fun)) = fun {
@@ -330,7 +331,7 @@ fn interpret_fn(
                         }
                     }
                 } else {
-                    return Err(format!("Unknown function called: {:?}", arg_name));
+                    return Err(EvalError::FnNotFound(arg_name.clone()));
                 }
             }
             OpCode::Ret => {
@@ -346,7 +347,7 @@ fn interpret_fn(
                         vm.dump_stack();
                     }
                 } else {
-                    return Err("Call stack underflow!".to_string());
+                    return Err(EvalError::CallStackUndeflow);
                 }
             }
             OpCode::Cast => {
@@ -385,12 +386,7 @@ fn compare_op(
         (Value::I64(lhs), Value::I32(rhs)) => i(lhs, rhs as i64),
         (Value::I32(lhs), Value::I64(rhs)) => i(lhs as i64, rhs),
         (Value::I32(lhs), Value::I32(rhs)) => i(lhs as i64, rhs as i64),
-        _ => {
-            return Err(format!(
-                "Unsupported comparison between {:?} and {:?}",
-                lhs, rhs
-            ))
-        }
+        _ => return Err(EvalError::OpError(lhs.to_string(), rhs.to_string())),
     })
 }
 
