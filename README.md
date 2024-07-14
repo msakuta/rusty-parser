@@ -86,7 +86,7 @@ In ascending order of difficulty.
 * [x] [Named arguments in function calls](https://github.com/msakuta/rusty-parser/wiki/Function-signature#named-argument-in-function-call)
 * [x] [Default argument](https://github.com/msakuta/rusty-parser/wiki/Function-signature#default-argument)
 * [x] Type casting in bytecode
-* [ ] Proper error handling
+* [x] Proper error handling
 * [ ] Tuple types
 * [ ] Multi-dimensional arrays
 * [ ] Function types (first class function variables)
