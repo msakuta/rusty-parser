@@ -716,7 +716,7 @@ fn array_index_eval_test() {
     // Technically, this test will return a reference to an element in a temporary array,
     // but we wouldn't care and just unwrap_deref.
     assert_eq!(
-        run0(&span_source("[1,3,5][1]").unwrap().1).map(unwrap_deref),
+        run0(&span_source("[1,3,5][1]").unwrap().1).and_then(unwrap_deref),
         Ok(RunResult::Yield(I64(3)))
     );
     assert_eq!(

@@ -6,7 +6,7 @@ use crate::{
     bytecode::{Bytecode, FnBytecode, FnProto, OpCode},
     interpreter::{
         binary_op, binary_op_int, binary_op_str, coerce_f64, coerce_i64, coerce_type, truthy,
-        EvalError,
+        EGetExt, EvalError,
     },
     type_decl::TypeDecl,
     Value,
@@ -248,11 +248,7 @@ fn interpret_fn(
                     }
                     Value::ArrayRef(a, idx) => {
                         let a = a.borrow();
-                        let cloned = a
-                            .values
-                            .get(*idx)
-                            .ok_or_else(|| EvalError::ArrayOutOfBounds(*idx, a.values.len()))?
-                            .clone();
+                        let cloned = a.values.eget(*idx)?.clone();
                         drop(a);
                         *target = cloned;
                     }

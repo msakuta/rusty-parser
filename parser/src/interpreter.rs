@@ -101,24 +101,47 @@ impl From<String> for EvalError {
     }
 }
 
-fn unwrap_deref(e: RunResult) -> RunResult {
+/// An extension trait for `Vec` to write a shorthand for
+/// `values.get(idx).ok_or_else(|| EvalError::ArrayOutOfBounds(idx, values.len()))`, because
+/// it's too long and shows up too often behind Rc.
+pub(crate) trait EGetExt<T> {
+    fn eget(&self, idx: usize) -> EvalResult<&T>;
+    fn eget_mut(&mut self, idx: usize) -> EvalResult<&mut T>;
+}
+
+impl<T> EGetExt<T> for Vec<T> {
+    fn eget(&self, idx: usize) -> EvalResult<&T> {
+        self.get(idx)
+            .ok_or_else(|| EvalError::ArrayOutOfBounds(idx, self.len()))
+    }
+
+    fn eget_mut(&mut self, idx: usize) -> EvalResult<&mut T> {
+        let len = self.len();
+        self.get_mut(idx)
+            .ok_or_else(|| EvalError::ArrayOutOfBounds(idx, len))
+    }
+}
+
+fn unwrap_deref(e: RunResult) -> EvalResult<RunResult> {
     match &e {
         RunResult::Yield(Value::Ref(vref)) => {
             let r = vref.borrow();
-            return RunResult::Yield(r.clone());
+            return Ok(RunResult::Yield(r.clone()));
         }
         RunResult::Yield(Value::ArrayRef(a, idx)) => {
-            return RunResult::Yield(a.borrow().values.get(*idx).unwrap().clone());
+            let a = a.borrow();
+            let value = a.values.eget(*idx)?;
+            return Ok(RunResult::Yield(value.clone()));
         }
-        RunResult::Break => return RunResult::Break,
+        RunResult::Break => return Ok(RunResult::Break),
         _ => (),
     }
-    e
+    Ok(e)
 }
 
 macro_rules! unwrap_run {
     ($e:expr) => {
-        match unwrap_deref($e) {
+        match unwrap_deref($e)? {
             RunResult::Yield(v) => v,
             RunResult::Break => return Ok(RunResult::Break),
         }
@@ -137,10 +160,10 @@ pub(crate) fn binary_op_str(
         (Value::Ref(lhs), ref rhs) => binary_op_str(&lhs.borrow(), rhs, d, i, s)?,
         (ref lhs, Value::Ref(rhs)) => binary_op_str(lhs, &rhs.borrow(), d, i, s)?,
         (Value::ArrayRef(lhs, idx), ref rhs) => {
-            binary_op_str(&lhs.borrow().values.get(*idx).unwrap(), rhs, d, i, s)?
+            binary_op_str(lhs.borrow().values.eget(*idx)?, rhs, d, i, s)?
         }
         (ref lhs, Value::ArrayRef(rhs, idx)) => {
-            binary_op_str(lhs, &rhs.borrow().values.get(*idx).unwrap(), d, i, s)?
+            binary_op_str(lhs, rhs.borrow().values.eget(*idx)?, d, i, s)?
         }
         (Value::F64(lhs), rhs) => Value::F64(d(*lhs, coerce_f64(&rhs)?)?),
         (lhs, Value::F64(rhs)) => Value::F64(d(coerce_f64(&lhs)?, *rhs)?),
@@ -352,13 +375,10 @@ where
                 }
                 RunResult::Yield(Value::ArrayRef(rc, idx)) => {
                     let mut array_int = rc.borrow_mut();
-                    if let Some(mref) = array_int.values.get_mut(idx) {
-                        let rhs_value = unwrap_run!(eval(rhs, ctx)?);
-                        *mref = rhs_value.clone();
-                        rhs_value
-                    } else {
-                        return Err(EvalError::ArrayOutOfBounds(idx, array_int.values.len()));
-                    }
+                    let mref = array_int.values.eget_mut(idx)?;
+                    let rhs_value = unwrap_run!(eval(rhs, ctx)?);
+                    *mref = rhs_value.clone();
+                    rhs_value
                 }
                 _ => {
                     return Err(EvalError::NeedRef(format!("{lhs_result:?}")));
@@ -442,7 +462,7 @@ where
                         );
                     }
                     let run_result = run(&func.stmts, &mut subctx)?;
-                    match unwrap_deref(run_result) {
+                    match unwrap_deref(run_result)? {
                         RunResult::Yield(v) => match &func.ret_type {
                             Some(ty) => RunResult::Yield(coerce_type(&v, ty)?),
                             None => RunResult::Yield(v),
@@ -468,7 +488,7 @@ where
                 .iter()
                 .map(|v| eval(v, ctx))
                 .collect::<Result<Vec<_>, _>>()?;
-            let arg0 = match unwrap_deref(args[0].clone()) {
+            let arg0 = match unwrap_deref(args[0].clone())? {
                 RunResult::Yield(v) => {
                     if let Value::I64(idx) = coerce_type(&v, &TypeDecl::I64)? {
                         idx as u64
@@ -913,7 +933,7 @@ pub(crate) fn std_functions<'src, 'native>() -> HashMap<String, FuncDef<'src, 'n
 
 macro_rules! unwrap_break {
     ($e:expr) => {
-        match unwrap_deref($e) {
+        match unwrap_deref($e)? {
             RunResult::Yield(v) => v,
             RunResult::Break => break,
         }
@@ -963,7 +983,7 @@ where
                 res = RunResult::Yield(unwrap_break!(run(e, ctx)?));
             },
             Statement::While(cond, e) => loop {
-                match unwrap_deref(eval(cond, ctx)?) {
+                match unwrap_deref(eval(cond, ctx)?)? {
                     RunResult::Yield(v) => {
                         if !truthy(&v) {
                             break;
@@ -971,7 +991,7 @@ where
                     }
                     RunResult::Break => break,
                 }
-                res = match unwrap_deref(run(e, ctx)?) {
+                res = match unwrap_deref(run(e, ctx)?)? {
                     RunResult::Yield(v) => RunResult::Yield(v),
                     RunResult::Break => break,
                 };

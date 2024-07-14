@@ -4,7 +4,12 @@ use std::{
     rc::Rc,
 };
 
-use crate::{interpreter::EvalResult, type_decl::TypeDecl, type_tags::*, EvalError, ReadError};
+use crate::{
+    interpreter::{EGetExt, EvalResult},
+    type_decl::TypeDecl,
+    type_tags::*,
+    EvalError, ReadError,
+};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct ArrayInt {
@@ -194,11 +199,7 @@ impl Value {
             }
             Value::ArrayRef(rc, idx2) => {
                 let array_int = rc.borrow();
-                array_int
-                    .values
-                    .get(*idx2)
-                    .ok_or_else(|| EvalError::ArrayOutOfBounds(*idx2, array_int.values.len()))?
-                    .array_get_ref(idx)?
+                array_int.values.eget(*idx2)?.array_get_ref(idx)?
             }
             _ => return Err(EvalError::IndexNonArray),
         })
