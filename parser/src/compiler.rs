@@ -119,10 +119,57 @@ impl<'a> Compiler<'a> {
     }
 }
 
+type CompileResult<T> = Result<T, CompileError>;
+
+#[derive(Debug)]
+pub enum CompileError {
+    LocalsStackUnderflow,
+    BreakInArrayLiteral,
+    DisallowedBreak,
+    EvalError(String),
+    VarNotFound(String),
+    FnNotFound(String),
+    InsufficientNamedArgs,
+    FromUtf8Error(std::string::FromUtf8Error),
+    IoError(std::io::Error),
+}
+
+impl std::error::Error for CompileError {}
+
+impl std::fmt::Display for CompileError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::LocalsStackUnderflow => write!(f, "Local variables stack underflow"),
+            Self::BreakInArrayLiteral => write!(f, "Break in array literal not supported"),
+            Self::DisallowedBreak => write!(f, "Break in function default arg is not allowed"),
+            Self::EvalError(e) => write!(f, "Evaluation error: {e}"),
+            Self::VarNotFound(name) => write!(f, "Variable {name} not found in scope"),
+            Self::FnNotFound(name) => write!(f, "Function {name} is not defined"),
+            Self::InsufficientNamedArgs => {
+                write!(f, "Named arguments does not cover all required args")
+            }
+            Self::FromUtf8Error(e) => e.fmt(f),
+            Self::IoError(e) => e.fmt(f),
+        }
+    }
+}
+
+impl From<std::string::FromUtf8Error> for CompileError {
+    fn from(value: std::string::FromUtf8Error) -> Self {
+        Self::FromUtf8Error(value)
+    }
+}
+
+impl From<std::io::Error> for CompileError {
+    fn from(value: std::io::Error) -> Self {
+        Self::IoError(value)
+    }
+}
+
 pub fn compile<'src, 'ast>(
     stmts: &'ast [Statement<'src>],
     functions: HashMap<String, NativeFn>,
-) -> Result<Bytecode, String> {
+) -> CompileResult<Bytecode> {
     #[cfg(debug_assertions)]
     {
         let mut disasm = Vec::<u8>::new();
@@ -140,20 +187,20 @@ pub fn compile<'src, 'ast>(
 pub fn disasm<'src, 'ast>(
     stmts: &'ast [Statement<'src>],
     functions: HashMap<String, NativeFn>,
-) -> Result<String, String> {
+) -> CompileResult<String> {
     let mut disasm = Vec::<u8>::new();
     let mut cursor = std::io::Cursor::new(&mut disasm);
 
     compile_int(stmts, functions, &mut cursor)?;
 
-    Ok(String::from_utf8(disasm).map_err(|e| e.to_string())?)
+    Ok(String::from_utf8(disasm)?)
 }
 
 fn compile_int<'src, 'ast>(
     stmts: &'ast [Statement<'src>],
     functions: HashMap<String, NativeFn>,
     disasm: &mut impl Write,
-) -> Result<Bytecode, String> {
+) -> CompileResult<Bytecode> {
     let functions = functions
         .into_iter()
         .map(|(k, v)| (k, FnProto::Native(v)))
@@ -161,7 +208,7 @@ fn compile_int<'src, 'ast>(
 
     let mut env = CompilerEnv::new(functions);
 
-    retrieve_fn_signatures(stmts, &mut env)?;
+    retrieve_fn_signatures(stmts, &mut env);
 
     let mut compiler = Compiler::new(vec![], vec![], &mut env);
     if let Some(last_target) = emit_stmts(stmts, &mut compiler)? {
@@ -177,20 +224,16 @@ fn compile_int<'src, 'ast>(
     let mut functions = env.functions;
     functions.insert("".to_string(), bytecode);
 
-    (|| -> std::io::Result<()> {
-        for (fname, fnproto) in &functions {
-            if let FnProto::Code(bytecode) = fnproto {
-                if fname.is_empty() {
-                    writeln!(disasm, "\nFunction <toplevel> disassembly:")?;
-                } else {
-                    writeln!(disasm, "\nFunction {fname} disassembly:")?;
-                }
-                bytecode.disasm(disasm)?;
+    for (fname, fnproto) in &functions {
+        if let FnProto::Code(bytecode) = fnproto {
+            if fname.is_empty() {
+                writeln!(disasm, "\nFunction <toplevel> disassembly:")?;
+            } else {
+                writeln!(disasm, "\nFunction {fname} disassembly:")?;
             }
+            bytecode.disasm(disasm)?;
         }
-        Ok(())
-    })()
-    .map_err(|e| format!("{e}"))?;
+    }
 
     #[cfg(debug_assertions)]
     for fun in &functions {
@@ -207,7 +250,7 @@ fn compile_fn<'src, 'ast>(
     stmts: &'ast [Statement<'src>],
     args: Vec<LocalVar>,
     fn_args: Vec<BytecodeArg>,
-) -> Result<FnProto, String> {
+) -> CompileResult<FnProto> {
     let mut compiler = Compiler::new(args, fn_args, env);
     if let Some(last_target) = emit_stmts(stmts, &mut compiler)? {
         compiler
@@ -220,7 +263,7 @@ fn compile_fn<'src, 'ast>(
     Ok(FnProto::Code(compiler.bytecode))
 }
 
-fn retrieve_fn_signatures(stmts: &[Statement], env: &mut CompilerEnv) -> Result<(), String> {
+fn retrieve_fn_signatures(stmts: &[Statement], env: &mut CompilerEnv) {
     for stmt in stmts {
         match stmt {
             Statement::FnDecl {
@@ -230,20 +273,23 @@ fn retrieve_fn_signatures(stmts: &[Statement], env: &mut CompilerEnv) -> Result<
                 let bytecode = FnBytecode::proto(args);
                 env.functions
                     .insert(name.to_string(), FnProto::Code(bytecode));
-                retrieve_fn_signatures(stmts, env)?;
+                retrieve_fn_signatures(stmts, env);
             }
             _ => {}
         }
     }
-    Ok(())
 }
 
-fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> Result<Option<usize>, String> {
+fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> CompileResult<Option<usize>> {
     let mut last_target = None;
     for stmt in stmts {
         match stmt {
             Statement::VarDecl(var, _type, initializer) => {
-                let locals = compiler.locals.last().unwrap().len();
+                let locals = compiler
+                    .locals
+                    .last()
+                    .ok_or_else(|| CompileError::LocalsStackUnderflow)?
+                    .len();
                 let init_val = if let Some(init_expr) = initializer {
                     let stk_var = emit_expr(init_expr, compiler)?;
                     compiler.target_stack[stk_var] = Target::Local(locals);
@@ -253,7 +299,10 @@ fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> Result<Option<usi
                     compiler.target_stack.push(Target::Local(locals));
                     stk_var
                 };
-                let locals = compiler.locals.last_mut().unwrap();
+                let locals = compiler
+                    .locals
+                    .last_mut()
+                    .ok_or_else(|| CompileError::LocalsStackUnderflow)?;
                 locals.push(LocalVar {
                     name: var.to_string(),
                     stack_idx: init_val,
@@ -285,13 +334,11 @@ fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> Result<Option<usi
                             // Run the interpreter to fold the constant expression into a value.
                             // Note that the interpreter has an empty context, so it cannot access any
                             // global variables or user defined functions.
-                            match eval(init, &mut EvalContext::new())? {
+                            match eval(init, &mut EvalContext::new())
+                                .map_err(CompileError::EvalError)?
+                            {
                                 RunResult::Yield(val) => Some(val),
-                                _ => {
-                                    return Err(
-                                        "Function default arg should not suspend".to_string()
-                                    )
-                                }
+                                _ => return Err(CompileError::DisallowedBreak),
                             }
                         } else {
                             None
@@ -371,7 +418,7 @@ fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> Result<Option<usi
     Ok(last_target)
 }
 
-fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String> {
+fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> CompileResult<usize> {
     match &expr.expr {
         ExprEnum::NumLiteral(val) => Ok(compiler.find_or_create_literal(val)),
         ExprEnum::StrLiteral(val) => Ok(compiler.find_or_create_literal(&Value::Str(val.clone()))),
@@ -382,10 +429,12 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
                 values: val
                     .iter()
                     .map(|v| {
-                        if let RunResult::Yield(y) = eval(v, &mut ctx)? {
+                        if let RunResult::Yield(y) =
+                            eval(v, &mut ctx).map_err(CompileError::EvalError)?
+                        {
                             Ok(y)
                         } else {
-                            Err("Break in array literal not supported".to_string())
+                            Err(CompileError::BreakInArrayLiteral)
                         }
                     })
                     .collect::<Result<Vec<_>, _>>()?,
@@ -404,7 +453,7 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
             if let Some(local) = local {
                 return Ok(local.stack_idx);
             } else {
-                return Err(format!("Variable {} not found in scope", str));
+                return Err(CompileError::VarNotFound(str.to_string()));
             }
         }
         ExprEnum::Cast(ex, decl) => {
@@ -416,8 +465,7 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
                 .push_inst(OpCode::Move, val as u8, val_copy as u16);
             compiler.target_stack.push(Target::None);
             let mut decl_buf = [0u8; std::mem::size_of::<i64>()];
-            decl.serialize(&mut std::io::Cursor::new(&mut decl_buf[..]))
-                .map_err(|e| e.to_string())?;
+            decl.serialize(&mut std::io::Cursor::new(&mut decl_buf[..]))?;
             let decl_stk =
                 compiler.find_or_create_literal(&Value::I64(i64::from_le_bytes(decl_buf)));
             compiler
@@ -451,9 +499,11 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
         }
         ExprEnum::FnInvoke(fname, argss) => {
             let default_args = {
-                let Some(fun) = compiler.env.functions.get(*fname) else {
-                    return Err(format!("Function {fname} is not defined"));
-                };
+                let fun = compiler
+                    .env
+                    .functions
+                    .get(*fname)
+                    .ok_or_else(|| CompileError::FnNotFound(fname.to_string()))?;
 
                 let fn_args = fun.args();
 
@@ -500,7 +550,7 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
             let stk_fname = compiler.find_or_create_literal(&Value::Str(fname.to_string()));
 
             let Some(fun) = compiler.env.functions.get(*fname) else {
-                return Err(format!("Function {fname} is not defined"));
+                return Err(CompileError::FnNotFound(fname.to_string()));
             };
 
             let fn_args = fun.args();
@@ -532,7 +582,7 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
             let args = args
                 .into_iter()
                 .collect::<Option<Vec<_>>>()
-                .ok_or_else(|| format!("Named arguments does not cover all required args"))?;
+                .ok_or_else(|| CompileError::InsufficientNamedArgs)?;
 
             // Align arguments to the stack to prepare a call.
             for arg in args {
@@ -620,7 +670,7 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
     }
 }
 
-fn emit_rvalue(ex: &Expression, compiler: &mut Compiler) -> Result<usize, String> {
+fn emit_rvalue(ex: &Expression, compiler: &mut Compiler) -> CompileResult<usize> {
     let ret = emit_expr(ex, compiler)?;
     compiler.bytecode.push_inst(OpCode::Deref, ret as u8, 0);
     Ok(ret)
