@@ -1,3 +1,10 @@
+macro_rules! dbg_println {
+    ($($rest:tt)*) => {{
+        #[cfg(debug_assertions)]
+        std::println!($($rest)*)
+    }}
+}
+
 mod bytecode;
 mod compiler;
 mod interpreter;
@@ -8,7 +15,7 @@ mod type_tags;
 mod value;
 mod vm;
 
-pub use self::bytecode::{Instruction, OpCode};
+pub use self::bytecode::{Bytecode, Instruction, OpCode};
 pub use self::compiler::*;
 pub use self::interpreter::{coerce_type, run, EvalContext, EvalError, FuncDef};
 pub use self::parser::{span_source as source, ArgDecl, ReadError, Span};
