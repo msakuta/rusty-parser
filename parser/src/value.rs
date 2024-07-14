@@ -171,7 +171,7 @@ impl Value {
         if let Value::Array(array) = self {
             array.borrow_mut().values[idx] = value.deref()?;
         } else {
-            return Err(EvalError::IndexNonArray)
+            return Err(EvalError::IndexNonArray);
         }
         Ok(())
     }

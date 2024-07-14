@@ -6,7 +6,7 @@ use crate::{
     bytecode::{Bytecode, FnBytecode, FnProto, OpCode},
     interpreter::{
         binary_op, binary_op_int, binary_op_str, coerce_f64, coerce_i64, coerce_type, truthy,
-        EGetExt, EvalError,
+        EGetExt, EvalError, EvalResult,
     },
     type_decl::TypeDecl,
     Value,
@@ -80,6 +80,24 @@ impl Vm {
     }
 }
 
+/// An extension trait for `Vec` to write a shorthand for
+/// `values.last().ok_or_else(|| EvalError::CallStackUndeflow)`, because
+/// it's too long and shows up too often behind Rc.
+pub(crate) trait CallStackLastExt<T> {
+    fn clast(&self) -> EvalResult<&T>;
+    fn clast_mut(&mut self) -> EvalResult<&mut T>;
+}
+
+impl<T> CallStackLastExt<T> for Vec<T> {
+    fn clast(&self) -> EvalResult<&T> {
+        self.last().ok_or_else(|| EvalError::CallStackUndeflow)
+    }
+
+    fn clast_mut(&mut self) -> EvalResult<&mut T> {
+        self.last_mut().ok_or_else(|| EvalError::CallStackUndeflow)
+    }
+}
+
 fn interpret_fn(
     bytecode: &FnBytecode,
     functions: &HashMap<String, FnProto>,
@@ -103,8 +121,8 @@ fn interpret_fn(
         stack_base: vm.stack_base,
     }];
 
-    while call_stack.last().unwrap().has_next_inst() {
-        let ci = call_stack.last().unwrap();
+    while call_stack.clast()?.has_next_inst() {
+        let ci = call_stack.clast()?;
         let ip = ci.ip;
         let inst = ci.fun.instructions[ip];
 
@@ -120,7 +138,7 @@ fn interpret_fn(
                 {
                     if lhs as *const _ == rhs as *const _ {
                         println!("Self-assignment!");
-                        call_stack.last_mut().unwrap().ip += 1;
+                        call_stack.clast_mut()?.ip += 1;
                         continue;
                     }
                 }
@@ -275,20 +293,20 @@ fn interpret_fn(
             }
             OpCode::Jmp => {
                 dbg_println!("[{ip}] Jumping by Jmp to {}", inst.arg1);
-                call_stack.last_mut().unwrap().ip = inst.arg1 as usize;
+                call_stack.clast_mut()?.ip = inst.arg1 as usize;
                 continue;
             }
             OpCode::Jt => {
                 if truthy(&vm.get(inst.arg0)) {
                     dbg_println!("[{ip}] Jumping by Jt to {}", inst.arg1);
-                    call_stack.last_mut().unwrap().ip = inst.arg1 as usize;
+                    call_stack.clast_mut()?.ip = inst.arg1 as usize;
                     continue;
                 }
             }
             OpCode::Jf => {
                 if !truthy(&vm.get(inst.arg0)) {
                     dbg_println!("[{ip}] Jumping by Jf to {}", inst.arg1);
-                    call_stack.last_mut().unwrap().ip = inst.arg1 as usize;
+                    call_stack.clast_mut()?.ip = inst.arg1 as usize;
                     continue;
                 }
             }
@@ -336,7 +354,7 @@ fn interpret_fn(
                     if call_stack.is_empty() {
                         return Ok(vm.get(inst.arg1).clone());
                     } else {
-                        let ci = call_stack.last().unwrap();
+                        let ci = call_stack.clast()?;
                         vm.stack_base = ci.stack_base;
                         vm.stack[prev_ci.stack_base] = vm.stack[retval].clone();
                         vm.stack.resize(ci.stack_size, Value::default());
@@ -360,7 +378,7 @@ fn interpret_fn(
 
         vm.dump_stack();
 
-        call_stack.last_mut().unwrap().ip += 1;
+        call_stack.clast_mut()?.ip += 1;
     }
 
     dbg_println!("Final stack: {:?}", vm.stack);
