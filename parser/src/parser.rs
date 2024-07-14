@@ -11,7 +11,7 @@ use nom::{
     IResult, InputTake, Offset,
 };
 use nom_locate::LocatedSpan;
-use std::string::FromUtf8Error;
+use std::{rc::Rc, string::FromUtf8Error};
 
 pub type Span<'a> = LocatedSpan<&'a str>;
 
@@ -43,7 +43,21 @@ impl From<ReadError> for String {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct ArgDecl<'a>(pub &'a str, pub TypeDecl);
+pub struct ArgDecl<'a> {
+    pub name: &'a str,
+    pub ty: TypeDecl,
+    pub init: Option<Expression<'a>>,
+}
+
+impl<'a> ArgDecl<'a> {
+    pub fn new(name: &'a str, ty: TypeDecl) -> Self {
+        Self {
+            name,
+            ty,
+            init: None,
+        }
+    }
+}
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Statement<'a> {
@@ -53,7 +67,7 @@ pub enum Statement<'a> {
         name: &'a str,
         args: Vec<ArgDecl<'a>>,
         ret_type: Option<TypeDecl>,
-        stmts: Vec<Statement<'a>>,
+        stmts: Rc<Vec<Statement<'a>>>,
     },
     Expression(Expression<'a>),
     Loop(Vec<Statement<'a>>),
@@ -603,9 +617,18 @@ fn expression_statement(input: Span) -> IResult<Span, Statement> {
     Ok((r, Statement::Expression(val)))
 }
 
-pub(crate) fn func_arg(input: Span) -> IResult<Span, ArgDecl> {
-    let (r, v) = pair(identifier, opt(ws(type_spec)))(input)?;
-    Ok((r, ArgDecl(*v.0, v.1.unwrap_or(TypeDecl::F64))))
+pub(crate) fn func_arg(r: Span) -> IResult<Span, ArgDecl> {
+    let (r, id) = identifier(r)?;
+    let (r, ty) = opt(ws(type_spec))(r)?;
+    let (r, init) = opt(preceded(ws(char('=')), full_expression))(r)?;
+    Ok((
+        r,
+        ArgDecl {
+            name: *id,
+            ty: ty.unwrap_or(TypeDecl::F64),
+            init,
+        },
+    ))
 }
 
 pub(crate) fn func_decl(input: Span) -> IResult<Span, Statement> {
@@ -624,7 +647,7 @@ pub(crate) fn func_decl(input: Span) -> IResult<Span, Statement> {
             name: *name,
             args,
             ret_type,
-            stmts,
+            stmts: Rc::new(stmts),
         },
     ))
 }

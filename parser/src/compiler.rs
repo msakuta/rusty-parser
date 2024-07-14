@@ -166,6 +166,33 @@ fn read_str(reader: &mut impl Read) -> Result<String, ReadError> {
     Ok(String::from_utf8(buf)?)
 }
 
+fn write_bool(b: bool, writer: &mut impl Write) -> std::io::Result<()> {
+    writer.write_all(&[if b { 1u8 } else { 0u8 }])
+}
+
+fn read_bool(reader: &mut impl Read) -> Result<bool, ReadError> {
+    let mut buf = [0u8; 1];
+    reader.read_exact(&mut buf)?;
+    Ok(buf[0] != 0)
+}
+
+fn write_opt_value(value: &Option<Value>, writer: &mut impl Write) -> std::io::Result<()> {
+    write_bool(value.is_some(), writer)?;
+    if let Some(value) = value {
+        value.serialize(writer)?;
+    }
+    Ok(())
+}
+
+fn read_opt_value(reader: &mut impl Read) -> Result<Option<Value>, ReadError> {
+    let has_value = read_bool(reader)?;
+    Ok(if has_value {
+        Some(Value::deserialize(reader)?)
+    } else {
+        None
+    })
+}
+
 pub type NativeFn = Box<dyn Fn(&[Value]) -> Result<Value, EvalError>>;
 
 pub(crate) enum FnProto {
@@ -174,7 +201,7 @@ pub(crate) enum FnProto {
 }
 
 impl FnProto {
-    pub fn args(&self) -> &[String] {
+    pub fn args(&self) -> &[BytecodeArg] {
         match self {
             Self::Code(bytecode) => &bytecode.args,
             _ => &[],
@@ -201,7 +228,14 @@ impl Bytecode {
     }
 
     pub fn write(&self, writer: &mut impl Write) -> std::io::Result<()> {
-        writer.write_all(&self.functions.len().to_le_bytes())?;
+        writer.write_all(
+            &self
+                .functions
+                .iter()
+                .filter(|f| matches!(f.1, FnProto::Code(_)))
+                .count()
+                .to_le_bytes(),
+        )?;
         for (fname, func) in self.functions.iter() {
             if let FnProto::Code(func) = func {
                 write_str(fname, writer)?;
@@ -259,9 +293,15 @@ pub fn std_functions(
 }
 
 #[derive(Debug, Clone)]
+pub struct BytecodeArg {
+    name: String,
+    init: Option<Value>,
+}
+
+#[derive(Debug, Clone)]
 pub struct FnBytecode {
     pub(crate) literals: Vec<Value>,
-    pub(crate) args: Vec<String>,
+    pub(crate) args: Vec<BytecodeArg>,
     pub(crate) instructions: Vec<Instruction>,
     pub(crate) stack_size: usize,
 }
@@ -271,7 +311,13 @@ impl FnBytecode {
     fn proto(args: Vec<String>) -> Self {
         Self {
             literals: vec![],
-            args,
+            args: args
+                .into_iter()
+                .map(|arg| BytecodeArg {
+                    name: arg,
+                    init: None,
+                })
+                .collect(),
             instructions: vec![],
             stack_size: 0,
         }
@@ -290,8 +336,9 @@ impl FnBytecode {
             literal.serialize(writer)?;
         }
         writer.write_all(&self.args.len().to_le_bytes())?;
-        for literal in &self.args {
-            write_str(literal, writer)?;
+        for arg in &self.args {
+            write_str(&arg.name, writer)?;
+            write_opt_value(&arg.init, writer)?;
         }
         writer.write_all(&self.instructions.len().to_le_bytes())?;
         for inst in &self.instructions {
@@ -313,9 +360,13 @@ impl FnBytecode {
 
         let mut args = [0u8; std::mem::size_of::<usize>()];
         reader.read_exact(&mut args)?;
-        let args = usize::from_le_bytes(args);
-        let args = (0..args)
-            .map(|_| read_str(reader))
+        let num_args = usize::from_le_bytes(args);
+        let args = (0..num_args)
+            .map(|_| -> Result<_, ReadError> {
+                let name = read_str(reader)?;
+                let init = read_opt_value(reader)?;
+                Ok(BytecodeArg { name, init })
+            })
             .collect::<Result<Vec<_>, _>>()?;
 
         let mut instructions = [0u8; std::mem::size_of::<usize>()];
@@ -340,7 +391,7 @@ impl FnBytecode {
         }
         writeln!(f, "Args({}):", self.args.len())?;
         for (i, arg) in self.args.iter().enumerate() {
-            writeln!(f, "  [{}] {}", i, arg)?;
+            writeln!(f, "  [{}] {} = {:?}", i, arg.name, arg.init)?;
         }
         writeln!(f, "Instructions({}):", self.instructions.len())?;
         for (i, inst) in self.instructions.iter().enumerate() {
@@ -408,12 +459,12 @@ struct Compiler<'a> {
 }
 
 impl<'a> Compiler<'a> {
-    fn new(args: Vec<LocalVar>, env: &'a mut CompilerEnv) -> Self {
+    fn new(args: Vec<LocalVar>, fn_args: Vec<BytecodeArg>, env: &'a mut CompilerEnv) -> Self {
         Self {
             env,
             bytecode: FnBytecode {
                 literals: vec![],
-                args: args.iter().map(|arg| arg.name.to_owned()).collect(),
+                args: fn_args,
                 instructions: vec![],
                 stack_size: 0,
             },
@@ -512,7 +563,7 @@ fn compile_int<'src, 'ast>(
 
     retrieve_fn_signatures(stmts, &mut env)?;
 
-    let mut compiler = Compiler::new(vec![], &mut env);
+    let mut compiler = Compiler::new(vec![], vec![], &mut env);
     if let Some(last_target) = emit_stmts(stmts, &mut compiler)? {
         compiler
             .bytecode
@@ -555,8 +606,9 @@ fn compile_fn<'src, 'ast>(
     env: &mut CompilerEnv,
     stmts: &'ast [Statement<'src>],
     args: Vec<LocalVar>,
+    fn_args: Vec<BytecodeArg>,
 ) -> Result<FnProto, String> {
-    let mut compiler = Compiler::new(args, env);
+    let mut compiler = Compiler::new(args, fn_args, env);
     if let Some(last_target) = emit_stmts(stmts, &mut compiler)? {
         compiler
             .bytecode
@@ -574,7 +626,7 @@ fn retrieve_fn_signatures(stmts: &[Statement], env: &mut CompilerEnv) -> Result<
             Statement::FnDecl {
                 name, args, stmts, ..
             } => {
-                let args = args.iter().map(|arg| arg.0.to_string()).collect();
+                let args = args.iter().map(|arg| arg.name.to_string()).collect();
                 let bytecode = FnBytecode::proto(args);
                 env.functions
                     .insert(name.to_string(), FnProto::Code(bytecode));
@@ -611,23 +663,47 @@ fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> Result<Option<usi
             Statement::FnDecl {
                 name, args, stmts, ..
             } => {
-                dbg_println!("Args: {:?}", args);
-                let args = args
+                dbg_println!("FnDecl: Args: {:?}", args);
+                let a_args = args
                     .iter()
                     .enumerate()
                     .map(|(idx, arg)| {
                         // The 0th index is used for function name / return value, so the args start with 1.
                         let target = idx + 1;
                         let local = LocalVar {
-                            name: arg.0.to_owned(),
+                            name: arg.name.to_owned(),
                             stack_idx: target,
                         };
                         compiler.target_stack.push(Target::Local(target));
                         local
                     })
                     .collect();
-                dbg_println!("Locals: {:?}", args);
-                let fun = compile_fn(&mut compiler.env, stmts, args)?;
+                let fn_args = args
+                    .iter()
+                    .map(|arg| {
+                        let init = if let Some(ref init) = arg.init {
+                            // Run the interpreter to fold the constant expression into a value.
+                            // Note that the interpreter has an empty context, so it cannot access any
+                            // global variables or user defined functions.
+                            match eval(init, &mut EvalContext::new())? {
+                                RunResult::Yield(val) => Some(val),
+                                _ => {
+                                    return Err(
+                                        "Function default arg should not suspend".to_string()
+                                    )
+                                }
+                            }
+                        } else {
+                            None
+                        };
+                        Ok(BytecodeArg {
+                            name: arg.name.to_owned(),
+                            init,
+                        })
+                    })
+                    .collect::<Result<_, _>>()?;
+                dbg_println!("FnDecl actual args: {:?} fn_args: {:?}", a_args, fn_args);
+                let fun = compile_fn(&mut compiler.env, stmts, a_args, fn_args)?;
                 compiler.env.functions.insert(name.to_string(), fun);
             }
             Statement::Expression(ref ex) => {
@@ -760,14 +836,38 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
             Ok(lhs_result)
         }
         ExprEnum::FnInvoke(fname, argss) => {
+            let default_args = {
+                let Some(fun) = compiler.env.functions.get(*fname) else {
+                    return Err(format!("Function {fname} is not defined"));
+                };
+
+                let fn_args = fun.args();
+
+                if argss.len() <= fn_args.len() {
+                    let fn_args = fn_args[argss.len()..].to_vec();
+
+                    fn_args
+                        .into_iter()
+                        .filter_map(|arg| arg.init.as_ref().map(|init| init.clone()))
+                        .collect()
+                } else {
+                    vec![]
+                }
+            };
+
             // Function arguments have value semantics, even if it was an array element.
             // Unless we emit `Deref` here, we might leave a reference in the stack that can be
             // accidentally overwritten. I'm not sure this is the best way to avoid it.
-            let unnamed_args = argss
+            let mut unnamed_args = argss
                 .iter()
                 .filter(|v| v.name.is_none())
                 .map(|v| emit_rvalue(&v.expr, compiler))
                 .collect::<Result<Vec<_>, _>>()?;
+            unnamed_args.extend(
+                default_args
+                    .into_iter()
+                    .map(|v| compiler.find_or_create_literal(&v)),
+            );
             let named_args = argss
                 .iter()
                 .filter_map(|v| {
@@ -807,7 +907,7 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
                 if let Some((f_idx, _)) = fn_args
                     .iter()
                     .enumerate()
-                    .find(|(_, fn_arg_name)| *fn_arg_name == *arg.0)
+                    .find(|(_, fn_arg)| fn_arg.name == *arg.0)
                 {
                     args[f_idx] = Some(arg.1);
                 }

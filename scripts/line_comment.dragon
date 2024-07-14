@@ -10,6 +10,8 @@ fn add          // inline comment
 
 var // inline comment
     a // inline comment
+    : // inline comment
+    i32 // inline comment
     = 123;
 
 var b = // inline comment

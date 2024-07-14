@@ -133,6 +133,22 @@ fn fn_invoke_test() {
     );
 }
 
+#[test]
+fn fn_default_test() {
+    let span = Span::new("fn a(a: i32 = 1) { a; }");
+    let stmts = source(span).finish();
+    assert!(stmts.is_ok());
+}
+
+/// Tests non-const default argument expression will fail to evaluate
+#[test]
+fn fn_default_failure_test() {
+    let span = Span::new("var b = 1; fn f(a: i32 = b) { a; } f()");
+    let stmts = source(span).finish().unwrap().1;
+    let res = run(&stmts, &mut EvalContext::new());
+    assert_eq!(res, Err("Variable b not found in scope".to_string()));
+}
+
 fn span_conditional(s: &str) -> IResult<Span, Expression> {
     conditional(Span::new(s))
 }
@@ -632,15 +648,15 @@ fn fn_array_decl_test() {
         func_decl(span).finish().unwrap().1,
         Statement::FnDecl {
             name: "f",
-            args: vec![ArgDecl("a", TypeDecl::Array(Box::new(TypeDecl::I32)))],
+            args: vec![ArgDecl::new("a", TypeDecl::Array(Box::new(TypeDecl::I32)))],
             ret_type: None,
-            stmts: vec![Statement::Expression(Expression::new(
+            stmts: Rc::new(vec![Statement::Expression(Expression::new(
                 VarAssign(
                     var_r(span.subslice(17, 1)),
                     bnl(Value::I64(123), span.subslice(21, 3))
                 ),
                 span.subslice(17, 7)
-            ))]
+            ))])
         }
     );
 }
