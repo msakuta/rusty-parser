@@ -261,7 +261,11 @@ impl Bytecode {
                 .collect::<Result<HashMap<_, _>, ReadError>>()?,
         };
         dbg_println!("loaded {} functions", ret.functions.len());
-        let loaded_fn = ret.functions.iter().find(|(name, _)| *name == "").unwrap();
+        let loaded_fn = ret
+            .functions
+            .iter()
+            .find(|(name, _)| *name == "")
+            .ok_or(ReadError::NoMainFound)?;
         if let FnProto::Code(ref _code) = loaded_fn.1 {
             dbg_println!("instructions: {:#?}", _code.instructions);
         }

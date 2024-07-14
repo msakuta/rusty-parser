@@ -19,6 +19,7 @@ pub type Span<'a> = LocatedSpan<&'a str>;
 pub enum ReadError {
     IO(std::io::Error),
     FromUtf8(FromUtf8Error),
+    NoMainFound,
 }
 
 impl From<std::io::Error> for ReadError {
@@ -38,6 +39,7 @@ impl From<ReadError> for String {
         match e {
             ReadError::IO(e) => e.to_string(),
             ReadError::FromUtf8(e) => e.to_string(),
+            ReadError::NoMainFound => "No main function found".to_string(),
         }
     }
 }
