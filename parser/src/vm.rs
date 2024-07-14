@@ -351,7 +351,7 @@ fn interpret_fn(
             OpCode::Cast => {
                 let target_var = &vm.get(inst.arg0);
                 let target_type = coerce_i64(vm.get(inst.arg1))
-                    .map_err(|e| format!("arg1 of Cast was not number: {e:?}"))?;
+                    .map_err(|e| format!("arg1 of Cast was not a number: {e:?}"))?;
                 let tt_buf = target_type.to_le_bytes();
                 let tt = TypeDecl::deserialize(&mut &tt_buf[..])
                     .map_err(|e| format!("arg1 of Cast was not a TypeDecl: {e:?}"))?;
