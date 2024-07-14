@@ -167,19 +167,20 @@ impl Value {
 
     /// We don't really need assignment operation for an array (yet), because
     /// array index will return a reference.
-    fn _array_assign(&mut self, idx: usize, value: Value) {
+    fn _array_assign(&mut self, idx: usize, value: Value) -> EvalResult<()> {
         if let Value::Array(array) = self {
-            array.borrow_mut().values[idx] = value.deref();
+            array.borrow_mut().values[idx] = value.deref()?;
         } else {
-            panic!("assign_array must be called for an array")
+            return Err(EvalError::IndexNonArray)
         }
+        Ok(())
     }
 
-    fn _array_get(&self, idx: u64) -> Value {
+    fn _array_get(&self, idx: u64) -> EvalResult<Value> {
         match self {
             Value::Ref(rc) => rc.borrow()._array_get(idx),
-            Value::Array(array) => array.borrow_mut().values[idx as usize].clone(),
-            _ => panic!("array index must be called for an array"),
+            Value::Array(array) => Ok(array.borrow_mut().values.eget(idx as usize)?.clone()),
+            _ => Err(EvalError::IndexNonArray),
         }
     }
 
@@ -209,7 +210,7 @@ impl Value {
         match self {
             Value::Ref(r) => r.borrow_mut().array_push(value),
             Value::Array(array) => {
-                array.borrow_mut().values.push(value.deref());
+                array.borrow_mut().values.push(value.deref()?);
                 Ok(())
             }
             _ => Err("push() must be called for an array".to_string().into()),
@@ -226,11 +227,11 @@ impl Value {
     }
 
     /// Recursively peels off references
-    pub fn deref(self) -> Self {
-        match self {
-            Value::Ref(r) => r.borrow().clone().deref(),
-            Value::ArrayRef(r, idx) => (*r.borrow()).values.get(idx).cloned().unwrap(),
+    pub fn deref(self) -> EvalResult<Self> {
+        Ok(match self {
+            Value::Ref(r) => r.borrow().clone().deref()?,
+            Value::ArrayRef(r, idx) => (*r.borrow()).values.eget(idx)?.clone(),
             _ => self,
-        }
+        })
     }
 }

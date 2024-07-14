@@ -718,7 +718,7 @@ pub(crate) fn s_len(vals: &[Value]) -> Result<Value, EvalError> {
 
 pub(crate) fn s_push(vals: &[Value]) -> Result<Value, EvalError> {
     if let [arr, val, ..] = vals {
-        let val = val.clone().deref();
+        let val = val.clone().deref()?;
         arr.array_push(val).map(|_| Value::I32(0))
     } else {
         Ok(Value::I32(0))
