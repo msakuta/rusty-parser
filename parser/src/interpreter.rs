@@ -609,9 +609,9 @@ where
     })
 }
 
-pub(crate) fn s_print(vals: &[Value]) -> Result<Value, EvalError> {
+pub(crate) fn s_print(vals: &[Value]) -> EvalResult<Value> {
     println!("print:");
-    fn print_inner(val: &Value) {
+    fn print_inner(val: &Value) -> EvalResult<()> {
         match val {
             Value::F64(val) => print!(" {}", val),
             Value::F32(val) => print!(" {}", val),
@@ -621,24 +621,25 @@ pub(crate) fn s_print(vals: &[Value]) -> Result<Value, EvalError> {
             Value::Array(val) => {
                 print!("[");
                 for val in val.borrow().values.iter() {
-                    print_inner(val);
+                    print_inner(val)?;
                 }
                 print!("]");
             }
             Value::Ref(r) => {
                 print!("ref(");
-                print_inner(&r.borrow());
+                print_inner(&r.borrow())?;
                 print!(")");
             }
             Value::ArrayRef(r, idx) => {
                 print!("arrayref(");
-                print_inner((*r.borrow()).values.get(*idx).unwrap());
+                print_inner((*r.borrow()).values.eget(*idx)?)?;
                 print!(")");
             }
         }
+        Ok(())
     }
     for val in vals {
-        print_inner(val);
+        print_inner(val)?;
     }
     print!("\n");
     Ok(Value::I32(0))
@@ -726,7 +727,7 @@ pub(crate) fn s_push(vals: &[Value]) -> Result<Value, EvalError> {
 
 pub(crate) fn s_hex_string(vals: &[Value]) -> Result<Value, EvalError> {
     if let [val, ..] = vals {
-        match coerce_type(val, &TypeDecl::I64).unwrap() {
+        match coerce_type(val, &TypeDecl::I64)? {
             Value::I64(i) => Ok(Value::Str(format!("{:02x}", i))),
             _ => Err(EvalError::Other(
                 "hex_string() could not convert argument to i64".to_string(),
