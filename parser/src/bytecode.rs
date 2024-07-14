@@ -2,6 +2,7 @@
 
 use std::{
     collections::HashMap,
+    convert::{TryFrom, TryInto},
     io::{Read, Write},
 };
 
@@ -66,14 +67,16 @@ pub enum OpCode {
 
 macro_rules! impl_op_from {
     ($($op:ident),*) => {
-        impl From<u8> for OpCode {
+        impl TryFrom<u8> for OpCode {
+            type Error = ReadError;
+
             #[allow(non_upper_case_globals)]
-            fn from(o: u8) -> Self {
+            fn try_from(o: u8) -> Result<Self, Self::Error> {
                 $(const $op: u8 = OpCode::$op as u8;)*
 
                 match o {
-                    $($op => Self::$op,)*
-                    _ => panic!("Opcode \"{:02X}\" unrecognized!", o),
+                    $($op => Ok(Self::$op),)*
+                    _ => Err(ReadError::UndefinedOpCode(o)),
                 }
             }
         }
@@ -134,7 +137,7 @@ impl Instruction {
         let mut arg1 = [0u8; std::mem::size_of::<u16>()];
         reader.read_exact(&mut arg1)?;
         Ok(Self {
-            op: u8::from_le_bytes(op).into(),
+            op: u8::from_le_bytes(op).try_into()?,
             arg0: u8::from_le_bytes(arg0),
             arg1: u16::from_le_bytes(arg1),
         })

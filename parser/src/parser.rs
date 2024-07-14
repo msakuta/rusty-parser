@@ -20,6 +20,7 @@ pub enum ReadError {
     IO(std::io::Error),
     FromUtf8(FromUtf8Error),
     NoMainFound,
+    UndefinedOpCode(u8),
 }
 
 impl From<std::io::Error> for ReadError {
@@ -34,12 +35,13 @@ impl From<FromUtf8Error> for ReadError {
     }
 }
 
-impl From<ReadError> for String {
-    fn from(e: ReadError) -> Self {
-        match e {
-            ReadError::IO(e) => e.to_string(),
-            ReadError::FromUtf8(e) => e.to_string(),
-            ReadError::NoMainFound => "No main function found".to_string(),
+impl std::fmt::Display for ReadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ReadError::IO(e) => write!(f, "{e}"),
+            ReadError::FromUtf8(e) => write!(f, "{e}"),
+            ReadError::NoMainFound => write!(f, "No main function found"),
+            ReadError::UndefinedOpCode(code) => write!(f, "Opcode \"{code:02X}\" unrecognized!"),
         }
     }
 }
