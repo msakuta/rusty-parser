@@ -714,3 +714,24 @@ fn test_tuple_index() {
         )
     );
 }
+
+#[test]
+fn test_chained_tuple_index() {
+    let span = Span::new("b.1.3");
+    assert_eq!(
+        full_expression(span).finish().unwrap().1,
+        Expression::new(
+            TupleIndex(
+                Box::new(Expression::new(
+                    TupleIndex(
+                        var_r(span.subslice(0, 1)),
+                        1,
+                    ),
+                    span
+                )),
+                3
+            ),
+            span
+        )
+    );
+}
