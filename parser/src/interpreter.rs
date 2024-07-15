@@ -372,6 +372,28 @@ pub fn coerce_type(value: &Value, target: &TypeDecl) -> Result<Value, EvalError>
         }
         TypeDecl::Float => Value::F64(coerce_f64(value)?),
         TypeDecl::Integer => Value::I64(coerce_i64(value)?),
+        TypeDecl::Tuple(inner) => {
+            if let Value::Tuple(value) = value {
+                Value::Tuple(Rc::new(RefCell::new(
+                    value
+                        .borrow()
+                        .iter()
+                        .zip(inner.iter())
+                        .map(|(value_elem, inner_elem)| -> Result<_, EvalError> {
+                            Ok(TupleEntry {
+                                decl: inner_elem.clone(),
+                                value: coerce_type(&value_elem.value, inner_elem)?,
+                            })
+                        })
+                        .collect::<Result<Vec<_>, _>>()?,
+                )))
+            } else {
+                return Err(EvalError::CoerceError(
+                    value.to_string(),
+                    "array".to_string(),
+                ));
+            }
+        }
     })
 }
 
@@ -397,6 +419,20 @@ where
                 })
                 .collect::<Result<Vec<_>, _>>()?,
         ))),
+        ExprEnum::TupleLiteral(val) => RunResult::Yield(Value::Tuple(Rc::new(RefCell::new(
+            val.iter()
+                .map(|v| {
+                    if let RunResult::Yield(y) = eval(v, ctx)? {
+                        Ok(TupleEntry {
+                            decl: TypeDecl::_from_value(&y),
+                            value: y,
+                        })
+                    } else {
+                        Err(EvalError::DisallowedBreak)
+                    }
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+        )))),
         ExprEnum::Variable(str) => RunResult::Yield(Value::Ref(
             ctx.get_var_rc(str)
                 .ok_or_else(|| EvalError::VarNotFound(str.to_string()))?,
@@ -652,14 +688,17 @@ pub(crate) fn s_print(vals: &[Value]) -> EvalResult<Value> {
     println!("print:");
     fn print_inner(val: &Value) -> EvalResult<()> {
         match val {
-            Value::F64(val) => print!(" {}", val),
-            Value::F32(val) => print!(" {}", val),
-            Value::I64(val) => print!(" {}", val),
-            Value::I32(val) => print!(" {}", val),
-            Value::Str(val) => print!(" {}", val),
+            Value::F64(val) => print!("{}", val),
+            Value::F32(val) => print!("{}", val),
+            Value::I64(val) => print!("{}", val),
+            Value::I32(val) => print!("{}", val),
+            Value::Str(val) => print!("{}", val),
             Value::Array(val) => {
                 print!("[");
-                for val in val.borrow().values.iter() {
+                for (i, val) in val.borrow().values.iter().enumerate() {
+                    if i != 0 {
+                        print!(", ");
+                    }
                     print_inner(val)?;
                 }
                 print!("]");
@@ -676,7 +715,10 @@ pub(crate) fn s_print(vals: &[Value]) -> EvalResult<Value> {
             }
             Value::Tuple(val) => {
                 print!("(");
-                for val in val.borrow().iter() {
+                for (i, val) in val.borrow().iter().enumerate() {
+                    if i != 0 {
+                        print!(", ");
+                    }
                     print_inner(&val.value)?;
                 }
                 print!(")");
@@ -686,13 +728,15 @@ pub(crate) fn s_print(vals: &[Value]) -> EvalResult<Value> {
     }
     for val in vals {
         print_inner(val)?;
+        // Put a space between tokens
+        print!(" ");
     }
     print!("\n");
     Ok(Value::I32(0))
 }
 
 fn s_puts(vals: &[Value]) -> Result<Value, EvalError> {
-    fn puts_inner<'a>(vals: impl Iterator<Item = &'a Value>) {
+    fn puts_inner<'a>(vals: &mut dyn Iterator<Item = &'a Value>) {
         for val in vals {
             match val {
                 Value::F64(val) => print!("{}", val),
@@ -700,21 +744,21 @@ fn s_puts(vals: &[Value]) -> Result<Value, EvalError> {
                 Value::I64(val) => print!("{}", val),
                 Value::I32(val) => print!("{}", val),
                 Value::Str(val) => print!("{}", val),
-                Value::Array(val) => puts_inner(val.borrow().values.iter()),
+                Value::Array(val) => puts_inner(&mut val.borrow().values.iter()),
                 Value::Ref(r) => {
                     let v: &Value = &r.borrow();
-                    puts_inner(std::iter::once(v))
+                    puts_inner(&mut std::iter::once(v))
                 }
                 Value::ArrayRef(r, idx) => {
                     if let Some(r) = r.borrow().values.get(*idx) {
-                        puts_inner(std::iter::once(r))
+                        puts_inner(&mut std::iter::once(r))
                     }
                 }
-                Value::Tuple(val) => puts_inner(val.borrow().iter().map(|v| &v.value)),
+                Value::Tuple(val) => puts_inner(&mut val.borrow().iter().map(|v| &v.value)),
             }
         }
     }
-    puts_inner(vals.iter());
+    puts_inner(&mut vals.iter());
     Ok(Value::I32(0))
 }
 
@@ -729,6 +773,12 @@ fn type_decl_to_str(t: &TypeDecl) -> String {
         TypeDecl::Array(inner) => format!("[{}]", type_decl_to_str(inner)),
         TypeDecl::Float => "<Float>".to_string(),
         TypeDecl::Integer => "<Integer>".to_string(),
+        TypeDecl::Tuple(inner) => format!(
+            "({})",
+            inner
+                .iter()
+                .fold(String::new(), |acc, cur| { acc + &type_decl_to_str(cur) })
+        ),
     }
 }
 
@@ -743,6 +793,16 @@ pub(crate) fn s_type(vals: &[Value]) -> Result<Value, EvalError> {
             Value::Array(inner) => format!("[{}]", type_decl_to_str(&inner.borrow().type_decl)),
             Value::Ref(r) => format!("ref[{}]", type_str(&r.borrow())),
             Value::ArrayRef(r, _) => format!("aref[{}]", type_decl_to_str(&r.borrow().type_decl)),
+            Value::Tuple(inner) => format!(
+                "({})",
+                &inner.borrow().iter().fold(String::new(), |acc, cur| {
+                    if acc.is_empty() {
+                        type_decl_to_str(&cur.decl)
+                    } else {
+                        acc + ", " + &type_decl_to_str(&cur.decl)
+                    }
+                })
+            ),
         }
     }
     if let [val, ..] = vals {

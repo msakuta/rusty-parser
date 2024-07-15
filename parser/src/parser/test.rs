@@ -669,3 +669,18 @@ fn test_cast() {
         Expression::new(Cast(var_r(span.subslice(0, 1)), TypeDecl::I32), span)
     );
 }
+
+#[test]
+fn test_tuple() {
+    let span = Span::new("(1, \"a\")");
+    assert_eq!(
+        full_expression(span).finish().unwrap().1,
+        Expression::new(
+            TupleLiteral(vec![
+                Expression::new(ExprEnum::NumLiteral(Value::I64(1)), span.subslice(1, 1)),
+                Expression::new(ExprEnum::StrLiteral("a".to_owned()), span.subslice(3, 5))
+            ]),
+            span
+        )
+    );
+}

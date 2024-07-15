@@ -6,7 +6,7 @@ use crate::{
     },
     interpreter::{eval, EvalContext, RunResult},
     parser::{ExprEnum, Expression, Statement},
-    value::ArrayInt,
+    value::{ArrayInt, TupleEntry},
     EvalError, TypeDecl, Value,
 };
 
@@ -430,6 +430,26 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> CompileResult<usize>
                     })
                     .collect::<Result<Vec<_>, _>>()?,
             })));
+            Ok(compiler.find_or_create_literal(&val))
+        }
+        ExprEnum::TupleLiteral(val) => {
+            let mut ctx = EvalContext::new();
+            let val = Value::Tuple(Rc::new(RefCell::new(
+                val.iter()
+                    .map(|v| {
+                        if let RunResult::Yield(y) =
+                            eval(v, &mut ctx).map_err(CompileError::EvalError)?
+                        {
+                            Ok(TupleEntry {
+                                decl: TypeDecl::_from_value(&y),
+                                value: y,
+                            })
+                        } else {
+                            Err(CompileError::BreakInArrayLiteral)
+                        }
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
+            )));
             Ok(compiler.find_or_create_literal(&val))
         }
         ExprEnum::Variable(str) => {

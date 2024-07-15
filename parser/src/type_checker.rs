@@ -128,6 +128,13 @@ fn tc_expr<'src, 'b>(
                 .unwrap_or(Ok(TypeDecl::Any))?;
             TypeDecl::Array(Box::new(ty))
         }
+        ExprEnum::TupleLiteral(val) => {
+            let ty = val
+                .first()
+                .map(|e| tc_expr(e, ctx))
+                .unwrap_or(Ok(TypeDecl::Any))?;
+            TypeDecl::Array(Box::new(ty))
+        }
         ExprEnum::Variable(str) => ctx.get_var(str).ok_or_else(|| {
             TypeCheckError::new(
                 format!("Variable {} not found in scope", str),

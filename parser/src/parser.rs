@@ -85,6 +85,7 @@ pub(crate) enum ExprEnum<'a> {
     NumLiteral(Value),
     StrLiteral(String),
     ArrLiteral(Vec<Expression<'a>>),
+    TupleLiteral(Vec<Expression<'a>>),
     Variable(&'a str),
     Cast(Box<Expression<'a>>, TypeDecl),
     VarAssign(Box<Expression<'a>>, Box<Expression<'a>>),
@@ -332,6 +333,24 @@ pub(crate) fn array_literal(i: Span) -> IResult<Span, Expression> {
     Ok((r, Expression::new(ExprEnum::ArrLiteral(val), span)))
 }
 
+pub(crate) fn tuple_literal(i: Span) -> IResult<Span, Expression> {
+    let (r, _) = multispace0(i)?;
+    let (r, open_br) = tag("(")(r)?;
+    let (r, (mut val, last)) = pair(
+        many0(terminated(full_expression, tag(","))),
+        opt(full_expression),
+    )(r)?;
+    let (r, close_br) = tag(")")(r)?;
+    if let Some(last) = last {
+        val.push(last);
+    }
+    let span = i.subslice(
+        i.offset(&open_br),
+        open_br.offset(&close_br) + close_br.len(),
+    );
+    Ok((r, Expression::new(ExprEnum::TupleLiteral(val), span)))
+}
+
 // We parse any expr surrounded by parens, ignoring all whitespaces around those
 fn parens(i: Span) -> IResult<Span, Expression> {
     let (r0, _) = multispace0(i)?;
@@ -430,6 +449,7 @@ pub(crate) fn primary_expression(i: Span) -> IResult<Span, Expression> {
         var_ref,
         parens,
         brace_expr,
+        tuple_literal,
     ))(i)
 }
 

@@ -270,10 +270,10 @@ impl Value {
     }
 }
 
-type TupleInt = Vec<TupleEntry>;
+pub type TupleInt = Vec<TupleEntry>;
 
 #[derive(Debug, PartialEq, Clone)]
-pub(crate) struct TupleEntry {
+pub struct TupleEntry {
     pub(crate) decl: TypeDecl,
     pub(crate) value: Value,
 }

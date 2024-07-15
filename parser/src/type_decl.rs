@@ -16,6 +16,7 @@ pub enum TypeDecl {
     Float,
     /// An abstract type that can match I64 or I32
     Integer,
+    Tuple(Vec<TypeDecl>),
 }
 
 impl TypeDecl {
@@ -29,6 +30,12 @@ impl TypeDecl {
             Value::Array(a) => Self::Array(Box::new(a.borrow().type_decl.clone())),
             Value::Ref(a) => Self::_from_value(&*a.borrow()),
             Value::ArrayRef(a, _) => a.borrow().type_decl.clone(),
+            Value::Tuple(a) => Self::Tuple(
+                a.borrow()
+                    .iter()
+                    .map(|val| Self::_from_value(&val.value))
+                    .collect(),
+            ),
         }
     }
 
@@ -47,6 +54,13 @@ impl TypeDecl {
             }
             Self::Float => FLOAT_TAG,
             Self::Integer => INTEGER_TAG,
+            Self::Tuple(inner) => {
+                writer.write_all(&TUPLE_TAG.to_le_bytes())?;
+                for decl in inner {
+                    decl.serialize(writer)?;
+                }
+                return Ok(());
+            }
         };
         writer.write_all(&tag.to_le_bytes())?;
         Ok(())
