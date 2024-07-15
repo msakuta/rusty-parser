@@ -146,7 +146,7 @@ fn fn_default_failure_test() {
     let span = Span::new("var b = 1; fn f(a: i32 = b) { a; } f()");
     let stmts = source(span).finish().unwrap().1;
     let res = run(&stmts, &mut EvalContext::new());
-    assert_eq!(res, Err("Variable b not found in scope".to_string()));
+    assert_eq!(res, Err(EvalError::VarNotFound("b".to_string())));
 }
 
 fn span_conditional(s: &str) -> IResult<Span, Expression> {
@@ -716,7 +716,7 @@ fn array_index_eval_test() {
     // Technically, this test will return a reference to an element in a temporary array,
     // but we wouldn't care and just unwrap_deref.
     assert_eq!(
-        run0(&span_source("[1,3,5][1]").unwrap().1).map(unwrap_deref),
+        run0(&span_source("[1,3,5][1]").unwrap().1).and_then(unwrap_deref),
         Ok(RunResult::Yield(I64(3)))
     );
     assert_eq!(

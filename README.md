@@ -85,8 +85,8 @@ In ascending order of difficulty.
 * [x] Line and block comments (`/*`, `*/`, `//`)
 * [x] [Named arguments in function calls](https://github.com/msakuta/rusty-parser/wiki/Function-signature#named-argument-in-function-call)
 * [x] [Default argument](https://github.com/msakuta/rusty-parser/wiki/Function-signature#default-argument)
-* [ ] Type casting in bytecode
-* [ ] Proper error handling
+* [x] Type casting in bytecode
+* [x] Proper error handling
 * [ ] Tuple types
 * [ ] Multi-dimensional arrays
 * [ ] Function types (first class function variables)

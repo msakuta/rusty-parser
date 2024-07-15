@@ -66,7 +66,7 @@ fn main() -> Result<(), String> {
             }
             if args.compile_and_run {
                 bytecode.add_std_fn();
-                interpret(&bytecode)?;
+                interpret(&bytecode).map_err(|e| e.to_string())?;
             }
         } else {
             run(&result.1, &mut EvalContext::new())
@@ -80,10 +80,11 @@ fn main() -> Result<(), String> {
         parse_source(&args.input, None)?;
     } else if let Ok(mut file) = File::open(&args.input) {
         if args.bytecode {
-            let mut bytecode = Bytecode::read(&mut BufReader::new(file))?;
+            let mut bytecode =
+                Bytecode::read(&mut BufReader::new(file)).map_err(|e| e.to_string())?;
             // println!("bytecode: {:#?}", bytecode);
             bytecode.add_std_fn();
-            interpret(&bytecode)?;
+            interpret(&bytecode).map_err(|e| e.to_string())?;
         } else {
             let mut contents = String::new();
             file.read_to_string(&mut contents)

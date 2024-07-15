@@ -1,418 +1,14 @@
-use std::{
-    cell::RefCell,
-    collections::HashMap,
-    io::{Read, Write},
-    rc::Rc,
-};
+use std::{cell::RefCell, collections::HashMap, io::Write, rc::Rc};
 
 use crate::{
-    interpreter::{
-        eval, s_hex_string, s_len, s_print, s_push, s_type, EvalContext, EvalError, RunResult,
+    bytecode::{
+        std_functions, Bytecode, BytecodeArg, FnBytecode, FnProto, Instruction, NativeFn, OpCode,
     },
-    parser::{ExprEnum, Expression, ReadError, Statement},
+    interpreter::{eval, EvalContext, RunResult},
+    parser::{ExprEnum, Expression, Statement},
     value::ArrayInt,
-    TypeDecl, Value,
+    EvalError, TypeDecl, Value,
 };
-
-macro_rules! dbg_println {
-    ($($rest:tt)*) => {{
-        #[cfg(debug_assertions)]
-        std::println!($($rest)*)
-    }}
-}
-
-#[derive(Debug, Clone, Copy)]
-#[repr(u8)]
-pub enum OpCode {
-    LoadLiteral,
-    /// Move values between stack elements, from arg0 to arg1.
-    Move,
-    /// Increment the operand arg0
-    Incr,
-    Add,
-    Sub,
-    Mul,
-    Div,
-    /// Bitwise and (&)
-    BitAnd,
-    /// Bitwise xor (^)
-    BitXor,
-    /// Bitwise or (|)
-    BitOr,
-    /// Logical and (&&)
-    And,
-    /// Logical or (||)
-    Or,
-    /// Logical not (!)
-    Not,
-    /// Bitwise not (~). Interestingly, Rust does not have dedicated bitwise not operator, because
-    /// it has bool type. It can distinguish logical or bitwise operation by the operand type.
-    /// However, we do not have bool type (yet), so we need a dedicated operator for bitwise not, like C.
-    BitNot,
-    /// Get an element of an array (or a table in the future) at arg0 with the key at arg1, and make a copy at arg1.
-    /// Array elements are always Rc wrapped, so the user can assign into it.
-    Get,
-    /// If a value specified with arg0 in the stack is a reference (pointer), dereference it.
-    Deref,
-    /// Compare arg0 and arg1, sets result -1, 0 or 1 to arg0, meaning less, equal and more, respectively
-    // Cmp,
-    Lt,
-    Gt,
-    /// Unconditional jump to arg1.
-    Jmp,
-    /// Conditional jump. If arg0 is truthy, jump to arg1.
-    Jt,
-    /// Conditional jump. If arg0 is falthy, jump to arg1.
-    Jf,
-    /// Call a function with arg0 aruguments on the stack with index arg1.
-    Call,
-    /// Returns from current call stack.
-    Ret,
-    /// Casts a value at arg0 to a type indicated by arg1. I'm feeling this should be a standard library function
-    /// rather than a opcode, but let's finish implementation compatible with AST interpreter first.
-    Cast,
-}
-
-macro_rules! impl_op_from {
-    ($($op:ident),*) => {
-        impl From<u8> for OpCode {
-            #[allow(non_upper_case_globals)]
-            fn from(o: u8) -> Self {
-                $(const $op: u8 = OpCode::$op as u8;)*
-
-                match o {
-                    $($op => Self::$op,)*
-                    _ => panic!("Opcode \"{:02X}\" unrecognized!", o),
-                }
-            }
-        }
-    }
-}
-
-impl_op_from!(
-    LoadLiteral,
-    Move,
-    Incr,
-    Add,
-    Sub,
-    Mul,
-    Div,
-    BitAnd,
-    BitXor,
-    BitOr,
-    And,
-    Or,
-    Not,
-    BitNot,
-    Get,
-    Deref,
-    Lt,
-    Gt,
-    Jmp,
-    Jt,
-    Jf,
-    Call,
-    Ret,
-    Cast
-);
-
-#[derive(Debug, Clone, Copy)]
-pub struct Instruction {
-    pub(crate) op: OpCode,
-    pub(crate) arg0: u8,
-    pub(crate) arg1: u16,
-}
-
-impl Instruction {
-    fn new(op: OpCode, arg0: u8, arg1: u16) -> Self {
-        Self { op, arg0, arg1 }
-    }
-    fn serialize(&self, writer: &mut impl Write) -> std::io::Result<()> {
-        writer.write_all(&(self.op as u8).to_le_bytes())?;
-        writer.write_all(&self.arg0.to_le_bytes())?;
-        writer.write_all(&self.arg1.to_le_bytes())?;
-        Ok(())
-    }
-
-    fn deserialize(reader: &mut impl Read) -> Result<Self, ReadError> {
-        let mut op = [0u8; std::mem::size_of::<u8>()];
-        reader.read_exact(&mut op)?;
-        let mut arg0 = [0u8; std::mem::size_of::<u8>()];
-        reader.read_exact(&mut arg0)?;
-        let mut arg1 = [0u8; std::mem::size_of::<u16>()];
-        reader.read_exact(&mut arg1)?;
-        Ok(Self {
-            op: u8::from_le_bytes(op).into(),
-            arg0: u8::from_le_bytes(arg0),
-            arg1: u16::from_le_bytes(arg1),
-        })
-    }
-}
-
-impl std::fmt::Display for Instruction {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?} {} {}", self.op, self.arg0, self.arg1)
-    }
-}
-
-fn write_str(s: &str, writer: &mut impl Write) -> std::io::Result<()> {
-    writer.write_all(&s.len().to_le_bytes())?;
-    writer.write_all(&s.as_bytes())?;
-    Ok(())
-}
-
-fn read_str(reader: &mut impl Read) -> Result<String, ReadError> {
-    let mut len = [0u8; std::mem::size_of::<usize>()];
-    reader.read_exact(&mut len)?;
-    let len = usize::from_le_bytes(len);
-    let mut buf = vec![0u8; len];
-    reader.read_exact(&mut buf)?;
-    Ok(String::from_utf8(buf)?)
-}
-
-fn write_bool(b: bool, writer: &mut impl Write) -> std::io::Result<()> {
-    writer.write_all(&[if b { 1u8 } else { 0u8 }])
-}
-
-fn read_bool(reader: &mut impl Read) -> Result<bool, ReadError> {
-    let mut buf = [0u8; 1];
-    reader.read_exact(&mut buf)?;
-    Ok(buf[0] != 0)
-}
-
-fn write_opt_value(value: &Option<Value>, writer: &mut impl Write) -> std::io::Result<()> {
-    write_bool(value.is_some(), writer)?;
-    if let Some(value) = value {
-        value.serialize(writer)?;
-    }
-    Ok(())
-}
-
-fn read_opt_value(reader: &mut impl Read) -> Result<Option<Value>, ReadError> {
-    let has_value = read_bool(reader)?;
-    Ok(if has_value {
-        Some(Value::deserialize(reader)?)
-    } else {
-        None
-    })
-}
-
-pub type NativeFn = Box<dyn Fn(&[Value]) -> Result<Value, EvalError>>;
-
-pub(crate) enum FnProto {
-    Code(FnBytecode),
-    Native(NativeFn),
-}
-
-impl FnProto {
-    pub fn args(&self) -> &[BytecodeArg] {
-        match self {
-            Self::Code(bytecode) => &bytecode.args,
-            _ => &[],
-        }
-    }
-}
-
-pub struct Bytecode {
-    pub(crate) functions: HashMap<String, FnProto>,
-}
-
-impl Bytecode {
-    /// Add a user-application provided native function to this bytecode.
-    pub fn add_ext_fn(
-        &mut self,
-        name: String,
-        f: Box<dyn Fn(&[Value]) -> Result<Value, EvalError>>,
-    ) {
-        self.functions.insert(name, FnProto::Native(f));
-    }
-
-    pub fn add_std_fn(&mut self) {
-        std_functions(&mut |name, f| self.add_ext_fn(name, f));
-    }
-
-    pub fn write(&self, writer: &mut impl Write) -> std::io::Result<()> {
-        writer.write_all(
-            &self
-                .functions
-                .iter()
-                .filter(|f| matches!(f.1, FnProto::Code(_)))
-                .count()
-                .to_le_bytes(),
-        )?;
-        for (fname, func) in self.functions.iter() {
-            if let FnProto::Code(func) = func {
-                write_str(fname, writer)?;
-                func.write(writer)?;
-            }
-        }
-        Ok(())
-    }
-
-    pub fn read(reader: &mut impl Read) -> Result<Self, ReadError> {
-        let mut len = [0u8; std::mem::size_of::<usize>()];
-        reader.read_exact(&mut len)?;
-        let len = usize::from_le_bytes(len);
-        let ret = Bytecode {
-            functions: (0..len)
-                .map(|_| -> Result<(String, FnProto), ReadError> {
-                    Ok((read_str(reader)?, FnProto::Code(FnBytecode::read(reader)?)))
-                })
-                .collect::<Result<HashMap<_, _>, ReadError>>()?,
-        };
-        dbg_println!("loaded {} functions", ret.functions.len());
-        let loaded_fn = ret.functions.iter().find(|(name, _)| *name == "").unwrap();
-        if let FnProto::Code(ref _code) = loaded_fn.1 {
-            dbg_println!("instructions: {:#?}", _code.instructions);
-        }
-        Ok(ret)
-    }
-}
-
-/// Add standard common functions, such as `print`, `len` and `push`, to this bytecode.
-pub fn std_functions(
-    f: &mut impl FnMut(String, Box<dyn Fn(&[Value]) -> Result<Value, EvalError>>),
-) {
-    f("print".to_string(), Box::new(s_print));
-    f(
-        "puts".to_string(),
-        Box::new(|values: &[Value]| -> Result<Value, EvalError> {
-            print!(
-                "{}",
-                values.iter().fold("".to_string(), |acc, cur: &Value| {
-                    if acc.is_empty() {
-                        cur.to_string()
-                    } else {
-                        acc + &cur.to_string()
-                    }
-                })
-            );
-            Ok(Value::I64(0))
-        }),
-    );
-    f("type".to_string(), Box::new(&s_type));
-    f("len".to_string(), Box::new(s_len));
-    f("push".to_string(), Box::new(s_push));
-    f("hex_string".to_string(), Box::new(s_hex_string));
-}
-
-#[derive(Debug, Clone)]
-pub struct BytecodeArg {
-    name: String,
-    init: Option<Value>,
-}
-
-#[derive(Debug, Clone)]
-pub struct FnBytecode {
-    pub(crate) literals: Vec<Value>,
-    pub(crate) args: Vec<BytecodeArg>,
-    pub(crate) instructions: Vec<Instruction>,
-    pub(crate) stack_size: usize,
-}
-
-impl FnBytecode {
-    /// Create a placeholder entry that will be filled later.
-    fn proto(args: Vec<String>) -> Self {
-        Self {
-            literals: vec![],
-            args: args
-                .into_iter()
-                .map(|arg| BytecodeArg {
-                    name: arg,
-                    init: None,
-                })
-                .collect(),
-            instructions: vec![],
-            stack_size: 0,
-        }
-    }
-
-    fn push_inst(&mut self, op: OpCode, arg0: u8, arg1: u16) -> usize {
-        let ret = self.instructions.len();
-        self.instructions.push(Instruction::new(op, arg0, arg1));
-        ret
-    }
-
-    pub fn write(&self, writer: &mut impl Write) -> std::io::Result<()> {
-        writer.write_all(&self.stack_size.to_le_bytes())?;
-        writer.write_all(&self.literals.len().to_le_bytes())?;
-        for literal in &self.literals {
-            literal.serialize(writer)?;
-        }
-        writer.write_all(&self.args.len().to_le_bytes())?;
-        for arg in &self.args {
-            write_str(&arg.name, writer)?;
-            write_opt_value(&arg.init, writer)?;
-        }
-        writer.write_all(&self.instructions.len().to_le_bytes())?;
-        for inst in &self.instructions {
-            inst.serialize(writer)?;
-        }
-        Ok(())
-    }
-
-    pub fn read(reader: &mut impl Read) -> Result<Self, ReadError> {
-        let mut stack_size = [0u8; std::mem::size_of::<usize>()];
-        reader.read_exact(&mut stack_size)?;
-
-        let mut literals = [0u8; std::mem::size_of::<usize>()];
-        reader.read_exact(&mut literals)?;
-        let literals = usize::from_le_bytes(literals);
-        let literals = (0..literals)
-            .map(|_| Value::deserialize(reader))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        let mut args = [0u8; std::mem::size_of::<usize>()];
-        reader.read_exact(&mut args)?;
-        let num_args = usize::from_le_bytes(args);
-        let args = (0..num_args)
-            .map(|_| -> Result<_, ReadError> {
-                let name = read_str(reader)?;
-                let init = read_opt_value(reader)?;
-                Ok(BytecodeArg { name, init })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-
-        let mut instructions = [0u8; std::mem::size_of::<usize>()];
-        reader.read_exact(&mut instructions)?;
-        let instructions = usize::from_le_bytes(instructions);
-        let instructions = (0..instructions)
-            .map(|_| Instruction::deserialize(reader))
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(Self {
-            literals,
-            args,
-            instructions,
-            stack_size: usize::from_le_bytes(stack_size),
-        })
-    }
-
-    pub fn disasm(&self, f: &mut impl std::io::Write) -> Result<(), std::io::Error> {
-        writeln!(f, "Stack size: {}", self.stack_size)?;
-        writeln!(f, "Literals({}):", self.literals.len())?;
-        for (i, literal) in self.literals.iter().enumerate() {
-            writeln!(f, "  [{}] {}", i, literal)?;
-        }
-        writeln!(f, "Args({}):", self.args.len())?;
-        for (i, arg) in self.args.iter().enumerate() {
-            writeln!(f, "  [{}] {} = {:?}", i, arg.name, arg.init)?;
-        }
-        writeln!(f, "Instructions({}):", self.instructions.len())?;
-        for (i, inst) in self.instructions.iter().enumerate() {
-            match inst.op {
-                OpCode::LoadLiteral => {
-                    if let Some(literal) = self.literals.get(inst.arg0 as usize) {
-                        writeln!(f, "  [{}] {} ({:?})", i, inst, literal)?;
-                    } else {
-                        writeln!(f, "  [{}] {} ? (Literal index out of bound)", i, inst)?;
-                    }
-                }
-                _ => writeln!(f, "  [{}] {}", i, inst)?,
-            }
-        }
-        Ok(())
-    }
-}
 
 #[derive(Debug, Clone, Copy)]
 enum Target {
@@ -523,10 +119,58 @@ impl<'a> Compiler<'a> {
     }
 }
 
+type CompileResult<T> = Result<T, CompileError>;
+
+#[non_exhaustive]
+#[derive(Debug)]
+pub enum CompileError {
+    LocalsStackUnderflow,
+    BreakInArrayLiteral,
+    DisallowedBreak,
+    EvalError(EvalError),
+    VarNotFound(String),
+    FnNotFound(String),
+    InsufficientNamedArgs,
+    FromUtf8Error(std::string::FromUtf8Error),
+    IoError(std::io::Error),
+}
+
+impl std::error::Error for CompileError {}
+
+impl std::fmt::Display for CompileError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::LocalsStackUnderflow => write!(f, "Local variables stack underflow"),
+            Self::BreakInArrayLiteral => write!(f, "Break in array literal not supported"),
+            Self::DisallowedBreak => write!(f, "Break in function default arg is not allowed"),
+            Self::EvalError(e) => write!(f, "Evaluation error: {e}"),
+            Self::VarNotFound(name) => write!(f, "Variable {name} not found in scope"),
+            Self::FnNotFound(name) => write!(f, "Function {name} is not defined"),
+            Self::InsufficientNamedArgs => {
+                write!(f, "Named arguments does not cover all required args")
+            }
+            Self::FromUtf8Error(e) => e.fmt(f),
+            Self::IoError(e) => e.fmt(f),
+        }
+    }
+}
+
+impl From<std::string::FromUtf8Error> for CompileError {
+    fn from(value: std::string::FromUtf8Error) -> Self {
+        Self::FromUtf8Error(value)
+    }
+}
+
+impl From<std::io::Error> for CompileError {
+    fn from(value: std::io::Error) -> Self {
+        Self::IoError(value)
+    }
+}
+
 pub fn compile<'src, 'ast>(
     stmts: &'ast [Statement<'src>],
     functions: HashMap<String, NativeFn>,
-) -> Result<Bytecode, String> {
+) -> CompileResult<Bytecode> {
     #[cfg(debug_assertions)]
     {
         let mut disasm = Vec::<u8>::new();
@@ -544,20 +188,20 @@ pub fn compile<'src, 'ast>(
 pub fn disasm<'src, 'ast>(
     stmts: &'ast [Statement<'src>],
     functions: HashMap<String, NativeFn>,
-) -> Result<String, String> {
+) -> CompileResult<String> {
     let mut disasm = Vec::<u8>::new();
     let mut cursor = std::io::Cursor::new(&mut disasm);
 
     compile_int(stmts, functions, &mut cursor)?;
 
-    Ok(String::from_utf8(disasm).map_err(|e| e.to_string())?)
+    Ok(String::from_utf8(disasm)?)
 }
 
 fn compile_int<'src, 'ast>(
     stmts: &'ast [Statement<'src>],
     functions: HashMap<String, NativeFn>,
     disasm: &mut impl Write,
-) -> Result<Bytecode, String> {
+) -> CompileResult<Bytecode> {
     let functions = functions
         .into_iter()
         .map(|(k, v)| (k, FnProto::Native(v)))
@@ -565,7 +209,7 @@ fn compile_int<'src, 'ast>(
 
     let mut env = CompilerEnv::new(functions);
 
-    retrieve_fn_signatures(stmts, &mut env)?;
+    retrieve_fn_signatures(stmts, &mut env);
 
     let mut compiler = Compiler::new(vec![], vec![], &mut env);
     if let Some(last_target) = emit_stmts(stmts, &mut compiler)? {
@@ -581,20 +225,16 @@ fn compile_int<'src, 'ast>(
     let mut functions = env.functions;
     functions.insert("".to_string(), bytecode);
 
-    (|| -> std::io::Result<()> {
-        for (fname, fnproto) in &functions {
-            if let FnProto::Code(bytecode) = fnproto {
-                if fname.is_empty() {
-                    writeln!(disasm, "\nFunction <toplevel> disassembly:")?;
-                } else {
-                    writeln!(disasm, "\nFunction {fname} disassembly:")?;
-                }
-                bytecode.disasm(disasm)?;
+    for (fname, fnproto) in &functions {
+        if let FnProto::Code(bytecode) = fnproto {
+            if fname.is_empty() {
+                writeln!(disasm, "\nFunction <toplevel> disassembly:")?;
+            } else {
+                writeln!(disasm, "\nFunction {fname} disassembly:")?;
             }
+            bytecode.disasm(disasm)?;
         }
-        Ok(())
-    })()
-    .map_err(|e| format!("{e}"))?;
+    }
 
     #[cfg(debug_assertions)]
     for fun in &functions {
@@ -611,7 +251,7 @@ fn compile_fn<'src, 'ast>(
     stmts: &'ast [Statement<'src>],
     args: Vec<LocalVar>,
     fn_args: Vec<BytecodeArg>,
-) -> Result<FnProto, String> {
+) -> CompileResult<FnProto> {
     let mut compiler = Compiler::new(args, fn_args, env);
     if let Some(last_target) = emit_stmts(stmts, &mut compiler)? {
         compiler
@@ -624,7 +264,7 @@ fn compile_fn<'src, 'ast>(
     Ok(FnProto::Code(compiler.bytecode))
 }
 
-fn retrieve_fn_signatures(stmts: &[Statement], env: &mut CompilerEnv) -> Result<(), String> {
+fn retrieve_fn_signatures(stmts: &[Statement], env: &mut CompilerEnv) {
     for stmt in stmts {
         match stmt {
             Statement::FnDecl {
@@ -634,20 +274,23 @@ fn retrieve_fn_signatures(stmts: &[Statement], env: &mut CompilerEnv) -> Result<
                 let bytecode = FnBytecode::proto(args);
                 env.functions
                     .insert(name.to_string(), FnProto::Code(bytecode));
-                retrieve_fn_signatures(stmts, env)?;
+                retrieve_fn_signatures(stmts, env);
             }
             _ => {}
         }
     }
-    Ok(())
 }
 
-fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> Result<Option<usize>, String> {
+fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> CompileResult<Option<usize>> {
     let mut last_target = None;
     for stmt in stmts {
         match stmt {
             Statement::VarDecl(var, _type, initializer) => {
-                let locals = compiler.locals.last().unwrap().len();
+                let locals = compiler
+                    .locals
+                    .last()
+                    .ok_or_else(|| CompileError::LocalsStackUnderflow)?
+                    .len();
                 let init_val = if let Some(init_expr) = initializer {
                     let stk_var = emit_expr(init_expr, compiler)?;
                     compiler.target_stack[stk_var] = Target::Local(locals);
@@ -657,7 +300,10 @@ fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> Result<Option<usi
                     compiler.target_stack.push(Target::Local(locals));
                     stk_var
                 };
-                let locals = compiler.locals.last_mut().unwrap();
+                let locals = compiler
+                    .locals
+                    .last_mut()
+                    .ok_or_else(|| CompileError::LocalsStackUnderflow)?;
                 locals.push(LocalVar {
                     name: var.to_string(),
                     stack_idx: init_val,
@@ -689,21 +335,16 @@ fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> Result<Option<usi
                             // Run the interpreter to fold the constant expression into a value.
                             // Note that the interpreter has an empty context, so it cannot access any
                             // global variables or user defined functions.
-                            match eval(init, &mut EvalContext::new())? {
+                            match eval(init, &mut EvalContext::new())
+                                .map_err(CompileError::EvalError)?
+                            {
                                 RunResult::Yield(val) => Some(val),
-                                _ => {
-                                    return Err(
-                                        "Function default arg should not suspend".to_string()
-                                    )
-                                }
+                                _ => return Err(CompileError::DisallowedBreak),
                             }
                         } else {
                             None
                         };
-                        Ok(BytecodeArg {
-                            name: arg.name.to_owned(),
-                            init,
-                        })
+                        Ok(BytecodeArg::new(arg.name.to_owned(), init))
                     })
                     .collect::<Result<_, _>>()?;
                 dbg_println!("FnDecl actual args: {:?} fn_args: {:?}", a_args, fn_args);
@@ -736,7 +377,11 @@ fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> Result<Option<usi
             Statement::For(iter, from, to, stmts) => {
                 let stk_from = emit_expr(from, compiler)?;
                 let stk_to = emit_expr(to, compiler)?;
-                let local_iter = compiler.locals.last().unwrap().len();
+                let local_iter = compiler
+                    .locals
+                    .last()
+                    .ok_or_else(|| CompileError::LocalsStackUnderflow)?
+                    .len();
                 let stk_check = compiler.target_stack.len();
 
                 // stack: [stk_from, stk_to, stk_check]
@@ -745,10 +390,14 @@ fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> Result<Option<usi
                 //     and stk_check is the value to store the result of comparison
 
                 let inst_loop_start = compiler.bytecode.instructions.len();
-                compiler.locals.last_mut().unwrap().push(LocalVar {
-                    name: iter.to_string(),
-                    stack_idx: stk_from,
-                });
+                compiler
+                    .locals
+                    .last_mut()
+                    .ok_or_else(|| CompileError::LocalsStackUnderflow)?
+                    .push(LocalVar {
+                        name: iter.to_string(),
+                        stack_idx: stk_from,
+                    });
                 compiler.target_stack[stk_from] = Target::Local(local_iter);
                 compiler.target_stack.push(Target::None);
                 compiler
@@ -778,7 +427,7 @@ fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> Result<Option<usi
     Ok(last_target)
 }
 
-fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String> {
+fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> CompileResult<usize> {
     match &expr.expr {
         ExprEnum::NumLiteral(val) => Ok(compiler.find_or_create_literal(val)),
         ExprEnum::StrLiteral(val) => Ok(compiler.find_or_create_literal(&Value::Str(val.clone()))),
@@ -789,10 +438,12 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
                 values: val
                     .iter()
                     .map(|v| {
-                        if let RunResult::Yield(y) = eval(v, &mut ctx)? {
+                        if let RunResult::Yield(y) =
+                            eval(v, &mut ctx).map_err(CompileError::EvalError)?
+                        {
                             Ok(y)
                         } else {
-                            Err("Break in array literal not supported".to_string())
+                            Err(CompileError::BreakInArrayLiteral)
                         }
                     })
                     .collect::<Result<Vec<_>, _>>()?,
@@ -811,7 +462,7 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
             if let Some(local) = local {
                 return Ok(local.stack_idx);
             } else {
-                return Err(format!("Variable {} not found in scope", str));
+                return Err(CompileError::VarNotFound(str.to_string()));
             }
         }
         ExprEnum::Cast(ex, decl) => {
@@ -823,8 +474,7 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
                 .push_inst(OpCode::Move, val as u8, val_copy as u16);
             compiler.target_stack.push(Target::None);
             let mut decl_buf = [0u8; std::mem::size_of::<i64>()];
-            decl.serialize(&mut std::io::Cursor::new(&mut decl_buf[..]))
-                .map_err(|e| e.to_string())?;
+            decl.serialize(&mut std::io::Cursor::new(&mut decl_buf[..]))?;
             let decl_stk =
                 compiler.find_or_create_literal(&Value::I64(i64::from_le_bytes(decl_buf)));
             compiler
@@ -842,10 +492,10 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
             compiler.bytecode.push_inst(OpCode::BitNot, val as u8, 0);
             Ok(val)
         }
-        ExprEnum::Add(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Add, lhs, rhs)),
-        ExprEnum::Sub(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Sub, lhs, rhs)),
-        ExprEnum::Mult(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Mul, lhs, rhs)),
-        ExprEnum::Div(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Div, lhs, rhs)),
+        ExprEnum::Add(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Add, lhs, rhs)?),
+        ExprEnum::Sub(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Sub, lhs, rhs)?),
+        ExprEnum::Mult(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Mul, lhs, rhs)?),
+        ExprEnum::Div(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Div, lhs, rhs)?),
         ExprEnum::VarAssign(lhs, rhs) => {
             let lhs_result = emit_expr(lhs, compiler)?;
             let rhs_result = emit_expr(rhs, compiler)?;
@@ -858,9 +508,11 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
         }
         ExprEnum::FnInvoke(fname, argss) => {
             let default_args = {
-                let Some(fun) = compiler.env.functions.get(*fname) else {
-                    return Err(format!("Function {fname} is not defined"));
-                };
+                let fun = compiler
+                    .env
+                    .functions
+                    .get(*fname)
+                    .ok_or_else(|| CompileError::FnNotFound(fname.to_string()))?;
 
                 let fn_args = fun.args();
 
@@ -907,7 +559,7 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
             let stk_fname = compiler.find_or_create_literal(&Value::Str(fname.to_string()));
 
             let Some(fun) = compiler.env.functions.get(*fname) else {
-                return Err(format!("Function {fname} is not defined"));
+                return Err(CompileError::FnNotFound(fname.to_string()));
             };
 
             let fn_args = fun.args();
@@ -939,7 +591,7 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
             let args = args
                 .into_iter()
                 .collect::<Option<Vec<_>>>()
-                .ok_or_else(|| format!("Named arguments does not cover all required args"))?;
+                .ok_or_else(|| CompileError::InsufficientNamedArgs)?;
 
             // Align arguments to the stack to prepare a call.
             for arg in args {
@@ -984,13 +636,13 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
                 .push_inst(OpCode::Get, stk_ex as u8, arg as u16);
             Ok(arg)
         }
-        ExprEnum::LT(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Lt, lhs, rhs)),
-        ExprEnum::GT(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Gt, lhs, rhs)),
-        ExprEnum::BitAnd(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::BitAnd, lhs, rhs)),
-        ExprEnum::BitXor(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::BitXor, lhs, rhs)),
-        ExprEnum::BitOr(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::BitOr, lhs, rhs)),
-        ExprEnum::And(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::And, lhs, rhs)),
-        ExprEnum::Or(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Or, lhs, rhs)),
+        ExprEnum::LT(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Lt, lhs, rhs)?),
+        ExprEnum::GT(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Gt, lhs, rhs)?),
+        ExprEnum::BitAnd(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::BitAnd, lhs, rhs)?),
+        ExprEnum::BitXor(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::BitXor, lhs, rhs)?),
+        ExprEnum::BitOr(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::BitOr, lhs, rhs)?),
+        ExprEnum::And(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::And, lhs, rhs)?),
+        ExprEnum::Or(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Or, lhs, rhs)?),
         ExprEnum::Conditional(cond, true_branch, false_branch) => {
             let cond = emit_expr(cond, compiler)?;
             let cond_inst_idx = compiler.bytecode.instructions.len();
@@ -1027,7 +679,7 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> Result<usize, String
     }
 }
 
-fn emit_rvalue(ex: &Expression, compiler: &mut Compiler) -> Result<usize, String> {
+fn emit_rvalue(ex: &Expression, compiler: &mut Compiler) -> CompileResult<usize> {
     let ret = emit_expr(ex, compiler)?;
     compiler.bytecode.push_inst(OpCode::Deref, ret as u8, 0);
     Ok(ret)
@@ -1038,9 +690,9 @@ fn emit_binary_op(
     op: OpCode,
     lhs: &Expression,
     rhs: &Expression,
-) -> usize {
-    let lhs = emit_expr(&lhs, compiler).unwrap();
-    let rhs = emit_expr(&rhs, compiler).unwrap();
+) -> CompileResult<usize> {
+    let lhs = emit_expr(&lhs, compiler)?;
+    let rhs = emit_expr(&rhs, compiler)?;
     let lhs = if matches!(compiler.target_stack[lhs], Target::Local(_)) {
         // We move the local variable to another slot because our instructions are destructive
         let top = compiler.target_stack.len();
@@ -1057,5 +709,5 @@ fn emit_binary_op(
         arg0: lhs as u8,
         arg1: rhs as u16,
     });
-    lhs
+    Ok(lhs)
 }

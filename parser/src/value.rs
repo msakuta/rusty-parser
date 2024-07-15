@@ -4,7 +4,12 @@ use std::{
     rc::Rc,
 };
 
-use crate::{type_decl::TypeDecl, type_tags::*, EvalError, ReadError};
+use crate::{
+    interpreter::{EGetExt, EvalResult},
+    type_decl::TypeDecl,
+    type_tags::*,
+    EvalError, ReadError,
+};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct ArrayInt {
@@ -162,19 +167,20 @@ impl Value {
 
     /// We don't really need assignment operation for an array (yet), because
     /// array index will return a reference.
-    fn _array_assign(&mut self, idx: usize, value: Value) {
+    fn _array_assign(&mut self, idx: usize, value: Value) -> EvalResult<()> {
         if let Value::Array(array) = self {
-            array.borrow_mut().values[idx] = value.deref();
+            array.borrow_mut().values[idx] = value.deref()?;
         } else {
-            panic!("assign_array must be called for an array")
+            return Err(EvalError::IndexNonArray);
         }
+        Ok(())
     }
 
-    fn _array_get(&self, idx: u64) -> Value {
+    fn _array_get(&self, idx: u64) -> EvalResult<Value> {
         match self {
             Value::Ref(rc) => rc.borrow()._array_get(idx),
-            Value::Array(array) => array.borrow_mut().values[idx as usize].clone(),
-            _ => panic!("array index must be called for an array"),
+            Value::Array(array) => Ok(array.borrow_mut().values.eget(idx as usize)?.clone()),
+            _ => Err(EvalError::IndexNonArray),
         }
     }
 
@@ -186,26 +192,17 @@ impl Value {
                 if (idx as usize) < array_int.values.len() {
                     Value::ArrayRef(array.clone(), idx as usize)
                 } else {
-                    return Err(format!(
-                        "array index out of range: {idx} is larger than array length {}",
-                        array_int.values.len()
+                    return Err(EvalError::ArrayOutOfBounds(
+                        idx as usize,
+                        array_int.values.len(),
                     ));
                 }
             }
             Value::ArrayRef(rc, idx2) => {
                 let array_int = rc.borrow();
-                array_int
-                    .values
-                    .get(*idx2)
-                    .ok_or_else(|| {
-                        format!(
-                            "array index out of range: {idx2} is larger than array length {}",
-                            array_int.values.len()
-                        )
-                    })?
-                    .array_get_ref(idx)?
+                array_int.values.eget(*idx2)?.array_get_ref(idx)?
             }
-            _ => return Err("array index must be called for an array".to_string()),
+            _ => return Err(EvalError::IndexNonArray),
         })
     }
 
@@ -213,28 +210,28 @@ impl Value {
         match self {
             Value::Ref(r) => r.borrow_mut().array_push(value),
             Value::Array(array) => {
-                array.borrow_mut().values.push(value.deref());
+                array.borrow_mut().values.push(value.deref()?);
                 Ok(())
             }
-            _ => Err("push() must be called for an array".to_string()),
+            _ => Err("push() must be called for an array".to_string().into()),
         }
     }
 
     /// Returns the length of an array, dereferencing recursively if the value was a reference.
-    pub fn array_len(&self) -> usize {
+    pub fn array_len(&self) -> EvalResult<usize> {
         match self {
             Value::Ref(rc) => rc.borrow().array_len(),
-            Value::Array(array) => array.borrow().values.len(),
-            _ => panic!("len() must be called for an array"),
+            Value::Array(array) => Ok(array.borrow().values.len()),
+            _ => Err("len() must be called for an array".to_string().into()),
         }
     }
 
     /// Recursively peels off references
-    pub fn deref(self) -> Self {
-        match self {
-            Value::Ref(r) => r.borrow().clone().deref(),
-            Value::ArrayRef(r, idx) => (*r.borrow()).values.get(idx).cloned().unwrap(),
+    pub fn deref(self) -> EvalResult<Self> {
+        Ok(match self {
+            Value::Ref(r) => r.borrow().clone().deref()?,
+            Value::ArrayRef(r, idx) => (*r.borrow()).values.eget(idx)?.clone(),
             _ => self,
-        }
+        })
     }
 }
