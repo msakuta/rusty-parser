@@ -91,10 +91,13 @@ impl<'src, 'native, 'ctx> TypeCheckContext<'src, 'native, 'ctx> {
     }
 }
 
-fn tc_expr<'src, 'b>(
+fn tc_expr<'src, 'b, 'native>(
     e: &'b Expression<'src>,
-    ctx: &mut TypeCheckContext<'src, '_, '_>,
-) -> Result<TypeDecl, TypeCheckError<'src>> {
+    ctx: &mut TypeCheckContext<'src, 'native, '_>,
+) -> Result<TypeDecl, TypeCheckError<'src>>
+where
+    'native: 'src,
+{
     Ok(match &e.expr {
         ExprEnum::NumLiteral(val) => match val {
             Value::F64(_) | Value::F32(_) => TypeDecl::Float,
@@ -152,6 +155,41 @@ fn tc_expr<'src, 'b>(
                 .iter()
                 .map(|v| tc_expr(&v.expr, ctx))
                 .collect::<Result<Vec<_>, _>>()?;
+            let fn_args = ctx
+                .get_fn(*str)
+                .ok_or_else(|| {
+                    TypeCheckError::new(
+                        format!("function {} is not defined", str),
+                        e.span,
+                        ctx.source_file,
+                    )
+                })?
+                .args();
+
+            let args_decl = if args.len() <= fn_args.len() {
+                let fn_args = fn_args[args.len()..].to_vec();
+
+                fn_args
+                    .into_iter()
+                    .filter_map(|arg| {
+                        // We use a new temporary EvalContext to avoid referencing outer variables, i.e. make it
+                        // a constant expression, in order to match the semantics with the bytecode compiler.
+                        // Theoretically, it is possible to evaluate the expression ahead of time to reduce
+                        // computation, but our priority is bytecode compiler which already does constant folding.
+                        arg.init.as_ref().map(|init| {
+                            tc_expr(
+                                init, ctx, /*&mut TypeCheckContext::new(ctx.source_file)*/
+                            )
+                        })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?
+            } else {
+                vec![]
+            };
+
+            for ((arg_ty, arg), decl) in args_ty.iter().zip(args.iter()).zip(args_decl.iter()) {
+                tc_coerce_type(&arg_ty, &decl, arg.expr.span, ctx)?;
+            }
             let func = ctx.get_fn(*str).ok_or_else(|| {
                 TypeCheckError::new(
                     format!("function {} is not defined", str),
@@ -159,10 +197,6 @@ fn tc_expr<'src, 'b>(
                     ctx.source_file,
                 )
             })?;
-            let args_decl = func.args();
-            for ((arg_ty, arg), decl) in args_ty.iter().zip(args.iter()).zip(args_decl.iter()) {
-                tc_coerce_type(&arg_ty, &decl.ty, arg.expr.span, ctx)?;
-            }
             match func {
                 FuncDef::Code(code) => code.ret_type.clone().unwrap_or(TypeDecl::Any),
                 FuncDef::Native(native) => native.ret_type.clone().unwrap_or(TypeDecl::Any),
@@ -318,10 +352,13 @@ fn tc_cast_type<'src>(
     })
 }
 
-pub fn type_check<'src, 'ast>(
+pub fn type_check<'src, 'ast, 'native>(
     stmts: &'ast Vec<Statement<'src>>,
-    ctx: &mut TypeCheckContext<'src, '_, '_>,
-) -> Result<TypeDecl, TypeCheckError<'src>> {
+    ctx: &mut TypeCheckContext<'src, 'native, '_>,
+) -> Result<TypeDecl, TypeCheckError<'src>>
+where
+    'native: 'src,
+{
     let mut res = TypeDecl::Any;
     for stmt in stmts {
         match stmt {
@@ -389,13 +426,16 @@ pub fn type_check<'src, 'ast>(
     Ok(res)
 }
 
-fn binary_op_gen<'src, 'ast>(
+fn binary_op_gen<'src, 'ast, 'native>(
     lhs: &'ast Expression<'src>,
     rhs: &'ast Expression<'src>,
-    ctx: &mut TypeCheckContext<'src, '_, '_>,
+    ctx: &mut TypeCheckContext<'src, 'native, '_>,
     op: &str,
     mut f: impl FnMut(&TypeDecl, &TypeDecl) -> Result<TypeDecl, ()>,
-) -> Result<TypeDecl, TypeCheckError<'src>> {
+) -> Result<TypeDecl, TypeCheckError<'src>>
+where
+    'native: 'src,
+{
     let lhst = tc_expr(lhs, ctx)?;
     let rhst = tc_expr(rhs, ctx)?;
     f(&lhst, &rhst).map_err(|()| {
@@ -410,12 +450,15 @@ fn binary_op_gen<'src, 'ast>(
     })
 }
 
-fn binary_op<'src, 'ast>(
+fn binary_op<'src, 'ast, 'native>(
     lhs: &'ast Expression<'src>,
     rhs: &'ast Expression<'src>,
-    ctx: &mut TypeCheckContext<'src, '_, '_>,
+    ctx: &mut TypeCheckContext<'src, 'native, '_>,
     op: &str,
-) -> Result<TypeDecl, TypeCheckError<'src>> {
+) -> Result<TypeDecl, TypeCheckError<'src>>
+where
+    'native: 'src,
+{
     binary_op_gen(lhs, rhs, ctx, op, binary_op_type)
 }
 
@@ -444,12 +487,15 @@ fn binary_op_type(lhs: &TypeDecl, rhs: &TypeDecl) -> Result<TypeDecl, ()> {
     Ok(res)
 }
 
-fn binary_cmp<'src, 'ast>(
+fn binary_cmp<'src, 'ast, 'native>(
     lhs: &'ast Expression<'src>,
     rhs: &'ast Expression<'src>,
-    ctx: &mut TypeCheckContext<'src, '_, '_>,
+    ctx: &mut TypeCheckContext<'src, 'native, '_>,
     op: &str,
-) -> Result<TypeDecl, TypeCheckError<'src>> {
+) -> Result<TypeDecl, TypeCheckError<'src>>
+where
+    'native: 'src,
+{
     binary_op_gen(lhs, rhs, ctx, op, binary_cmp_type)
 }
 
