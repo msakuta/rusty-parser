@@ -56,7 +56,7 @@ fn test_comment() {
 
 #[test]
 fn test_ident() {
-    let res = identifier(Span::new("x123")).unwrap();
+    let res = ident_space(Span::new("x123  ")).unwrap();
     assert_eq!(res.0.fragment(), &"");
     assert_eq!(res.1.fragment(), &"x123");
 }
@@ -678,7 +678,7 @@ fn test_tuple() {
         Expression::new(
             TupleLiteral(vec![
                 Expression::new(ExprEnum::NumLiteral(Value::I64(1)), span.subslice(1, 1)),
-                Expression::new(ExprEnum::StrLiteral("a".to_owned()), span.subslice(3, 5))
+                Expression::new(ExprEnum::StrLiteral("a".to_owned()), span.subslice(4, 3))
             ]),
             span
         )

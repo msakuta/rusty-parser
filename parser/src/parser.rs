@@ -309,8 +309,9 @@ fn numeric_literal_expression(input: Span) -> IResult<Span, Expression> {
 }
 
 fn str_literal(i: Span) -> IResult<Span, Expression> {
-    let (r0, _) = preceded(multispace0, char('\"'))(i)?;
-    let (r, val) = many0(none_of("\""))(r0)?;
+    let (r0, _) = multispace0(i)?;
+    let (r, _) = preceded(multispace0, char('\"'))(r0)?;
+    let (r, val) = many0(none_of("\""))(r)?;
     let (r, _) = terminated(char('"'), multispace0)(r)?;
     Ok((
         r,
@@ -321,7 +322,7 @@ fn str_literal(i: Span) -> IResult<Span, Expression> {
                     .replace("\\\\", "\\")
                     .replace("\\n", "\n"),
             ),
-            i,
+            calc_offset(r0, r),
         ),
     ))
 }
