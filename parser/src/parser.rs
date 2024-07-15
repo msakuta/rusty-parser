@@ -212,12 +212,23 @@ fn type_scalar(input: Span) -> IResult<Span, TypeDecl> {
 }
 
 fn type_array(input: Span) -> IResult<Span, TypeDecl> {
-    let (r, arr) = delimited(ws(char('[')), alt((type_array, type_scalar)), ws(char(']')))(input)?;
+    let (r, arr) = delimited(ws(char('[')), type_decl, ws(char(']')))(input)?;
     Ok((r, TypeDecl::Array(Box::new(arr))))
 }
 
+fn type_tuple(i: Span) -> IResult<Span, TypeDecl> {
+    let (r, _) = multispace0(i)?;
+    let (r, _open_par) = tag("(")(r)?;
+    let (r, (mut val, last)) = pair(many0(terminated(type_decl, tag(","))), opt(type_decl))(r)?;
+    let (r, _close_par) = tag(")")(r)?;
+    if let Some(last) = last {
+        val.push(last);
+    }
+    Ok((r, TypeDecl::Tuple(val)))
+}
+
 pub(crate) fn type_decl(input: Span) -> IResult<Span, TypeDecl> {
-    alt((type_array, type_scalar))(input)
+    alt((type_array, type_tuple, type_scalar))(input)
 }
 
 fn cast(i: Span) -> IResult<Span, Expression> {

@@ -684,3 +684,12 @@ fn test_tuple() {
         )
     );
 }
+
+#[test]
+fn test_type_tuple() {
+    let span = Span::new("(i32, str)");
+    assert_eq!(
+        type_decl(span).finish().unwrap().1,
+        TypeDecl::Tuple(vec![TypeDecl::I32, TypeDecl::Str])
+    );
+}

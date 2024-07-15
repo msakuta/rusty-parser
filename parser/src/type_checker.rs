@@ -130,10 +130,10 @@ fn tc_expr<'src, 'b>(
         }
         ExprEnum::TupleLiteral(val) => {
             let ty = val
-                .first()
+                .iter()
                 .map(|e| tc_expr(e, ctx))
-                .unwrap_or(Ok(TypeDecl::Any))?;
-            TypeDecl::Array(Box::new(ty))
+                .collect::<Result<Vec<_>, _>>()?;
+            TypeDecl::Tuple(ty)
         }
         ExprEnum::Variable(str) => ctx.get_var(str).ok_or_else(|| {
             TypeCheckError::new(
@@ -255,6 +255,22 @@ fn tc_coerce_type<'src>(
         }
         (Float, Float) => Float,
         (Integer, Integer) => Integer,
+        (Tuple(v_inner), Tuple(t_inner)) => {
+            if v_inner.len() != t_inner.len() {
+                return Err(TypeCheckError::new(
+                    "Tuples size does not match".to_string(),
+                    span,
+                    ctx.source_file,
+                ));
+            }
+            Tuple(
+                v_inner
+                    .iter()
+                    .zip(t_inner.iter())
+                    .map(|(v, t)| tc_coerce_type(v, t, span, ctx))
+                    .collect::<Result<_, _>>()?,
+            )
+        }
         _ => {
             return Err(TypeCheckError::new(
                 format!(
