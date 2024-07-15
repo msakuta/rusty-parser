@@ -18,43 +18,18 @@ extern "C" {
 
 fn s_print(vals: &[Value]) -> Result<Value, EvalError> {
     wasm_print("print:");
-    fn print_inner(vals: &[Value]) {
-        for val in vals {
-            match val {
-                Value::F64(val) => wasm_print(&format!(" {}", val)),
-                Value::F32(val) => wasm_print(&format!(" {}", val)),
-                Value::I64(val) => wasm_print(&format!(" {}", val)),
-                Value::I32(val) => wasm_print(&format!(" {}", val)),
-                Value::Str(val) => wasm_print(&format!(" {}", val)),
-                Value::Array(val) => {
-                    wasm_print("[");
-                    print_inner(
-                        &val.borrow()
-                            .values()
-                            .iter()
-                            .map(|v| v.clone())
-                            .collect::<Vec<_>>(),
-                    );
-                    wasm_print("]");
-                }
-                Value::Ref(r) => {
-                    wasm_print("ref(");
-                    print_inner(&[r.borrow().clone()]);
-                    wasm_print(")");
-                }
-                Value::ArrayRef(r, idx) => {
-                    wasm_print("aref(");
-                    if let Some(val) = r.borrow().values().get(*idx) {
-                        print_inner(&[val.clone()]);
-                    } else {
-                        wasm_print("?");
-                    }
-                    wasm_print(")");
-                }
+    let output = vals
+        .iter()
+        .map(|v| v.to_string())
+        .fold(String::new(), |acc, cur| {
+            if acc.is_empty() {
+                cur
+            } else {
+                acc + ", " + &cur
             }
-        }
-    }
-    print_inner(vals);
+        });
+    wasm_print(&output);
+
     wasm_print(&format!("\n"));
     Ok(Value::I32(0))
 }
@@ -81,6 +56,12 @@ fn s_puts(vals: &[Value]) -> Result<Value, EvalError> {
                         puts_inner(&[val.clone()]);
                     }
                 }
+                Value::Tuple(val) => puts_inner(
+                    &val.borrow()
+                        .iter()
+                        .map(|v| v.value().clone())
+                        .collect::<Vec<_>>(),
+                ),
             }
         }
     }

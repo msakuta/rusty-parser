@@ -277,3 +277,9 @@ pub struct TupleEntry {
     pub(crate) decl: TypeDecl,
     pub(crate) value: Value,
 }
+
+impl TupleEntry {
+    pub fn value(&self) -> &Value {
+        &self.value
+    }
+}
