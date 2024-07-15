@@ -7,3 +7,4 @@ pub(crate) const ARRAY_TAG: u8 = 5;
 pub(crate) const REF_TAG: u8 = 6;
 pub(crate) const FLOAT_TAG: u8 = 7;
 pub(crate) const INTEGER_TAG: u8 = 8;
+pub(crate) const TUPLE_TAG: u8 = 9;

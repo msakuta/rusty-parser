@@ -1,4 +1,8 @@
-use crate::{parser::*, value::ArrayInt, TypeDecl, Value};
+use crate::{
+    parser::*,
+    value::{ArrayInt, TupleEntry},
+    TypeDecl, Value,
+};
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 #[derive(Debug, PartialEq, Clone)]
@@ -300,6 +304,41 @@ fn _coerce_var(value: &Value, target: &Value) -> Result<Value, EvalError> {
         // We usually don't care about coercion
         Value::Ref(_) => value.clone(),
         Value::ArrayRef(_, _) => value.clone(),
+        Value::Tuple(tuple) => {
+            let target_elems = tuple.borrow();
+            if target_elems.len() == 0 {
+                if let Value::Tuple(value_elems) = value {
+                    if value_elems.borrow().len() == 0 {
+                        return Ok(value.clone());
+                    }
+                }
+                return Err(EvalError::CoerceError(
+                    "array".to_string(),
+                    "empty array".to_string(),
+                ));
+            } else {
+                if let Value::Tuple(value_elems) = value {
+                    Value::Tuple(Rc::new(RefCell::new(
+                        value_elems
+                            .borrow()
+                            .iter()
+                            .zip(target_elems.iter())
+                            .map(|(val, tgt)| -> EvalResult<_> {
+                                Ok(TupleEntry {
+                                    decl: tgt.decl.clone(),
+                                    value: coerce_type(&val.value, &tgt.decl)?,
+                                })
+                            })
+                            .collect::<Result<_, _>>()?,
+                    )))
+                } else {
+                    return Err(EvalError::CoerceError(
+                        "scalar".to_string(),
+                        "array".to_string(),
+                    ));
+                }
+            }
+        }
     })
 }
 
@@ -635,6 +674,13 @@ pub(crate) fn s_print(vals: &[Value]) -> EvalResult<Value> {
                 print_inner((*r.borrow()).values.eget(*idx)?)?;
                 print!(")");
             }
+            Value::Tuple(val) => {
+                print!("(");
+                for val in val.borrow().iter() {
+                    print_inner(&val.value)?;
+                }
+                print!(")");
+            }
         }
         Ok(())
     }
@@ -646,7 +692,7 @@ pub(crate) fn s_print(vals: &[Value]) -> EvalResult<Value> {
 }
 
 fn s_puts(vals: &[Value]) -> Result<Value, EvalError> {
-    fn puts_inner(vals: &[Value]) {
+    fn puts_inner<'a>(vals: impl Iterator<Item = &'a Value>) {
         for val in vals {
             match val {
                 Value::F64(val) => print!("{}", val),
@@ -654,23 +700,21 @@ fn s_puts(vals: &[Value]) -> Result<Value, EvalError> {
                 Value::I64(val) => print!("{}", val),
                 Value::I32(val) => print!("{}", val),
                 Value::Str(val) => print!("{}", val),
-                Value::Array(val) => puts_inner(
-                    &val.borrow()
-                        .values
-                        .iter()
-                        .map(|v| v.clone())
-                        .collect::<Vec<_>>(),
-                ),
-                Value::Ref(r) => puts_inner(&[r.borrow().clone()]),
+                Value::Array(val) => puts_inner(val.borrow().values.iter()),
+                Value::Ref(r) => {
+                    let v: &Value = &r.borrow();
+                    puts_inner(std::iter::once(v))
+                }
                 Value::ArrayRef(r, idx) => {
                     if let Some(r) = r.borrow().values.get(*idx) {
-                        puts_inner(&[r.clone()])
+                        puts_inner(std::iter::once(r))
                     }
                 }
+                Value::Tuple(val) => puts_inner(val.borrow().iter().map(|v| &v.value)),
             }
         }
     }
-    puts_inner(vals);
+    puts_inner(vals.iter());
     Ok(Value::I32(0))
 }
 
