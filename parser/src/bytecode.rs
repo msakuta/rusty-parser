@@ -266,6 +266,20 @@ impl Bytecode {
         }
         Ok(ret)
     }
+
+    pub fn disasm(&self, out: &mut impl Write) -> std::io::Result<()> {
+        for (fname, fnproto) in &self.functions {
+            if let FnProto::Code(bytecode) = fnproto {
+                if fname.is_empty() {
+                    writeln!(out, "\nFunction <toplevel> disassembly:")?;
+                } else {
+                    writeln!(out, "\nFunction {fname} disassembly:")?;
+                }
+                bytecode.disasm(out)?;
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Add standard common functions, such as `print`, `len` and `push`, to this bytecode.

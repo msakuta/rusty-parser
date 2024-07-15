@@ -30,6 +30,11 @@ struct Args {
     compile_and_run: bool,
     #[clap(short, help = "Read from bytecode")]
     bytecode: bool,
+    #[clap(
+        short, long,
+        help = "Show disassembly of compiled or read bytecode, given -b, -c or -R was specified"
+    )]
+    disasm: bool,
 }
 
 fn main() -> Result<(), String> {
@@ -58,7 +63,11 @@ fn main() -> Result<(), String> {
         if args.compile || args.compile_and_run {
             let mut bytecode = compile(&result.1, HashMap::new())
                 .map_err(|e| format!("Error in compile(): {:?}", e))?;
-            // println!("bytecode: {:#?}", bytecode);
+            if args.disasm {
+                bytecode
+                    .disasm(&mut std::io::stdout())
+                    .map_err(|e| e.to_string())?;
+            }
             if let Ok(writer) = std::fs::File::create("out.cdragon") {
                 bytecode
                     .write(&mut BufWriter::new(writer))
@@ -82,7 +91,11 @@ fn main() -> Result<(), String> {
         if args.bytecode {
             let mut bytecode =
                 Bytecode::read(&mut BufReader::new(file)).map_err(|e| e.to_string())?;
-            // println!("bytecode: {:#?}", bytecode);
+            if args.disasm {
+                bytecode
+                    .disasm(&mut std::io::stdout())
+                    .map_err(|e| e.to_string())?;
+            }
             bytecode.add_std_fn();
             interpret(&bytecode).map_err(|e| e.to_string())?;
         } else {

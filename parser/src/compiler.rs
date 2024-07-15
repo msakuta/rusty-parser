@@ -171,17 +171,6 @@ pub fn compile<'src, 'ast>(
     stmts: &'ast [Statement<'src>],
     functions: HashMap<String, NativeFn>,
 ) -> CompileResult<Bytecode> {
-    #[cfg(debug_assertions)]
-    {
-        let mut disasm = Vec::<u8>::new();
-        let mut cursor = std::io::Cursor::new(&mut disasm);
-        let ret = compile_int(stmts, functions, &mut cursor)?;
-        if let Ok(s) = String::from_utf8(disasm) {
-            dbg_println!("Disassembly:\n{}", s);
-        }
-        Ok(ret)
-    }
-    #[cfg(not(debug_assertions))]
     compile_int(stmts, functions, &mut std::io::sink())
 }
 
