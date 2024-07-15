@@ -253,7 +253,7 @@ fn coerce_str(a: &Value) -> EvalResult<String> {
         Value::Str(v) => v.clone(),
         _ => {
             return Err(EvalError::CoerceError(
-                "array".to_string(),
+                type_decl_to_str(&TypeDecl::_from_value(a)),
                 "str".to_string(),
             ))
         }
@@ -422,7 +422,7 @@ where
         ExprEnum::TupleLiteral(val) => RunResult::Yield(Value::Tuple(Rc::new(RefCell::new(
             val.iter()
                 .map(|v| {
-                    if let RunResult::Yield(y) = eval(v, ctx)? {
+                    if let RunResult::Yield(y) = unwrap_deref(eval(v, ctx)?)? {
                         Ok(TupleEntry {
                             decl: TypeDecl::_from_value(&y),
                             value: y,
