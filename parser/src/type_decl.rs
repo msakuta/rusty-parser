@@ -20,7 +20,7 @@ pub enum TypeDecl {
 }
 
 impl TypeDecl {
-    pub(crate) fn _from_value(value: &Value) -> Self {
+    pub(crate) fn from_value(value: &Value) -> Self {
         match value {
             Value::F64(_) => Self::F64,
             Value::F32(_) => Self::F32,
@@ -28,12 +28,12 @@ impl TypeDecl {
             Value::I64(_) => Self::I64,
             Value::Str(_) => Self::Str,
             Value::Array(a) => Self::Array(Box::new(a.borrow().type_decl.clone())),
-            Value::Ref(a) => Self::_from_value(&*a.borrow()),
+            Value::Ref(a) => Self::from_value(&*a.borrow()),
             Value::ArrayRef(a, _) => a.borrow().type_decl.clone(),
             Value::Tuple(a) => Self::Tuple(
                 a.borrow()
                     .iter()
-                    .map(|val| Self::_from_value(&val.value))
+                    .map(|val| Self::from_value(&val.value))
                     .collect(),
             ),
         }
@@ -89,5 +89,29 @@ impl TypeDecl {
             INTEGER_TAG => Self::Integer,
             _ => unreachable!(),
         })
+    }
+}
+
+impl std::fmt::Display for TypeDecl {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TypeDecl::Any => write!(f, "any")?,
+            TypeDecl::F64 => write!(f, "f64")?,
+            TypeDecl::F32 => write!(f, "f32")?,
+            TypeDecl::I64 => write!(f, "i64")?,
+            TypeDecl::I32 => write!(f, "i32")?,
+            TypeDecl::Str => write!(f, "str")?,
+            TypeDecl::Array(inner) => write!(f, "[{}]", inner.to_string())?,
+            TypeDecl::Float => write!(f, "<Float>")?,
+            TypeDecl::Integer => write!(f, "<Integer>")?,
+            TypeDecl::Tuple(inner) => write!(
+                f,
+                "({})",
+                inner
+                    .iter()
+                    .fold(String::new(), |acc, cur| { acc + &cur.to_string() })
+            )?,
+        }
+        Ok(())
     }
 }

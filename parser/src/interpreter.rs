@@ -253,7 +253,7 @@ fn coerce_str(a: &Value) -> EvalResult<String> {
         Value::Str(v) => v.clone(),
         _ => {
             return Err(EvalError::CoerceError(
-                type_decl_to_str(&TypeDecl::_from_value(a)),
+                TypeDecl::from_value(a).to_string(),
                 "str".to_string(),
             ))
         }
@@ -424,7 +424,7 @@ where
                 .map(|v| {
                     if let RunResult::Yield(y) = unwrap_deref(eval(v, ctx)?)? {
                         Ok(TupleEntry {
-                            decl: TypeDecl::_from_value(&y),
+                            decl: TypeDecl::from_value(&y),
                             value: y,
                         })
                     } else {
@@ -762,26 +762,6 @@ fn s_puts(vals: &[Value]) -> Result<Value, EvalError> {
     Ok(Value::I32(0))
 }
 
-fn type_decl_to_str(t: &TypeDecl) -> String {
-    match t {
-        TypeDecl::Any => "any".to_string(),
-        TypeDecl::F64 => "f64".to_string(),
-        TypeDecl::F32 => "f32".to_string(),
-        TypeDecl::I64 => "i64".to_string(),
-        TypeDecl::I32 => "i32".to_string(),
-        TypeDecl::Str => "str".to_string(),
-        TypeDecl::Array(inner) => format!("[{}]", type_decl_to_str(inner)),
-        TypeDecl::Float => "<Float>".to_string(),
-        TypeDecl::Integer => "<Integer>".to_string(),
-        TypeDecl::Tuple(inner) => format!(
-            "({})",
-            inner
-                .iter()
-                .fold(String::new(), |acc, cur| { acc + &type_decl_to_str(cur) })
-        ),
-    }
-}
-
 pub(crate) fn s_type(vals: &[Value]) -> Result<Value, EvalError> {
     fn type_str(val: &Value) -> String {
         match val {
@@ -790,16 +770,16 @@ pub(crate) fn s_type(vals: &[Value]) -> Result<Value, EvalError> {
             Value::I64(_) => "i64".to_string(),
             Value::I32(_) => "i32".to_string(),
             Value::Str(_) => "str".to_string(),
-            Value::Array(inner) => format!("[{}]", type_decl_to_str(&inner.borrow().type_decl)),
+            Value::Array(inner) => format!("[{}]", inner.borrow().type_decl),
             Value::Ref(r) => format!("ref[{}]", type_str(&r.borrow())),
-            Value::ArrayRef(r, _) => format!("aref[{}]", type_decl_to_str(&r.borrow().type_decl)),
+            Value::ArrayRef(r, _) => format!("aref[{}]", r.borrow().type_decl),
             Value::Tuple(inner) => format!(
                 "({})",
                 &inner.borrow().iter().fold(String::new(), |acc, cur| {
                     if acc.is_empty() {
-                        type_decl_to_str(&cur.decl)
+                        cur.decl.to_string()
                     } else {
-                        acc + ", " + &type_decl_to_str(&cur.decl)
+                        acc + ", " + &cur.decl.to_string()
                     }
                 })
             ),

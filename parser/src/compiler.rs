@@ -441,7 +441,7 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> CompileResult<usize>
                             eval(v, &mut ctx).map_err(CompileError::EvalError)?
                         {
                             Ok(TupleEntry {
-                                decl: TypeDecl::_from_value(&y),
+                                decl: TypeDecl::from_value(&y),
                                 value: y,
                             })
                         } else {
