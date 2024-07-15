@@ -280,6 +280,29 @@ impl Bytecode {
         }
         Ok(())
     }
+
+    pub fn signatures(&self, out: &mut impl Write) -> std::io::Result<()> {
+        for (fname, fnproto) in &self.functions {
+            match fnproto {
+                FnProto::Code(code) => {
+                    write!(out, "fn {}(", fname)?;
+                    for (i, arg) in code.args.iter().enumerate() {
+                        if i != 0 {
+                            write!(out, ", ")?;
+                        }
+                        if let Some(init) = &arg.init {
+                            write!(out, "{} = {}", arg.name, init)?;
+                        } else {
+                            write!(out, "{}", arg.name)?;
+                        }
+                    }
+                    writeln!(out, ")")?;
+                }
+                FnProto::Native(_) => writeln!(out, "fn {} -> <Native>", fname)?,
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Add standard common functions, such as `print`, `len` and `push`, to this bytecode.

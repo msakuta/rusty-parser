@@ -225,13 +225,6 @@ fn compile_int<'src, 'ast>(
         }
     }
 
-    #[cfg(debug_assertions)]
-    for fun in &functions {
-        match fun.1 {
-            FnProto::Code(code) => dbg_println!("fn {} -> {:?}", fun.0, code.instructions),
-            _ => dbg_println!("fn {} -> <Native>", fun.0),
-        }
-    }
     Ok(Bytecode { functions })
 }
 

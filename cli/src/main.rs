@@ -31,10 +31,13 @@ struct Args {
     #[clap(short, help = "Read from bytecode")]
     bytecode: bool,
     #[clap(
-        short, long,
+        short,
+        long,
         help = "Show disassembly of compiled or read bytecode, given -b, -c or -R was specified"
     )]
     disasm: bool,
+    #[clap(short, long, help = "Show signatures of functions")]
+    signatures: bool,
 }
 
 fn main() -> Result<(), String> {
@@ -63,6 +66,11 @@ fn main() -> Result<(), String> {
         if args.compile || args.compile_and_run {
             let mut bytecode = compile(&result.1, HashMap::new())
                 .map_err(|e| format!("Error in compile(): {:?}", e))?;
+            if args.signatures {
+                bytecode
+                    .signatures(&mut std::io::stdout())
+                    .map_err(|e| e.to_string())?;
+            }
             if args.disasm {
                 bytecode
                     .disasm(&mut std::io::stdout())
@@ -91,6 +99,11 @@ fn main() -> Result<(), String> {
         if args.bytecode {
             let mut bytecode =
                 Bytecode::read(&mut BufReader::new(file)).map_err(|e| e.to_string())?;
+            if args.signatures {
+                bytecode
+                    .signatures(&mut std::io::stdout())
+                    .map_err(|e| e.to_string())?;
+            }
             if args.disasm {
                 bytecode
                     .disasm(&mut std::io::stdout())
