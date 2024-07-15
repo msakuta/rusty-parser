@@ -1,0 +1,8 @@
+
+fn return_tuple() -> (i32, str, f64) {
+    (1, "a", 3.14)
+}
+
+var a = return_tuple();
+
+print("a: ", a, type(a));
