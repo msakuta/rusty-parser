@@ -638,6 +638,21 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> CompileResult<usize>
                 .push_inst(OpCode::Get, stk_ex as u8, arg as u16);
             Ok(arg)
         }
+        ExprEnum::TupleIndex(ex, index) => {
+            let stk_ex = emit_expr(ex, compiler)?;
+            let stk_idx = compiler.find_or_create_literal(&Value::I64(*index as i64));
+            let stk_idx_copy = compiler.target_stack.len();
+            compiler.target_stack.push(Target::None);
+            compiler
+                .bytecode
+                .push_inst(OpCode::Move, stk_idx as u8, stk_idx_copy as u16);
+
+            compiler
+                .bytecode
+                .push_inst(OpCode::Get, stk_ex as u8, stk_idx_copy as u16);
+
+            Ok(stk_idx_copy)
+        }
         ExprEnum::LT(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Lt, lhs, rhs)?),
         ExprEnum::GT(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Gt, lhs, rhs)?),
         ExprEnum::BitAnd(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::BitAnd, lhs, rhs)?),

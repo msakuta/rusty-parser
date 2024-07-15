@@ -3,7 +3,9 @@ use crate::{type_decl::TypeDecl, Value};
 use nom::{
     branch::alt,
     bytes::complete::{tag, take_until},
-    character::complete::{alpha1, alphanumeric1, char, multispace0, multispace1, none_of, one_of},
+    character::complete::{
+        alpha1, alphanumeric1, char, digit1, multispace0, multispace1, none_of, one_of,
+    },
     combinator::{map_res, opt, recognize},
     error::ParseError,
     multi::{fold_many0, many0, many1, separated_list0, separated_list1},
@@ -91,6 +93,7 @@ pub(crate) enum ExprEnum<'a> {
     VarAssign(Box<Expression<'a>>, Box<Expression<'a>>),
     FnInvoke(&'a str, Vec<FnArg<'a>>),
     ArrIndex(Box<Expression<'a>>, Vec<Expression<'a>>),
+    TupleIndex(Box<Expression<'a>>, usize),
     Not(Box<Expression<'a>>),
     BitNot(Box<Expression<'a>>),
     Add(Box<Expression<'a>>, Box<Expression<'a>>),
@@ -452,6 +455,31 @@ pub(crate) fn array_index(i: Span) -> IResult<Span, Expression> {
     ))
 }
 
+pub(crate) fn tuple_index(i: Span) -> IResult<Span, Expression> {
+    let (r, prim) = primary_expression(i)?;
+    let (r, indices) = many1(ws(preceded(tag("."), digit1)))(r)?;
+    let prim_span = prim.span;
+    Ok((
+        r,
+        indices
+            .into_iter()
+            .fold(Ok(prim), |acc, v: Span| -> Result<_, _> {
+                Ok(Expression::new(
+                    ExprEnum::TupleIndex(
+                        Box::new(acc?),
+                        v.parse().map_err(|_| {
+                            nom::Err::Error(nom::error::Error {
+                                input: i,
+                                code: nom::error::ErrorKind::Digit,
+                            })
+                        })?,
+                    ),
+                    i.subslice(i.offset(&prim_span), prim_span.offset(&r)),
+                ))
+            })?,
+    ))
+}
+
 pub(crate) fn primary_expression(i: Span) -> IResult<Span, Expression> {
     alt((
         numeric_literal_expression,
@@ -466,7 +494,7 @@ pub(crate) fn primary_expression(i: Span) -> IResult<Span, Expression> {
 }
 
 fn postfix_expression(i: Span) -> IResult<Span, Expression> {
-    alt((func_invoke, array_index, primary_expression))(i)
+    alt((func_invoke, array_index, tuple_index, primary_expression))(i)
 }
 
 fn not(i: Span) -> IResult<Span, Expression> {

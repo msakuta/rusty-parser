@@ -578,6 +578,10 @@ where
             let result = unwrap_run!(eval(ex, ctx)?);
             RunResult::Yield(result.array_get_ref(arg0)?)
         }
+        ExprEnum::TupleIndex(ex, index) => {
+            let result = unwrap_run!(eval(ex, ctx)?);
+            RunResult::Yield(result.tuple_get(*index as u64)?)
+        }
         ExprEnum::Not(val) => {
             RunResult::Yield(Value::I32(if truthy(&unwrap_run!(eval(val, ctx)?)) {
                 0

@@ -250,10 +250,13 @@ fn interpret_fn(
                 vm.set(inst.arg0, result);
             }
             OpCode::Get => {
-                let target_array = &vm.get(inst.arg0);
+                let target_collection = &vm.get(inst.arg0);
                 let target_index = &vm.get(inst.arg1);
-                let new_val = target_array.array_get_ref(coerce_i64(target_index)? as u64).map_err(|e| {
-                    format!("Get instruction failed with {target_array:?} and {target_index:?}: {e:?}")
+                let index = coerce_i64(target_index)? as u64;
+                let new_val = target_collection.array_get_ref(index).or_else(|_| {
+                    target_collection.tuple_get(index)
+                }).map_err(|e| {
+                    format!("Get instruction failed with {target_collection:?} and {target_index:?}: {e:?}")
                 })?;
                 vm.set(inst.arg1, new_val);
             }

@@ -7,7 +7,7 @@ use crate::{
     FuncDef, Span, Value,
 };
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct TypeCheckError<'src> {
     msg: String,
     span: Span<'src>,
@@ -224,6 +224,27 @@ where
             } else {
                 return Err(TypeCheckError::new(
                     "Subscript operator's first operand is not an array".to_string(),
+                    ex.span,
+                    ctx.source_file,
+                ));
+            }
+        }
+        ExprEnum::TupleIndex(ex, index) => {
+            let result = tc_expr(ex, ctx)?;
+            if let TypeDecl::Tuple(inner) = result {
+                inner
+                    .get(*index)
+                    .ok_or_else(|| {
+                        TypeCheckError::new(
+                            "Tuple index out of range".to_string(),
+                            ex.span,
+                            ctx.source_file,
+                        )
+                    })?
+                    .clone()
+            } else {
+                return Err(TypeCheckError::new(
+                    "Tuple index applied to a non-tuple".to_string(),
                     ex.span,
                     ctx.source_file,
                 ));

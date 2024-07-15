@@ -260,6 +260,17 @@ impl Value {
         }
     }
 
+    pub fn tuple_get(&self, idx: u64) -> Result<Value, EvalError> {
+        Ok(match self {
+            Value::Ref(rc) => rc.borrow().array_get_ref(idx)?,
+            Value::Tuple(tuple) => {
+                let tuple_int = tuple.borrow();
+                tuple_int.eget(idx as usize)?.value.clone()
+            }
+            _ => return Err(EvalError::IndexNonArray),
+        })
+    }
+
     /// Recursively peels off references
     pub fn deref(self) -> EvalResult<Self> {
         Ok(match self {

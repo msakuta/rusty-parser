@@ -693,3 +693,24 @@ fn test_type_tuple() {
         TypeDecl::Tuple(vec![TypeDecl::I32, TypeDecl::Str])
     );
 }
+
+#[test]
+fn test_tuple_index() {
+    let span = Span::new("(1, \"a\").1");
+    assert_eq!(
+        full_expression(span).finish().unwrap().1,
+        Expression::new(
+            TupleIndex(
+                Box::new(Expression::new(
+                    TupleLiteral(vec![
+                        Expression::new(ExprEnum::NumLiteral(Value::I64(1)), span.subslice(1, 1)),
+                        Expression::new(ExprEnum::StrLiteral("a".to_owned()), span.subslice(4, 3))
+                    ]),
+                    span.subslice(0, 8)
+                )),
+                1
+            ),
+            span
+        )
+    );
+}
