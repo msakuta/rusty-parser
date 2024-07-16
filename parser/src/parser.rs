@@ -192,22 +192,22 @@ pub(crate) fn var_ref(input: Span) -> IResult<Span, Expression> {
 }
 
 fn type_scalar(input: Span) -> IResult<Span, TypeDecl> {
-    let (r, type_) = opt(ws(alt((
+    let (r, type_) = ws(alt((
         tag("f64"),
         tag("f32"),
         tag("i64"),
         tag("i32"),
         tag("str"),
-    ))))(input)?;
+    )))(input)?;
     Ok((
         r,
-        match type_.map(|ty| *ty) {
-            Some("f64") | None => TypeDecl::F64,
-            Some("f32") => TypeDecl::F32,
-            Some("i32") => TypeDecl::I32,
-            Some("i64") => TypeDecl::I64,
-            Some("str") => TypeDecl::Str,
-            Some(unknown) => {
+        match *type_ {
+            "f64" => TypeDecl::F64,
+            "f32" => TypeDecl::F32,
+            "i32" => TypeDecl::I32,
+            "i64" => TypeDecl::I64,
+            "str" => TypeDecl::Str,
+            unknown => {
                 unreachable!("Type should have recognized by the parser: \"{}\"", unknown)
             }
         },

@@ -686,6 +686,21 @@ fn test_tuple() {
 }
 
 #[test]
+fn test_type_unit_tuple() {
+    let span = Span::new("()");
+    assert_eq!(type_decl(span).finish().unwrap().1, TypeDecl::Tuple(vec![]));
+}
+
+#[test]
+fn test_type_single_tuple() {
+    let span = Span::new("(i32,)");
+    assert_eq!(
+        type_decl(span).finish().unwrap().1,
+        TypeDecl::Tuple(vec![TypeDecl::I32])
+    );
+}
+
+#[test]
 fn test_type_tuple() {
     let span = Span::new("(i32, str)");
     assert_eq!(
@@ -743,6 +758,15 @@ fn test_non_tuple() {
 }
 
 #[test]
+fn test_unit_tuple() {
+    let span = Span::new("()");
+    assert_eq!(
+        full_expression(span).finish().unwrap().1,
+        Expression::new(TupleLiteral(vec![]), span)
+    );
+}
+
+#[test]
 fn test_single_tuple() {
     let span = Span::new("(42,)");
     assert_eq!(
@@ -753,6 +777,26 @@ fn test_single_tuple() {
                 span.subslice(1, 2)
             )]),
             span
+        )
+    );
+}
+
+#[test]
+fn test_tuple_decl() {
+    let span = Span::new("var a: (i32, str, f64) = (42, \"a\", 3.14);");
+    assert_eq!(
+        statement(span).finish().unwrap().1,
+        Statement::VarDecl(
+            &*span.subslice(4, 1),
+            TypeDecl::Tuple(vec![TypeDecl::I32, TypeDecl::Str, TypeDecl::F64]),
+            Some(Expression::new(
+                TupleLiteral(vec![
+                    Expression::new(NumLiteral(Value::I64(42)), span.subslice(26, 2)),
+                    Expression::new(StrLiteral("a".to_string()), span.subslice(30, 3)),
+                    Expression::new(NumLiteral(Value::F64(3.14)), span.subslice(35, 4))
+                ]),
+                span.subslice(25, 15)
+            ))
         )
     );
 }
