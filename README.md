@@ -87,7 +87,7 @@ In ascending order of difficulty.
 * [x] [Default argument](https://github.com/msakuta/rusty-parser/wiki/Function-signature#default-argument)
 * [x] Type casting in bytecode
 * [x] Proper error handling
-* [ ] Tuple types
+* [x] Tuple types
 * [ ] Multi-dimensional arrays
 * [ ] Function types (first class function variables)
 * [ ] Lambda expressions
