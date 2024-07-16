@@ -273,3 +273,13 @@ print(a);"#,
     );
     assert!(res.is_ok());
 }
+
+#[test]
+fn chained_tuple_index() {
+    let res = compile_and_run_with(
+        r#"var a = (1, (2, 3), 4);
+print(a.1.1);"#,
+        |vals| assert_eq!(vals[0], Value::I64(3)),
+    );
+    assert!(res.is_ok());
+}

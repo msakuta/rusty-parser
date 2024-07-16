@@ -37,6 +37,7 @@ pub enum Value {
     Array(Rc<RefCell<ArrayInt>>),
     Ref(Rc<RefCell<Value>>),
     ArrayRef(Rc<RefCell<ArrayInt>>, usize),
+    Tuple(Rc<RefCell<TupleInt>>),
 }
 
 impl Default for Value {
@@ -72,6 +73,17 @@ impl std::fmt::Display for Value {
                     write!(f, "Array index out of range")
                 }
             }
+            Self::Tuple(v) => write!(
+                f,
+                "({})",
+                &v.borrow().iter().fold("".to_string(), |acc, cur| {
+                    if acc.is_empty() {
+                        cur.value.to_string()
+                    } else {
+                        acc + ", " + &cur.value.to_string()
+                    }
+                })
+            ),
         }
     }
 }
@@ -127,6 +139,16 @@ impl Value {
                     ))
                 }
             }
+            Self::Tuple(rc) => {
+                let values = rc.borrow();
+                writer.write_all(&TUPLE_TAG.to_le_bytes())?;
+                writer.write_all(&values.len().to_le_bytes())?;
+                for entry in values.iter() {
+                    entry.decl.serialize(writer)?;
+                    entry.value.serialize(writer)?;
+                }
+                Ok(())
+            }
         }
     }
 
@@ -160,6 +182,18 @@ impl Value {
                     .map(|_| Value::deserialize(reader))
                     .collect::<Result<_, _>>()?;
                 Self::Array(ArrayInt::new(decl, values))
+            }
+            TUPLE_TAG => {
+                let value_count = parse!(usize);
+                let values = (0..value_count)
+                    .map(|_| -> Result<_, ReadError> {
+                        Ok(TupleEntry {
+                            decl: TypeDecl::deserialize(reader)?,
+                            value: Value::deserialize(reader)?,
+                        })
+                    })
+                    .collect::<Result<_, _>>()?;
+                Self::Tuple(Rc::new(RefCell::new(values)))
             }
             _ => todo!(),
         })
@@ -226,6 +260,21 @@ impl Value {
         }
     }
 
+    pub fn tuple_get(&self, idx: u64) -> Result<Value, EvalError> {
+        Ok(match self {
+            Value::Ref(rc) => rc.borrow().tuple_get(idx)?,
+            Value::Tuple(tuple) => {
+                let tuple_int = tuple.borrow();
+                tuple_int
+                    .get(idx as usize)
+                    .ok_or_else(|| EvalError::TupleOutOfBounds(idx as usize, tuple_int.len()))?
+                    .value
+                    .clone()
+            }
+            _ => return Err(EvalError::IndexNonArray),
+        })
+    }
+
     /// Recursively peels off references
     pub fn deref(self) -> EvalResult<Self> {
         Ok(match self {
@@ -233,5 +282,19 @@ impl Value {
             Value::ArrayRef(r, idx) => (*r.borrow()).values.eget(idx)?.clone(),
             _ => self,
         })
+    }
+}
+
+pub type TupleInt = Vec<TupleEntry>;
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct TupleEntry {
+    pub(crate) decl: TypeDecl,
+    pub(crate) value: Value,
+}
+
+impl TupleEntry {
+    pub fn value(&self) -> &Value {
+        &self.value
     }
 }

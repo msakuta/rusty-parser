@@ -6,7 +6,7 @@ use crate::{
     },
     interpreter::{eval, EvalContext, RunResult},
     parser::{ExprEnum, Expression, Statement},
-    value::ArrayInt,
+    value::{ArrayInt, TupleEntry},
     EvalError, TypeDecl, Value,
 };
 
@@ -432,6 +432,26 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> CompileResult<usize>
             })));
             Ok(compiler.find_or_create_literal(&val))
         }
+        ExprEnum::TupleLiteral(val) => {
+            let mut ctx = EvalContext::new();
+            let val = Value::Tuple(Rc::new(RefCell::new(
+                val.iter()
+                    .map(|v| {
+                        if let RunResult::Yield(y) =
+                            eval(v, &mut ctx).map_err(CompileError::EvalError)?
+                        {
+                            Ok(TupleEntry {
+                                decl: TypeDecl::from_value(&y),
+                                value: y,
+                            })
+                        } else {
+                            Err(CompileError::BreakInArrayLiteral)
+                        }
+                    })
+                    .collect::<Result<Vec<_>, _>>()?,
+            )));
+            Ok(compiler.find_or_create_literal(&val))
+        }
         ExprEnum::Variable(str) => {
             let local = compiler.locals.iter().rev().fold(None, |acc, rhs| {
                 if acc.is_some() {
@@ -617,6 +637,21 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> CompileResult<usize>
                 .bytecode
                 .push_inst(OpCode::Get, stk_ex as u8, arg as u16);
             Ok(arg)
+        }
+        ExprEnum::TupleIndex(ex, index) => {
+            let stk_ex = emit_expr(ex, compiler)?;
+            let stk_idx = compiler.find_or_create_literal(&Value::I64(*index as i64));
+            let stk_idx_copy = compiler.target_stack.len();
+            compiler.target_stack.push(Target::None);
+            compiler
+                .bytecode
+                .push_inst(OpCode::Move, stk_idx as u8, stk_idx_copy as u16);
+
+            compiler
+                .bytecode
+                .push_inst(OpCode::Get, stk_ex as u8, stk_idx_copy as u16);
+
+            Ok(stk_idx_copy)
         }
         ExprEnum::LT(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Lt, lhs, rhs)?),
         ExprEnum::GT(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Gt, lhs, rhs)?),

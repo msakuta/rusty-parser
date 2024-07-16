@@ -3,7 +3,9 @@ use crate::{type_decl::TypeDecl, Value};
 use nom::{
     branch::alt,
     bytes::complete::{tag, take_until},
-    character::complete::{alpha1, alphanumeric1, char, multispace0, multispace1, none_of, one_of},
+    character::complete::{
+        alpha1, alphanumeric1, char, digit1, multispace0, multispace1, none_of, one_of,
+    },
     combinator::{map_res, opt, recognize},
     error::ParseError,
     multi::{fold_many0, many0, many1, separated_list0, separated_list1},
@@ -85,11 +87,13 @@ pub(crate) enum ExprEnum<'a> {
     NumLiteral(Value),
     StrLiteral(String),
     ArrLiteral(Vec<Expression<'a>>),
+    TupleLiteral(Vec<Expression<'a>>),
     Variable(&'a str),
     Cast(Box<Expression<'a>>, TypeDecl),
     VarAssign(Box<Expression<'a>>, Box<Expression<'a>>),
     FnInvoke(&'a str, Vec<FnArg<'a>>),
     ArrIndex(Box<Expression<'a>>, Vec<Expression<'a>>),
+    TupleIndex(Box<Expression<'a>>, usize),
     Not(Box<Expression<'a>>),
     BitNot(Box<Expression<'a>>),
     Add(Box<Expression<'a>>, Box<Expression<'a>>),
@@ -188,22 +192,22 @@ pub(crate) fn var_ref(input: Span) -> IResult<Span, Expression> {
 }
 
 fn type_scalar(input: Span) -> IResult<Span, TypeDecl> {
-    let (r, type_) = opt(ws(alt((
+    let (r, type_) = ws(alt((
         tag("f64"),
         tag("f32"),
         tag("i64"),
         tag("i32"),
         tag("str"),
-    ))))(input)?;
+    )))(input)?;
     Ok((
         r,
-        match type_.map(|ty| *ty) {
-            Some("f64") | None => TypeDecl::F64,
-            Some("f32") => TypeDecl::F32,
-            Some("i32") => TypeDecl::I32,
-            Some("i64") => TypeDecl::I64,
-            Some("str") => TypeDecl::Str,
-            Some(unknown) => {
+        match *type_ {
+            "f64" => TypeDecl::F64,
+            "f32" => TypeDecl::F32,
+            "i32" => TypeDecl::I32,
+            "i64" => TypeDecl::I64,
+            "str" => TypeDecl::Str,
+            unknown => {
                 unreachable!("Type should have recognized by the parser: \"{}\"", unknown)
             }
         },
@@ -211,12 +215,23 @@ fn type_scalar(input: Span) -> IResult<Span, TypeDecl> {
 }
 
 fn type_array(input: Span) -> IResult<Span, TypeDecl> {
-    let (r, arr) = delimited(ws(char('[')), alt((type_array, type_scalar)), ws(char(']')))(input)?;
+    let (r, arr) = delimited(ws(char('[')), type_decl, ws(char(']')))(input)?;
     Ok((r, TypeDecl::Array(Box::new(arr))))
 }
 
+fn type_tuple(i: Span) -> IResult<Span, TypeDecl> {
+    let (r, _) = multispace0(i)?;
+    let (r, _open_par) = tag("(")(r)?;
+    let (r, (mut val, last)) = pair(many0(terminated(type_decl, tag(","))), opt(type_decl))(r)?;
+    let (r, _close_par) = tag(")")(r)?;
+    if let Some(last) = last {
+        val.push(last);
+    }
+    Ok((r, TypeDecl::Tuple(val)))
+}
+
 pub(crate) fn type_decl(input: Span) -> IResult<Span, TypeDecl> {
-    alt((type_array, type_scalar))(input)
+    alt((type_array, type_tuple, type_scalar))(input)
 }
 
 fn cast(i: Span) -> IResult<Span, Expression> {
@@ -297,8 +312,9 @@ fn numeric_literal_expression(input: Span) -> IResult<Span, Expression> {
 }
 
 fn str_literal(i: Span) -> IResult<Span, Expression> {
-    let (r0, _) = preceded(multispace0, char('\"'))(i)?;
-    let (r, val) = many0(none_of("\""))(r0)?;
+    let (r0, _) = multispace0(i)?;
+    let (r, _) = preceded(multispace0, char('\"'))(r0)?;
+    let (r, val) = many0(none_of("\""))(r)?;
     let (r, _) = terminated(char('"'), multispace0)(r)?;
     Ok((
         r,
@@ -309,7 +325,7 @@ fn str_literal(i: Span) -> IResult<Span, Expression> {
                     .replace("\\\\", "\\")
                     .replace("\\n", "\n"),
             ),
-            i,
+            calc_offset(r0, r),
         ),
     ))
 }
@@ -330,6 +346,24 @@ pub(crate) fn array_literal(i: Span) -> IResult<Span, Expression> {
         open_br.offset(&close_br) + close_br.len(),
     );
     Ok((r, Expression::new(ExprEnum::ArrLiteral(val), span)))
+}
+
+pub(crate) fn tuple_literal(i: Span) -> IResult<Span, Expression> {
+    let (r, _) = multispace0(i)?;
+    let (r, open_br) = tag("(")(r)?;
+    let (r, (mut val, last)) = pair(
+        many0(terminated(full_expression, tag(","))),
+        opt(full_expression),
+    )(r)?;
+    let (r, close_br) = tag(")")(r)?;
+    if let Some(last) = last {
+        val.push(last);
+    }
+    let span = i.subslice(
+        i.offset(&open_br),
+        open_br.offset(&close_br) + close_br.len(),
+    );
+    Ok((r, Expression::new(ExprEnum::TupleLiteral(val), span)))
 }
 
 // We parse any expr surrounded by parens, ignoring all whitespaces around those
@@ -421,6 +455,31 @@ pub(crate) fn array_index(i: Span) -> IResult<Span, Expression> {
     ))
 }
 
+pub(crate) fn tuple_index(i: Span) -> IResult<Span, Expression> {
+    let (r, prim) = primary_expression(i)?;
+    let (r, indices) = many1(ws(preceded(tag("."), digit1)))(r)?;
+    let prim_span = prim.span;
+    Ok((
+        r,
+        indices
+            .into_iter()
+            .fold(Ok(prim), |acc, v: Span| -> Result<_, _> {
+                Ok(Expression::new(
+                    ExprEnum::TupleIndex(
+                        Box::new(acc?),
+                        v.parse().map_err(|_| {
+                            nom::Err::Error(nom::error::Error {
+                                input: i,
+                                code: nom::error::ErrorKind::Digit,
+                            })
+                        })?,
+                    ),
+                    i.subslice(i.offset(&prim_span), prim_span.offset(&r)),
+                ))
+            })?,
+    ))
+}
+
 pub(crate) fn primary_expression(i: Span) -> IResult<Span, Expression> {
     alt((
         numeric_literal_expression,
@@ -430,11 +489,12 @@ pub(crate) fn primary_expression(i: Span) -> IResult<Span, Expression> {
         var_ref,
         parens,
         brace_expr,
+        tuple_literal,
     ))(i)
 }
 
 fn postfix_expression(i: Span) -> IResult<Span, Expression> {
-    alt((func_invoke, array_index, primary_expression))(i)
+    alt((func_invoke, array_index, tuple_index, primary_expression))(i)
 }
 
 fn not(i: Span) -> IResult<Span, Expression> {
