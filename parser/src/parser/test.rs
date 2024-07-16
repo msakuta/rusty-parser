@@ -723,14 +723,35 @@ fn test_chained_tuple_index() {
         Expression::new(
             TupleIndex(
                 Box::new(Expression::new(
-                    TupleIndex(
-                        var_r(span.subslice(0, 1)),
-                        1,
-                    ),
+                    TupleIndex(var_r(span.subslice(0, 1)), 1,),
                     span
                 )),
                 3
             ),
+            span
+        )
+    );
+}
+
+#[test]
+fn test_non_tuple() {
+    let span = Span::new("(42)");
+    assert_eq!(
+        full_expression(span).finish().unwrap().1,
+        Expression::new(NumLiteral(Value::I64(42)), span)
+    );
+}
+
+#[test]
+fn test_single_tuple() {
+    let span = Span::new("(42,)");
+    assert_eq!(
+        full_expression(span).finish().unwrap().1,
+        Expression::new(
+            TupleLiteral(vec![Expression::new(
+                NumLiteral(Value::I64(42)),
+                span.subslice(1, 2)
+            )]),
             span
         )
     );
