@@ -33,6 +33,7 @@ pub enum EvalError {
     VarNotFound(String),
     FnNotFound(String),
     ArrayOutOfBounds(usize, usize),
+    TupleOutOfBounds(usize, usize),
     IndexNonArray,
     NeedRef(String),
     NoMatchingArg(String, String),
@@ -73,6 +74,10 @@ impl std::fmt::Display for EvalError {
             Self::ArrayOutOfBounds(idx, len) => write!(
                 f,
                 "ArrayRef index out of range: {idx} is larger than array length {len}"
+            ),
+            Self::TupleOutOfBounds(idx, len) => write!(
+                f,
+                "Tuple index out of range: {idx} is larger than tuple length {len}"
             ),
             Self::IndexNonArray => write!(f, "array index must be called for an array"),
             Self::NeedRef(name) => write!(

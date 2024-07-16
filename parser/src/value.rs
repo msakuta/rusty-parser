@@ -262,10 +262,14 @@ impl Value {
 
     pub fn tuple_get(&self, idx: u64) -> Result<Value, EvalError> {
         Ok(match self {
-            Value::Ref(rc) => rc.borrow().array_get_ref(idx)?,
+            Value::Ref(rc) => rc.borrow().tuple_get(idx)?,
             Value::Tuple(tuple) => {
                 let tuple_int = tuple.borrow();
-                tuple_int.eget(idx as usize)?.value.clone()
+                tuple_int
+                    .get(idx as usize)
+                    .ok_or_else(|| EvalError::TupleOutOfBounds(idx as usize, tuple_int.len()))?
+                    .value
+                    .clone()
             }
             _ => return Err(EvalError::IndexNonArray),
         })
