@@ -25,8 +25,6 @@ js-sys = "0.3.49"
 libm = "0.1.4"
 
 parser = { path = "../parser" }
-nom = "6.1.2"
-syn = "1.0.64"
 wasm-bindgen-macro-support = "0.2.72"
 
 [dev-dependencies]
