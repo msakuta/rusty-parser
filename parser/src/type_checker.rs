@@ -129,7 +129,7 @@ where
                 .first()
                 .map(|e| tc_expr(e, ctx))
                 .unwrap_or(Ok(TypeDecl::Any))?;
-            TypeDecl::Array(Box::new(ty))
+            TypeDecl::Array(Box::new(ty), Some(val.len()))
         }
         ExprEnum::TupleLiteral(val) => {
             let ty = val
@@ -219,7 +219,7 @@ where
                     ));
                 }
             };
-            if let TypeDecl::Array(inner) = tc_expr(ex, ctx)? {
+            if let TypeDecl::Array(inner, _) = tc_expr(ex, ctx)? {
                 *inner.clone()
             } else {
                 return Err(TypeCheckError::new(
@@ -305,8 +305,20 @@ fn tc_coerce_type<'src>(
         (I64 | Integer, I64) => I64,
         (I32 | Integer, I32) => I32,
         (Str, Str) => Str,
-        (Array(v_inner), Array(t_inner)) => {
-            Array(Box::new(tc_coerce_type(v_inner, t_inner, span, ctx)?))
+        (Array(v_inner, v_len), Array(t_inner, t_len)) => {
+            if let Some((v_len, t_len)) = v_len.zip(*t_len) {
+                if v_len < t_len {
+                    return Err(TypeCheckError::new(
+                        "Assignee array is smaller than assigner".to_string(),
+                        span,
+                        ctx.source_file,
+                    ));
+                }
+            }
+            Array(
+                Box::new(tc_coerce_type(v_inner, t_inner, span, ctx)?),
+                *t_len,
+            )
         }
         (Float, Float) => Float,
         (Integer, Integer) => Integer,
@@ -354,9 +366,21 @@ fn tc_cast_type<'src>(
         (I32 | I64 | F32 | F64 | Integer | Float, I64) => I64,
         (I32 | I64 | F32 | F64 | Integer | Float, I32) => I32,
         (Str, Str) => Str,
-        (Array(v_inner), Array(t_inner)) => {
+        (Array(v_inner, v_len), Array(t_inner, t_len)) => {
+            if let Some((v_len, t_len)) = v_len.zip(*t_len) {
+                if v_len < t_len {
+                    return Err(TypeCheckError::new(
+                        "Assignee array is smaller than assigner".to_string(),
+                        span,
+                        ctx.source_file,
+                    ));
+                }
+            }
             // Array doesn't recursively type cast for performance reasons.
-            Array(Box::new(tc_coerce_type(v_inner, t_inner, span, ctx)?))
+            Array(
+                Box::new(tc_coerce_type(v_inner, t_inner, span, ctx)?),
+                *t_len,
+            )
         }
         (I32 | I64 | F32 | F64 | Integer | Float, Float) => Float,
         (I32 | I64 | F32 | F64 | Integer | Float, Integer) => Integer,
@@ -500,8 +524,18 @@ fn binary_op_type(lhs: &TypeDecl, rhs: &TypeDecl) -> Result<TypeDecl, ()> {
         (Float, F32) | (F32, Float) => F32,
         (Integer, I64) | (I64, Integer) => I64,
         (Integer, I32) | (I32, Integer) => I32,
-        (Array(lhs), Array(rhs)) => {
-            return Ok(Array(Box::new(binary_op_type(lhs, rhs)?)));
+        (Array(lhs, lhs_len), Array(rhs, rhs_len)) => {
+            if let Some((lhs_len, rhs_len)) = lhs_len.zip(*rhs_len) {
+                if lhs_len < rhs_len {
+                    return Err(
+                        (), // TypeCheckError::new("Binary operation between an array with different length".to_string(), span, ctx.source_file)
+                    );
+                }
+            }
+            return Ok(Array(
+                Box::new(binary_op_type(lhs, rhs)?),
+                lhs_len.or(*rhs_len),
+            ));
         }
         _ => return Err(()),
     };
@@ -535,7 +569,14 @@ fn binary_cmp_type(lhs: &TypeDecl, rhs: &TypeDecl) -> Result<TypeDecl, ()> {
         (Integer, Integer) => I32,
         (Float, F64 | F32) | (F64 | F32, Float) => I32,
         (Integer, I64 | I32) | (I64 | I32, Integer) => I32,
-        (Array(lhs), Array(rhs)) => {
+        (Array(lhs, lhs_len), Array(rhs, rhs_len)) => {
+            if let Some((lhs_len, rhs_len)) = lhs_len.zip(*rhs_len) {
+                if lhs_len < rhs_len {
+                    return Err(
+                        (), // TypeCheckError::new("Binary operation between an array with different length".to_string(), span, ctx.source_file)
+                    );
+                }
+            }
             return binary_cmp_type(lhs, rhs);
         }
         _ => return Err(()),

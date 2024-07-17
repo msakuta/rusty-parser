@@ -800,3 +800,42 @@ fn test_tuple_decl() {
         )
     );
 }
+
+#[test]
+fn test_array_decl() {
+    let span = Span::new("var a: [i32] = [1, 2];");
+    assert_eq!(
+        statement(span).finish().unwrap().1,
+        Statement::VarDecl(
+            &*span.subslice(4, 1),
+            TypeDecl::Array(Box::new(TypeDecl::I32), None),
+            Some(Expression::new(
+                ArrLiteral(vec![
+                    Expression::new(NumLiteral(Value::I64(1)), span.subslice(16, 1)),
+                    Expression::new(NumLiteral(Value::I64(2)), span.subslice(19, 1)),
+                ]),
+                span.subslice(15, 6)
+            ))
+        )
+    );
+}
+
+#[test]
+fn test_fixed_sz_array() {
+    let span = Span::new("var a: [i32; 3] = [1, 2, 3];");
+    assert_eq!(
+        statement(span).finish().unwrap().1,
+        Statement::VarDecl(
+            &*span.subslice(4, 1),
+            TypeDecl::Array(Box::new(TypeDecl::I32), Some(3)),
+            Some(Expression::new(
+                ArrLiteral(vec![
+                    Expression::new(NumLiteral(Value::I64(1)), span.subslice(19, 1)),
+                    Expression::new(NumLiteral(Value::I64(2)), span.subslice(22, 1)),
+                    Expression::new(NumLiteral(Value::I64(3)), span.subslice(25, 1)),
+                ]),
+                span.subslice(18, 9)
+            ))
+        )
+    );
+}

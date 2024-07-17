@@ -355,12 +355,20 @@ pub fn coerce_type(value: &Value, target: &TypeDecl) -> Result<Value, EvalError>
         TypeDecl::I64 => Value::I64(coerce_i64(value)?),
         TypeDecl::I32 => Value::I32(coerce_i64(value)? as i32),
         TypeDecl::Str => Value::Str(coerce_str(value)?),
-        TypeDecl::Array(inner) => {
+        TypeDecl::Array(inner, len) => {
             if let Value::Array(array) = value {
+                let array = array.borrow();
+                if let Some(len) = len {
+                    if *len != array.values.len() {
+                        return Err(EvalError::CoerceError(
+                            inner.to_string(),
+                            TypeDecl::from_value(&value).to_string(),
+                        ));
+                    }
+                }
                 Value::Array(ArrayInt::new(
                     (**inner).clone(),
                     array
-                        .borrow()
                         .values
                         .iter()
                         .map(|value_elem| -> Result<_, EvalError> {
@@ -998,7 +1006,7 @@ pub(crate) fn std_functions<'src, 'native>() -> HashMap<String, FuncDef<'src, 'n
             &s_len,
             vec![ArgDecl::new(
                 "array",
-                TypeDecl::Array(Box::new(TypeDecl::Any)),
+                TypeDecl::Array(Box::new(TypeDecl::Any), None),
             )],
             Some(TypeDecl::I64),
         ),
@@ -1008,7 +1016,7 @@ pub(crate) fn std_functions<'src, 'native>() -> HashMap<String, FuncDef<'src, 'n
         FuncDef::new_native(
             &s_push,
             vec![
-                ArgDecl::new("array", TypeDecl::Array(Box::new(TypeDecl::Any))),
+                ArgDecl::new("array", TypeDecl::Array(Box::new(TypeDecl::Any), None)),
                 ArgDecl::new("value", TypeDecl::Any),
             ],
             None,

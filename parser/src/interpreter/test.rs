@@ -550,11 +550,18 @@ fn array_decl_test() {
     );
     assert_eq!(
         type_spec(Span::new(": [i32]")).finish().unwrap().1,
-        TypeDecl::Array(Box::new(TypeDecl::I32))
+        TypeDecl::Array(Box::new(TypeDecl::I32), None)
     );
     assert_eq!(
         type_spec(Span::new(": [[f32]]")).finish().unwrap().1,
-        TypeDecl::Array(Box::new(TypeDecl::Array(Box::new(TypeDecl::F32))))
+        TypeDecl::Array(
+            Box::new(TypeDecl::Array(Box::new(TypeDecl::F32), None)),
+            None
+        )
+    );
+    assert_eq!(
+        type_spec(Span::new(": [f32; 3]")).finish().unwrap().1,
+        TypeDecl::Array(Box::new(TypeDecl::F32), Some(3))
     );
 }
 
@@ -648,7 +655,10 @@ fn fn_array_decl_test() {
         func_decl(span).finish().unwrap().1,
         Statement::FnDecl {
             name: "f",
-            args: vec![ArgDecl::new("a", TypeDecl::Array(Box::new(TypeDecl::I32)))],
+            args: vec![ArgDecl::new(
+                "a",
+                TypeDecl::Array(Box::new(TypeDecl::I32), None)
+            )],
             ret_type: None,
             stmts: Rc::new(vec![Statement::Expression(Expression::new(
                 VarAssign(

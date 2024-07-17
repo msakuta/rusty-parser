@@ -215,8 +215,15 @@ fn type_scalar(input: Span) -> IResult<Span, TypeDecl> {
 }
 
 fn type_array(input: Span) -> IResult<Span, TypeDecl> {
-    let (r, arr) = delimited(ws(char('[')), type_decl, ws(char(']')))(input)?;
-    Ok((r, TypeDecl::Array(Box::new(arr))))
+    let (r, (arr, len)) = delimited(
+        ws(char('[')),
+        pair(type_decl, opt(preceded(tag(";"), ws(decimal)))),
+        ws(char(']')),
+    )(input)?;
+    Ok((
+        r,
+        TypeDecl::Array(Box::new(arr), len.and_then(|len| len.parse().ok())),
+    ))
 }
 
 fn type_tuple(i: Span) -> IResult<Span, TypeDecl> {

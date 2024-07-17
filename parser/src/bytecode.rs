@@ -165,17 +165,20 @@ fn read_str(reader: &mut impl Read) -> Result<String, ReadError> {
     Ok(String::from_utf8(buf)?)
 }
 
-fn write_bool(b: bool, writer: &mut impl Write) -> std::io::Result<()> {
+pub(crate) fn write_bool(b: bool, writer: &mut impl Write) -> std::io::Result<()> {
     writer.write_all(&[if b { 1u8 } else { 0u8 }])
 }
 
-fn read_bool(reader: &mut impl Read) -> Result<bool, ReadError> {
+pub(crate) fn read_bool(reader: &mut impl Read) -> Result<bool, ReadError> {
     let mut buf = [0u8; 1];
     reader.read_exact(&mut buf)?;
     Ok(buf[0] != 0)
 }
 
-fn write_opt_value(value: &Option<Value>, writer: &mut impl Write) -> std::io::Result<()> {
+pub(crate) fn write_opt_value(
+    value: &Option<Value>,
+    writer: &mut impl Write,
+) -> std::io::Result<()> {
     write_bool(value.is_some(), writer)?;
     if let Some(value) = value {
         value.serialize(writer)?;
@@ -183,7 +186,7 @@ fn write_opt_value(value: &Option<Value>, writer: &mut impl Write) -> std::io::R
     Ok(())
 }
 
-fn read_opt_value(reader: &mut impl Read) -> Result<Option<Value>, ReadError> {
+pub(crate) fn read_opt_value(reader: &mut impl Read) -> Result<Option<Value>, ReadError> {
     let has_value = read_bool(reader)?;
     Ok(if has_value {
         Some(Value::deserialize(reader)?)
