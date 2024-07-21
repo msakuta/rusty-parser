@@ -44,6 +44,7 @@ pub enum EvalError {
     NoMainFound,
     NonNameFnRef(String),
     CallStackUndeflow,
+    IncompatibleArrayLength(usize, usize),
 }
 
 impl std::error::Error for EvalError {}
@@ -100,6 +101,10 @@ impl std::fmt::Display for EvalError {
                 "Function can be only specified by a name (yet), but got {val}"
             ),
             Self::CallStackUndeflow => write!(f, "Call stack underflow!"),
+            Self::IncompatibleArrayLength(dst, src) => write!(
+                f,
+                "Array length is incompatible; tried to assign {src} to {dst}"
+            ),
         }
     }
 }
@@ -360,10 +365,7 @@ pub fn coerce_type(value: &Value, target: &TypeDecl) -> Result<Value, EvalError>
                 let array = array.borrow();
                 if let Some(len) = len {
                     if *len != array.values.len() {
-                        return Err(EvalError::CoerceError(
-                            inner.to_string(),
-                            TypeDecl::from_value(&value).to_string(),
-                        ));
+                        return Err(EvalError::IncompatibleArrayLength(*len, array.values.len()));
                     }
                 }
                 Value::Array(ArrayInt::new(

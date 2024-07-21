@@ -167,7 +167,7 @@ where
                 .args();
 
             let args_decl = if args.len() <= fn_args.len() {
-                let fn_args = fn_args[args.len()..].to_vec();
+                let fn_args = fn_args[..args.len()].to_vec();
 
                 fn_args
                     .into_iter()
