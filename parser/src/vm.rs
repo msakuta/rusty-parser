@@ -144,7 +144,7 @@ fn interpret_fn(
                 }
                 let val = match vm.get(inst.arg0) {
                     Value::Ref(aref) => (*aref.borrow()).clone(),
-                    Value::ArrayRef(aref, idx) => (*aref.borrow()).values[*idx].clone(),
+                    Value::ArrayRef(aref, idx) => (*aref.borrow()).eget(*idx)?,
                     v => v.clone(),
                 };
                 let target = vm.get_mut(inst.arg1);
@@ -152,7 +152,7 @@ fn interpret_fn(
                     Value::Ref(vref) => {
                         vref.replace(val);
                     }
-                    Value::ArrayRef(vref, idx) => vref.borrow_mut().values[*idx] = val,
+                    Value::ArrayRef(vref, idx) => vref.borrow_mut().set(*idx, &val)?,
                     _ => vm.set(inst.arg1, val),
                 }
             }
@@ -269,7 +269,7 @@ fn interpret_fn(
                     }
                     Value::ArrayRef(a, idx) => {
                         let a = a.borrow();
-                        let cloned = a.values.eget(*idx)?.clone();
+                        let cloned = a.eget(*idx)?;
                         drop(a);
                         *target = cloned;
                     }

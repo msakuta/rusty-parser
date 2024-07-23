@@ -43,16 +43,10 @@ fn s_puts(vals: &[Value]) -> Result<Value, EvalError> {
                 Value::I64(val) => wasm_print(&format!("{}", val)),
                 Value::I32(val) => wasm_print(&format!("{}", val)),
                 Value::Str(val) => wasm_print(&format!("{}", val)),
-                Value::Array(val) => puts_inner(
-                    &val.borrow()
-                        .values()
-                        .iter()
-                        .map(|v| v.clone())
-                        .collect::<Vec<_>>(),
-                ),
+                Value::Array(val) => puts_inner(&val.borrow().values().collect::<Vec<_>>()),
                 Value::Ref(r) => puts_inner(&[r.borrow().clone()]),
                 Value::ArrayRef(r, idx) => {
-                    if let Some(val) = r.borrow().values().get(*idx) {
+                    if let Some(val) = r.borrow().get(*idx) {
                         puts_inner(&[val.clone()]);
                     }
                 }

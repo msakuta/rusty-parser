@@ -415,10 +415,9 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> CompileResult<usize>
         ExprEnum::StrLiteral(val) => Ok(compiler.find_or_create_literal(&Value::Str(val.clone()))),
         ExprEnum::ArrLiteral(val) => {
             let mut ctx = EvalContext::new();
-            let val = Value::Array(Rc::new(RefCell::new(ArrayInt {
-                type_decl: TypeDecl::Any,
-                values: val
-                    .iter()
+            let val = Value::Array(ArrayInt::new(
+                TypeDecl::Any,
+                val.iter()
                     .map(|v| {
                         if let RunResult::Yield(y) =
                             eval(v, &mut ctx).map_err(CompileError::EvalError)?
@@ -429,7 +428,7 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> CompileResult<usize>
                         }
                     })
                     .collect::<Result<Vec<_>, _>>()?,
-            })));
+            ));
             Ok(compiler.find_or_create_literal(&val))
         }
         ExprEnum::TupleLiteral(val) => {

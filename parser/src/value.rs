@@ -5,25 +5,142 @@ use std::{
 };
 
 use crate::{
-    interpreter::{EGetExt, EvalResult},
+    interpreter::{coerce_f32, coerce_f64, coerce_i32, coerce_i64, EGetExt, EvalResult},
     type_decl::TypeDecl,
     type_tags::*,
     EvalError, ReadError,
 };
 
+/// An internal payload to pack homogeneously typed array for primitive types.
+#[derive(Debug, PartialEq, Clone)]
+enum ArrayBuf {
+    F64(Vec<f64>),
+    F32(Vec<f32>),
+    I64(Vec<i64>),
+    I32(Vec<i32>),
+    /// An array payload with arbitrary value type
+    Values(Vec<Value>),
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct ArrayInt {
     pub(crate) type_decl: TypeDecl,
-    pub(crate) values: Vec<Value>,
+    pub(crate) values: ArrayBuf,
 }
 
 impl ArrayInt {
     pub(crate) fn new(type_decl: TypeDecl, values: Vec<Value>) -> Rc<RefCell<Self>> {
+        let values = match type_decl {
+            TypeDecl::F64 => values
+                .iter()
+                .map(coerce_f64)
+                .collect::<Result<_, _>>()
+                .map(ArrayBuf::F64)
+                .unwrap_or_else(|_| ArrayBuf::Values(values)),
+            TypeDecl::F32 => values
+                .iter()
+                .map(coerce_f32)
+                .collect::<Result<_, _>>()
+                .map(ArrayBuf::F32)
+                .unwrap_or_else(|_| ArrayBuf::Values(values)),
+            TypeDecl::I64 => values
+                .iter()
+                .map(coerce_i64)
+                .collect::<Result<_, _>>()
+                .map(ArrayBuf::I64)
+                .unwrap_or_else(|_| ArrayBuf::Values(values)),
+            TypeDecl::I32 => values
+                .iter()
+                .map(coerce_i32)
+                .collect::<Result<_, _>>()
+                .map(ArrayBuf::I32)
+                .unwrap_or_else(|_| ArrayBuf::Values(values)),
+            _ => ArrayBuf::Values(values),
+        };
         Rc::new(RefCell::new(Self { type_decl, values }))
     }
 
-    pub fn values(&self) -> &[Value] {
-        &self.values
+    pub fn values<'a>(&'a self) -> Box<dyn Iterator<Item = Value> + 'a> {
+        match &self.values {
+            ArrayBuf::F64(values) => Box::new(values.iter().map(|v| Value::F64(*v))),
+            ArrayBuf::F32(values) => Box::new(values.iter().map(|v| Value::F32(*v))),
+            ArrayBuf::I64(values) => Box::new(values.iter().map(|v| Value::I64(*v))),
+            ArrayBuf::I32(values) => Box::new(values.iter().map(|v| Value::I32(*v))),
+            ArrayBuf::Values(values) => Box::new(values.iter().cloned()),
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        match &self.values {
+            ArrayBuf::F64(values) => values.len(),
+            ArrayBuf::F32(values) => values.len(),
+            ArrayBuf::I64(values) => values.len(),
+            ArrayBuf::I32(values) => values.len(),
+            ArrayBuf::Values(values) => values.len(),
+        }
+    }
+
+    /// Unfortunately we need to return a copy of the Value
+    pub fn get(&self, i: usize) -> Option<Value> {
+        match &self.values {
+            ArrayBuf::F64(values) => values.get(i).map(|v| Value::F64(*v)),
+            ArrayBuf::F32(values) => values.get(i).map(|v| Value::F32(*v)),
+            ArrayBuf::I64(values) => values.get(i).map(|v| Value::I64(*v)),
+            ArrayBuf::I32(values) => values.get(i).map(|v| Value::I32(*v)),
+            ArrayBuf::Values(values) => values.get(i).cloned(),
+        }
+    }
+
+    /// `get()` that returns EvalResult instead of an Option.
+    pub fn eget(&self, i: usize) -> EvalResult<Value> {
+        self.get(i)
+            .ok_or_else(|| EvalError::ArrayOutOfBounds(self.len(), i))
+    }
+
+    /// Try to coerce the type to array element type and assign to the slot `i`.
+    ///
+    /// Unfortunately we can't return a mutable reference to a unified type like `get_mut`, because the internal
+    /// representation can be different from individual Value.
+    pub fn set(&mut self, i: usize, value: &Value) -> EvalResult<()> {
+        match &mut self.values {
+            ArrayBuf::F64(values) => {
+                *values.eget_mut(i)? = coerce_f64(&value)?;
+            }
+            ArrayBuf::F32(values) => {
+                *values.eget_mut(i)? = coerce_f32(&value)?;
+            }
+            ArrayBuf::I64(values) => {
+                *values.eget_mut(i)? = coerce_i64(&value)?;
+            }
+            ArrayBuf::I32(values) => {
+                *values.eget_mut(i)? = coerce_i32(&value)?;
+            }
+            ArrayBuf::Values(values) => {
+                *values.eget_mut(i)? = value.clone();
+            }
+        }
+        Ok(())
+    }
+
+    pub fn push(&mut self, value: &Value) -> EvalResult<()> {
+        match &mut self.values {
+            ArrayBuf::F64(values) => {
+                values.push(coerce_f64(&value)?);
+            }
+            ArrayBuf::F32(values) => {
+                values.push(coerce_f32(&value)?);
+            }
+            ArrayBuf::I64(values) => {
+                values.push(coerce_i64(&value)?);
+            }
+            ArrayBuf::I32(values) => {
+                values.push(coerce_i32(&value)?);
+            }
+            ArrayBuf::Values(values) => {
+                values.push(value.clone());
+            }
+        }
+        Ok(())
     }
 }
 
@@ -57,7 +174,7 @@ impl std::fmt::Display for Value {
             Self::Array(v) => write!(
                 f,
                 "[{}]",
-                &v.borrow().values.iter().fold("".to_string(), |acc, cur| {
+                &v.borrow().values().fold("".to_string(), |acc, cur| {
                     if acc.is_empty() {
                         cur.to_string()
                     } else {
@@ -67,7 +184,7 @@ impl std::fmt::Display for Value {
             ),
             Self::Ref(v) => write!(f, "&{}", v.borrow()),
             Self::ArrayRef(v, idx) => {
-                if let Some(v) = (*v.borrow()).values.get(*idx) {
+                if let Some(v) = (*v.borrow()).get(*idx) {
                     v.fmt(f)
                 } else {
                     write!(f, "Array index out of range")
@@ -110,14 +227,15 @@ impl Value {
                 Ok(())
             }
             Self::Array(rc) => {
+                let borrow = rc.borrow();
                 let ArrayInt {
                     type_decl: decl,
                     values,
-                } = &rc.borrow() as &ArrayInt;
+                } = &borrow as &ArrayInt;
                 writer.write_all(&ARRAY_TAG.to_le_bytes())?;
-                writer.write_all(&values.len().to_le_bytes())?;
+                writer.write_all(&borrow.len().to_le_bytes())?;
                 decl.serialize(writer)?;
-                for value in values {
+                for value in borrow.values() {
                     value.serialize(writer)?;
                 }
                 Ok(())
@@ -128,7 +246,7 @@ impl Value {
                 Ok(())
             }
             Self::ArrayRef(val, idx) => {
-                if let Some(v) = (*val.borrow()).values.get(*idx) {
+                if let Some(v) = (*val.borrow()).get(*idx) {
                     writer.write_all(&REF_TAG.to_le_bytes())?;
                     v.serialize(writer)?;
                     Ok(())
@@ -203,7 +321,7 @@ impl Value {
     /// array index will return a reference.
     fn _array_assign(&mut self, idx: usize, value: Value) -> EvalResult<()> {
         if let Value::Array(array) = self {
-            array.borrow_mut().values[idx] = value.deref()?;
+            array.borrow_mut().set(idx, &value.deref()?);
         } else {
             return Err(EvalError::IndexNonArray);
         }
@@ -213,7 +331,7 @@ impl Value {
     fn _array_get(&self, idx: u64) -> EvalResult<Value> {
         match self {
             Value::Ref(rc) => rc.borrow()._array_get(idx),
-            Value::Array(array) => Ok(array.borrow_mut().values.eget(idx as usize)?.clone()),
+            Value::Array(array) => Ok(array.borrow_mut().eget(idx as usize)?.clone()),
             _ => Err(EvalError::IndexNonArray),
         }
     }
@@ -223,18 +341,15 @@ impl Value {
             Value::Ref(rc) => rc.borrow().array_get_ref(idx)?,
             Value::Array(array) => {
                 let array_int = array.borrow();
-                if (idx as usize) < array_int.values.len() {
+                if (idx as usize) < array_int.len() {
                     Value::ArrayRef(array.clone(), idx as usize)
                 } else {
-                    return Err(EvalError::ArrayOutOfBounds(
-                        idx as usize,
-                        array_int.values.len(),
-                    ));
+                    return Err(EvalError::ArrayOutOfBounds(idx as usize, array_int.len()));
                 }
             }
             Value::ArrayRef(rc, idx2) => {
                 let array_int = rc.borrow();
-                array_int.values.eget(*idx2)?.array_get_ref(idx)?
+                array_int.eget(*idx2)?.array_get_ref(idx)?
             }
             _ => return Err(EvalError::IndexNonArray),
         })
@@ -244,7 +359,7 @@ impl Value {
         match self {
             Value::Ref(r) => r.borrow_mut().array_push(value),
             Value::Array(array) => {
-                array.borrow_mut().values.push(value.deref()?);
+                array.borrow_mut().push(&value.deref()?)?;
                 Ok(())
             }
             _ => Err("push() must be called for an array".to_string().into()),
@@ -255,7 +370,7 @@ impl Value {
     pub fn array_len(&self) -> EvalResult<usize> {
         match self {
             Value::Ref(rc) => rc.borrow().array_len(),
-            Value::Array(array) => Ok(array.borrow().values.len()),
+            Value::Array(array) => Ok(array.borrow().len()),
             _ => Err("len() must be called for an array".to_string().into()),
         }
     }
@@ -279,7 +394,7 @@ impl Value {
     pub fn deref(self) -> EvalResult<Self> {
         Ok(match self {
             Value::Ref(r) => r.borrow().clone().deref()?,
-            Value::ArrayRef(r, idx) => (*r.borrow()).values.eget(idx)?.clone(),
+            Value::ArrayRef(r, idx) => (*r.borrow()).eget(idx)?.clone(),
             _ => self,
         })
     }

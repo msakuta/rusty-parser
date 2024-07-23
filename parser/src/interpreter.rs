@@ -144,7 +144,7 @@ fn unwrap_deref(e: RunResult) -> EvalResult<RunResult> {
         }
         RunResult::Yield(Value::ArrayRef(a, idx)) => {
             let a = a.borrow();
-            let value = a.values.eget(*idx)?;
+            let value = a.eget(*idx)?;
             return Ok(RunResult::Yield(value.clone()));
         }
         RunResult::Break => return Ok(RunResult::Break),
@@ -174,10 +174,10 @@ pub(crate) fn binary_op_str(
         (Value::Ref(lhs), ref rhs) => binary_op_str(&lhs.borrow(), rhs, d, i, s)?,
         (ref lhs, Value::Ref(rhs)) => binary_op_str(lhs, &rhs.borrow(), d, i, s)?,
         (Value::ArrayRef(lhs, idx), ref rhs) => {
-            binary_op_str(lhs.borrow().values.eget(*idx)?, rhs, d, i, s)?
+            binary_op_str(&lhs.borrow().eget(*idx)?, rhs, d, i, s)?
         }
         (ref lhs, Value::ArrayRef(rhs, idx)) => {
-            binary_op_str(lhs, rhs.borrow().values.eget(*idx)?, d, i, s)?
+            binary_op_str(lhs, &rhs.borrow().eget(*idx)?, d, i, s)?
         }
         (Value::F64(lhs), rhs) => Value::F64(d(*lhs, coerce_f64(&rhs)?)?),
         (lhs, Value::F64(rhs)) => Value::F64(d(coerce_f64(&lhs)?, *rhs)?),
@@ -243,6 +243,17 @@ pub(crate) fn coerce_f64(a: &Value) -> EvalResult<f64> {
     })
 }
 
+pub(crate) fn coerce_f32(a: &Value) -> EvalResult<f32> {
+    Ok(match a {
+        Value::F64(v) => *v as f32,
+        Value::F32(v) => *v as f32,
+        Value::I64(v) => *v as f32,
+        Value::I32(v) => *v as f32,
+        Value::Ref(r) => coerce_f32(&r.borrow())?,
+        _ => 0.,
+    })
+}
+
 pub(crate) fn coerce_i64(a: &Value) -> EvalResult<i64> {
     Ok(match a {
         Value::F64(v) => *v as i64,
@@ -250,6 +261,17 @@ pub(crate) fn coerce_i64(a: &Value) -> EvalResult<i64> {
         Value::I64(v) => *v as i64,
         Value::I32(v) => *v as i64,
         Value::Ref(r) => coerce_i64(&r.borrow())?,
+        _ => 0,
+    })
+}
+
+pub(crate) fn coerce_i32(a: &Value) -> EvalResult<i32> {
+    Ok(match a {
+        Value::F64(v) => *v as i32,
+        Value::F32(v) => *v as i32,
+        Value::I64(v) => *v as i32,
+        Value::I32(v) => *v as i32,
+        Value::Ref(r) => coerce_i32(&r.borrow())?,
         _ => 0,
     })
 }
@@ -278,13 +300,11 @@ fn _coerce_var(value: &Value, target: &Value) -> Result<Value, EvalError> {
         Value::I32(_) => Value::I32(coerce_i64(value)? as i32),
         Value::Str(_) => Value::Str(coerce_str(value)?),
         Value::Array(array) => {
-            let ArrayInt {
-                type_decl: inner_type,
-                values: inner,
-            } = &array.borrow() as &ArrayInt;
-            if inner.len() == 0 {
+            let borrow = array.borrow();
+            let inner_type = &borrow.type_decl;
+            if borrow.len() == 0 {
                 if let Value::Array(array) = value {
-                    if array.borrow().values.len() == 0 {
+                    if borrow.len() == 0 {
                         return Ok(value.clone());
                     }
                 }
@@ -298,9 +318,8 @@ fn _coerce_var(value: &Value, target: &Value) -> Result<Value, EvalError> {
                         inner_type.clone(),
                         array
                             .borrow()
-                            .values
-                            .iter()
-                            .map(|val| -> EvalResult<_> { Ok(coerce_type(val, inner_type)?) })
+                            .values()
+                            .map(|val| -> EvalResult<_> { Ok(coerce_type(&val, inner_type)?) })
                             .collect::<Result<_, _>>()?,
                     ))
                 } else {
@@ -364,17 +383,16 @@ pub fn coerce_type(value: &Value, target: &TypeDecl) -> Result<Value, EvalError>
             if let Value::Array(array) = value {
                 let array = array.borrow();
                 if let Some(len) = len {
-                    if *len != array.values.len() {
-                        return Err(EvalError::IncompatibleArrayLength(*len, array.values.len()));
+                    if *len != array.len() {
+                        return Err(EvalError::IncompatibleArrayLength(*len, array.len()));
                     }
                 }
                 Value::Array(ArrayInt::new(
                     (**inner).clone(),
                     array
-                        .values
-                        .iter()
+                        .values()
                         .map(|value_elem| -> Result<_, EvalError> {
-                            Ok(coerce_type(value_elem, inner)?)
+                            Ok(coerce_type(&value_elem, inner)?)
                         })
                         .collect::<Result<Vec<_>, _>>()?,
                 ))
@@ -465,9 +483,8 @@ where
                 }
                 RunResult::Yield(Value::ArrayRef(rc, idx)) => {
                     let mut array_int = rc.borrow_mut();
-                    let mref = array_int.values.eget_mut(idx)?;
                     let rhs_value = unwrap_run!(eval(rhs, ctx)?);
-                    *mref = rhs_value.clone();
+                    array_int.set(idx, &rhs_value);
                     rhs_value
                 }
                 _ => {
@@ -714,11 +731,11 @@ pub(crate) fn s_print(vals: &[Value]) -> EvalResult<Value> {
             Value::Str(val) => print!("{}", val),
             Value::Array(val) => {
                 print!("[");
-                for (i, val) in val.borrow().values.iter().enumerate() {
+                for (i, val) in val.borrow().values().enumerate() {
                     if i != 0 {
                         print!(", ");
                     }
-                    print_inner(val)?;
+                    print_inner(&val)?;
                 }
                 print!("]");
             }
@@ -729,7 +746,7 @@ pub(crate) fn s_print(vals: &[Value]) -> EvalResult<Value> {
             }
             Value::ArrayRef(r, idx) => {
                 print!("arrayref(");
-                print_inner((*r.borrow()).values.eget(*idx)?)?;
+                print_inner(&(*r.borrow()).eget(*idx)?)?;
                 print!(")");
             }
             Value::Tuple(val) => {
@@ -763,14 +780,16 @@ fn s_puts(vals: &[Value]) -> Result<Value, EvalError> {
                 Value::I64(val) => print!("{}", val),
                 Value::I32(val) => print!("{}", val),
                 Value::Str(val) => print!("{}", val),
-                Value::Array(val) => puts_inner(&mut val.borrow().values.iter()),
+                Value::Array(val) => {
+                    puts_inner(&mut val.borrow().values().collect::<Vec<_>>().iter())
+                }
                 Value::Ref(r) => {
                     let v: &Value = &r.borrow();
                     puts_inner(&mut std::iter::once(v))
                 }
                 Value::ArrayRef(r, idx) => {
-                    if let Some(r) = r.borrow().values.get(*idx) {
-                        puts_inner(&mut std::iter::once(r))
+                    if let Some(r) = r.borrow().get(*idx) {
+                        puts_inner(&mut std::iter::once(&r))
                     }
                 }
                 Value::Tuple(val) => puts_inner(&mut val.borrow().iter().map(|v| &v.value)),
