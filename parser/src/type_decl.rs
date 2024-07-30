@@ -15,7 +15,7 @@ pub enum TypeDecl {
     I64,
     I32,
     Str,
-    Array(Box<TypeDecl>, Option<usize>),
+    Array(Box<TypeDecl>, ArraySize),
     /// An abstract type that can match F64 or F32
     Float,
     /// An abstract type that can match I64 or I32
@@ -31,7 +31,7 @@ impl TypeDecl {
             Value::I32(_) => Self::I32,
             Value::I64(_) => Self::I64,
             Value::Str(_) => Self::Str,
-            Value::Array(a) => Self::Array(Box::new(a.borrow().type_decl.clone()), None),
+            Value::Array(a) => Self::Array(Box::new(a.borrow().type_decl.clone()), ArraySize::Any),
             Value::Ref(a) => Self::from_value(&*a.borrow()),
             Value::ArrayRef(a, _) => a.borrow().type_decl.clone(),
             Value::Tuple(a) => Self::Tuple(
@@ -53,7 +53,7 @@ impl TypeDecl {
             Self::Str => STR_TAG,
             Self::Array(inner, len) => {
                 writer.write_all(&ARRAY_TAG.to_le_bytes())?;
-                write_opt_usize(len, writer)?;
+                write_array_size(len, writer)?;
                 inner.serialize(writer)?;
                 return Ok(());
             }
@@ -90,7 +90,7 @@ impl TypeDecl {
             STR_TAG => Self::Str,
             ARRAY_TAG => Self::Array(
                 Box::new(Self::deserialize(reader)?),
-                read_opt_usize(reader).map_err(|e| {
+                read_array_size(reader).map_err(|e| {
                     let ReadError::IO(e) = e else { panic!() };
                     e
                 })?,
@@ -112,13 +112,11 @@ impl std::fmt::Display for TypeDecl {
             TypeDecl::I64 => write!(f, "i64")?,
             TypeDecl::I32 => write!(f, "i32")?,
             TypeDecl::Str => write!(f, "str")?,
-            TypeDecl::Array(inner, len) => {
-                if let Some(len) = *len {
-                    write!(f, "[{}; {}]", inner.to_string(), len)?
-                } else {
-                    write!(f, "[{}]", inner.to_string())?
-                }
-            }
+            TypeDecl::Array(inner, len) => match *len {
+                ArraySize::Any => write!(f, "[{}]", inner.to_string())?,
+                ArraySize::Dynamic => write!(f, "[{}; _]", inner.to_string())?,
+                ArraySize::Fixed(len) => write!(f, "[{}; {}]", inner.to_string(), len)?,
+            },
             TypeDecl::Float => write!(f, "<Float>")?,
             TypeDecl::Integer => write!(f, "<Integer>")?,
             TypeDecl::Tuple(inner) => write!(
@@ -149,5 +147,71 @@ fn read_opt_usize(reader: &mut impl Read) -> Result<Option<usize>, ReadError> {
         Some(usize::from_le_bytes(buf))
     } else {
         None
+    })
+}
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum ArraySize {
+    /// Either dynamic or fixed array
+    Any,
+    /// Only dynamic array
+    Dynamic,
+    /// Fixed array with a length
+    Fixed(usize),
+}
+
+impl ArraySize {
+    fn tag(&self) -> u8 {
+        match self {
+            Self::Any => 0,
+            Self::Dynamic => 1,
+            Self::Fixed(_) => 2,
+        }
+    }
+
+    pub fn zip(&self, other: &Self) -> Option<(usize, usize)> {
+        match (self, other) {
+            (Self::Fixed(lhs), Self::Fixed(rhs)) => Some((*lhs, *rhs)),
+            _ => None,
+        }
+    }
+
+    pub fn ok(&self) -> Option<usize> {
+        match self {
+            Self::Fixed(len) => Some(*len),
+            _ => None,
+        }
+    }
+
+    pub fn or(&self, other: &Self) -> Self {
+        match (self, other) {
+            (Self::Fixed(lhs), _) => Self::Fixed(*lhs),
+            (_, Self::Fixed(rhs)) => Self::Fixed(*rhs),
+            (Self::Dynamic, Self::Dynamic) => Self::Dynamic,
+            _ => Self::Any,
+        }
+    }
+}
+
+fn write_array_size(value: &ArraySize, writer: &mut impl Write) -> std::io::Result<()> {
+    writer.write_all(&mut [value.tag()])?;
+    if let ArraySize::Fixed(value) = value {
+        writer.write_all(&value.to_le_bytes())?;
+    }
+    Ok(())
+}
+
+fn read_array_size(reader: &mut impl Read) -> Result<ArraySize, ReadError> {
+    let mut tag = [0u8; 1];
+    reader.read_exact(&mut tag)?;
+    Ok(match tag[0] {
+        0 => ArraySize::Any,
+        1 => ArraySize::Dynamic,
+        2 => {
+            let mut buf = [0u8; std::mem::size_of::<usize>()];
+            reader.read_exact(&mut buf)?;
+            ArraySize::Fixed(usize::from_le_bytes(buf))
+        }
+        _ => return Err(ReadError::UndefinedOpCode(tag[0])),
     })
 }

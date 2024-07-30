@@ -808,7 +808,7 @@ fn test_array_decl() {
         statement(span).finish().unwrap().1,
         Statement::VarDecl(
             &*span.subslice(4, 1),
-            TypeDecl::Array(Box::new(TypeDecl::I32), None),
+            TypeDecl::Array(Box::new(TypeDecl::I32), ArraySize::Any),
             Some(Expression::new(
                 ArrLiteral(vec![
                     Expression::new(NumLiteral(Value::I64(1)), span.subslice(16, 1)),
@@ -827,7 +827,7 @@ fn test_fixed_sz_array() {
         statement(span).finish().unwrap().1,
         Statement::VarDecl(
             &*span.subslice(4, 1),
-            TypeDecl::Array(Box::new(TypeDecl::I32), Some(3)),
+            TypeDecl::Array(Box::new(TypeDecl::I32), ArraySize::Fixed(3)),
             Some(Expression::new(
                 ArrLiteral(vec![
                     Expression::new(NumLiteral(Value::I64(1)), span.subslice(19, 1)),

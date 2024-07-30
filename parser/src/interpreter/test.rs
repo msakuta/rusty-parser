@@ -553,18 +553,18 @@ fn array_decl_test() {
     );
     assert_eq!(
         type_spec(Span::new(": [i32]")).finish().unwrap().1,
-        TypeDecl::Array(Box::new(TypeDecl::I32), None)
+        TypeDecl::Array(Box::new(TypeDecl::I32), ArraySize::Any)
     );
     assert_eq!(
         type_spec(Span::new(": [[f32]]")).finish().unwrap().1,
         TypeDecl::Array(
-            Box::new(TypeDecl::Array(Box::new(TypeDecl::F32), None)),
-            None
+            Box::new(TypeDecl::Array(Box::new(TypeDecl::F32), ArraySize::Any)),
+            ArraySize::Any
         )
     );
     assert_eq!(
         type_spec(Span::new(": [f32; 3]")).finish().unwrap().1,
-        TypeDecl::Array(Box::new(TypeDecl::F32), Some(3))
+        TypeDecl::Array(Box::new(TypeDecl::F32), ArraySize::Fixed(3))
     );
 }
 
@@ -660,7 +660,7 @@ fn fn_array_decl_test() {
             name: "f",
             args: vec![ArgDecl::new(
                 "a",
-                TypeDecl::Array(Box::new(TypeDecl::I32), None)
+                TypeDecl::Array(Box::new(TypeDecl::I32), ArraySize::Any)
             )],
             ret_type: None,
             stmts: Rc::new(vec![Statement::Expression(Expression::new(
@@ -784,7 +784,7 @@ fn array_sized_error_test() {
     let ast = source(span).finish().unwrap().1;
     match type_check(&ast, &mut TypeCheckContext::new(Some("input"))) {
         Ok(_) => panic!(),
-        Err(e) => assert_eq!(e.to_string(), "Operation Assignment between incompatible type: Array(I32, Some(3)) and Array(I32, Some(4))\ninput:1:57"),
+        Err(e) => assert_eq!(e.to_string(), "Operation Assignment between incompatible type: Array(I32, Fixed(3)) and Array(I32, Fixed(4))\ninput:1:57"),
     }
     // It will run successfully although the typecheck fails.
     run0(&ast).unwrap();

@@ -3,7 +3,7 @@ use std::{collections::HashMap, fmt::Display};
 use crate::{
     interpreter::{std_functions, FuncCode},
     parser::{ExprEnum, Expression, Statement},
-    type_decl::TypeDecl,
+    type_decl::{ArraySize, TypeDecl},
     FuncDef, Span, Value,
 };
 
@@ -177,7 +177,7 @@ where
                 .first()
                 .map(|e| tc_expr(e, ctx))
                 .unwrap_or(Ok(TypeDecl::Any))?;
-            TypeDecl::Array(Box::new(ty), Some(val.len()))
+            TypeDecl::Array(Box::new(ty), ArraySize::Fixed(val.len()))
         }
         ExprEnum::TupleLiteral(val) => {
             let ty = val
@@ -359,13 +359,20 @@ fn tc_coerce_type<'src>(
         (I32 | Integer, I32) => I32,
         (Str, Str) => Str,
         (Array(v_inner, v_len), Array(t_inner, t_len)) => {
-            if let Some((v_len, t_len)) = v_len.zip(*t_len) {
-                if v_len < t_len {
-                    return Err(TypeCheckError::new(
-                        "Assignee array is smaller than assigner".to_string(),
-                        span,
-                        ctx.source_file,
-                    ));
+            match (v_len, t_len) {
+                (_, ArraySize::Any) => {}
+                (ArraySize::Fixed(v_len), ArraySize::Fixed(t_len)) => {
+                    if v_len < t_len {
+                        return Err(TypeCheckError::new(
+                            "Assignee array is smaller than assigner".to_string(),
+                            span,
+                            ctx.source_file,
+                        ));
+                    }
+                }
+                (ArraySize::Dynamic, ArraySize::Dynamic) => {}
+                _ => {
+                    return Err(TypeCheckError::new(format!("Array size constraint is not compatible between {v_len:?} and {t_len:?}"), span, ctx.source_file));
                 }
             }
             Array(
@@ -420,7 +427,7 @@ fn tc_cast_type<'src>(
         (I32 | I64 | F32 | F64 | Integer | Float, I32) => I32,
         (Str, Str) => Str,
         (Array(v_inner, v_len), Array(t_inner, t_len)) => {
-            if let Some((v_len, t_len)) = v_len.zip(*t_len) {
+            if let Some((v_len, t_len)) = v_len.zip(t_len) {
                 if v_len < t_len {
                     return Err(TypeCheckError::new(
                         "Assignee array is smaller than assigner".to_string(),
@@ -588,7 +595,7 @@ fn binary_op_type(lhs: &TypeDecl, rhs: &TypeDecl) -> Result<TypeDecl, ()> {
         (Integer, I64) | (I64, Integer) => I64,
         (Integer, I32) | (I32, Integer) => I32,
         (Array(lhs, lhs_len), Array(rhs, rhs_len)) => {
-            if let Some((lhs_len, rhs_len)) = lhs_len.zip(*rhs_len) {
+            if let Some((lhs_len, rhs_len)) = lhs_len.zip(rhs_len) {
                 if lhs_len < rhs_len {
                     return Err(
                         (), // TypeCheckError::new("Binary operation between an array with different length".to_string(), span, ctx.source_file)
@@ -597,7 +604,7 @@ fn binary_op_type(lhs: &TypeDecl, rhs: &TypeDecl) -> Result<TypeDecl, ()> {
             }
             return Ok(Array(
                 Box::new(binary_op_type(lhs, rhs)?),
-                lhs_len.or(*rhs_len),
+                lhs_len.or(rhs_len),
             ));
         }
         _ => return Err(()),
@@ -633,7 +640,7 @@ fn binary_cmp_type(lhs: &TypeDecl, rhs: &TypeDecl) -> Result<TypeDecl, ()> {
         (Float, F64 | F32) | (F64 | F32, Float) => I32,
         (Integer, I64 | I32) | (I64 | I32, Integer) => I32,
         (Array(lhs, lhs_len), Array(rhs, rhs_len)) => {
-            if let Some((lhs_len, rhs_len)) = lhs_len.zip(*rhs_len) {
+            if let Some((lhs_len, rhs_len)) = lhs_len.zip(rhs_len) {
                 if lhs_len < rhs_len {
                     return Err(
                         (), // TypeCheckError::new("Binary operation between an array with different length".to_string(), span, ctx.source_file)

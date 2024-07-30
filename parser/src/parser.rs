@@ -1,4 +1,7 @@
-use crate::{type_decl::TypeDecl, Value};
+use crate::{
+    type_decl::{ArraySize, TypeDecl},
+    Value,
+};
 
 use nom::{
     branch::alt,
@@ -222,7 +225,13 @@ fn type_array(input: Span) -> IResult<Span, TypeDecl> {
     )(input)?;
     Ok((
         r,
-        TypeDecl::Array(Box::new(arr), len.and_then(|len| len.parse().ok())),
+        TypeDecl::Array(
+            Box::new(arr),
+            match len.and_then(|len| len.parse().ok()) {
+                Some(len) => ArraySize::Fixed(len),
+                None => ArraySize::Any,
+            },
+        ),
     ))
 }
 

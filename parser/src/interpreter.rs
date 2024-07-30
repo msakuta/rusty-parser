@@ -1,5 +1,6 @@
 use crate::{
     parser::*,
+    type_decl::ArraySize,
     value::{ArrayInt, TupleEntry},
     TypeDecl, Value,
 };
@@ -365,7 +366,7 @@ pub fn coerce_type(value: &Value, target: &TypeDecl) -> Result<Value, EvalError>
         TypeDecl::Array(inner, len) => {
             if let Value::Array(array) = value {
                 let array = array.borrow();
-                if let Some(len) = len {
+                if let ArraySize::Fixed(len) = len {
                     if *len != array.values.len() {
                         return Err(EvalError::IncompatibleArrayLength(*len, array.values.len()));
                     }
@@ -996,7 +997,7 @@ pub(crate) fn std_functions<'src, 'native>() -> HashMap<String, FuncDef<'src, 'n
             &s_len,
             vec![ArgDecl::new(
                 "array",
-                TypeDecl::Array(Box::new(TypeDecl::Any), None),
+                TypeDecl::Array(Box::new(TypeDecl::Any), ArraySize::Any),
             )],
             Some(TypeDecl::I64),
         ),
@@ -1006,7 +1007,10 @@ pub(crate) fn std_functions<'src, 'native>() -> HashMap<String, FuncDef<'src, 'n
         FuncDef::new_native(
             &s_push,
             vec![
-                ArgDecl::new("array", TypeDecl::Array(Box::new(TypeDecl::Any), None)),
+                ArgDecl::new(
+                    "array",
+                    TypeDecl::Array(Box::new(TypeDecl::Any), ArraySize::Dynamic),
+                ),
                 ArgDecl::new("value", TypeDecl::Any),
             ],
             None,
