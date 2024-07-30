@@ -486,12 +486,15 @@ where
                 .clone();
 
             let mut eval_args = vec![None; fn_args.len().max(args.len())];
+
+            // Fill unnamed args
             for (arg, eval_arg) in args.iter().zip(eval_args.iter_mut()) {
                 if arg.name.is_none() {
                     *eval_arg = Some(eval(&arg.expr, ctx)?);
                 }
             }
 
+            // Find and assign named args
             for arg in args.iter() {
                 if let Some(name) = arg.name {
                     if let Some(eval_arg) = fn_args

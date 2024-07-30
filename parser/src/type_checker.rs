@@ -35,6 +35,54 @@ impl<'src> TypeCheckError<'src> {
             source_file,
         }
     }
+
+    pub(crate) fn undefined_fn(
+        name: &str,
+        span: Span<'src>,
+        source_file: Option<&'src str>,
+    ) -> Self {
+        Self::new(
+            format!("function {} is not defined", name),
+            span,
+            source_file,
+        )
+    }
+
+    pub(crate) fn undefined_arg(
+        name: &str,
+        span: Span<'src>,
+        source_file: Option<&'src str>,
+    ) -> Self {
+        Self::new(
+            format!("argument {} is not defined", name),
+            span,
+            source_file,
+        )
+    }
+
+    pub(crate) fn undefined_var(
+        name: &str,
+        span: Span<'src>,
+        source_file: Option<&'src str>,
+    ) -> Self {
+        Self::new(
+            format!("variable {} is not defined", name),
+            span,
+            source_file,
+        )
+    }
+
+    pub(crate) fn unassigned_arg(
+        name: &str,
+        span: Span<'src>,
+        source_file: Option<&'src str>,
+    ) -> Self {
+        Self::new(
+            format!("argument {} is not assigned in function invocation", name),
+            span,
+            source_file,
+        )
+    }
 }
 
 #[derive(Clone)]
@@ -138,65 +186,70 @@ where
                 .collect::<Result<Vec<_>, _>>()?;
             TypeDecl::Tuple(ty)
         }
-        ExprEnum::Variable(str) => ctx.get_var(str).ok_or_else(|| {
-            TypeCheckError::new(
-                format!("Variable {} not found in scope", str),
-                e.span,
-                ctx.source_file,
-            )
-        })?,
+        ExprEnum::Variable(str) => ctx
+            .get_var(str)
+            .ok_or_else(|| TypeCheckError::undefined_var(str, e.span, ctx.source_file))?,
         ExprEnum::Cast(ex, decl) => {
             let res = tc_expr(ex, ctx)?;
             tc_cast_type(&res, decl, ex.span, ctx)?
         }
         ExprEnum::VarAssign(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Assignment")?,
-        ExprEnum::FnInvoke(str, args) => {
-            let args_ty = args
-                .iter()
-                .map(|v| tc_expr(&v.expr, ctx))
-                .collect::<Result<Vec<_>, _>>()?;
+        ExprEnum::FnInvoke(fname, args) => {
             let fn_args = ctx
-                .get_fn(*str)
-                .ok_or_else(|| {
-                    TypeCheckError::new(
-                        format!("function {} is not defined", str),
+                .get_fn(*fname)
+                .ok_or_else(|| TypeCheckError::undefined_fn(*fname, e.span, ctx.source_file))?
+                .args()
+                .clone();
+
+            let mut ty_args = vec![None; fn_args.len().max(args.len())];
+
+            // Fill unnamed args
+            for (arg, ty_arg) in args.iter().zip(ty_args.iter_mut()) {
+                if arg.name.is_none() {
+                    *ty_arg = Some(tc_expr(&arg.expr, ctx)?);
+                }
+            }
+
+            // Find and assign named args
+            for arg in args.iter() {
+                if let Some(name) = arg.name {
+                    if let Some(ty_arg) = fn_args
+                        .iter()
+                        .enumerate()
+                        .find(|f| f.1.name == *name)
+                        .and_then(|(i, _)| ty_args.get_mut(i))
+                    {
+                        *ty_arg = Some(tc_expr(&arg.expr, ctx)?);
+                    } else {
+                        return Err(TypeCheckError::undefined_arg(
+                            *name,
+                            e.span,
+                            ctx.source_file,
+                        ));
+                    }
+                }
+            }
+
+            for (ty_arg, decl) in ty_args.iter().zip(fn_args.iter()) {
+                let Some(ty_arg) = ty_arg.as_ref().or_else(|| {
+                    if decl.init.is_some() {
+                        Some(&decl.ty)
+                    } else {
+                        None
+                    }
+                }) else {
+                    return Err(TypeCheckError::unassigned_arg(
+                        decl.name,
                         e.span,
                         ctx.source_file,
-                    )
-                })?
-                .args();
-
-            let args_decl = if args.len() <= fn_args.len() {
-                let fn_args = fn_args[..args.len()].to_vec();
-
-                fn_args
-                    .into_iter()
-                    .filter_map(|arg| {
-                        // We use a new temporary EvalContext to avoid referencing outer variables, i.e. make it
-                        // a constant expression, in order to match the semantics with the bytecode compiler.
-                        // Theoretically, it is possible to evaluate the expression ahead of time to reduce
-                        // computation, but our priority is bytecode compiler which already does constant folding.
-                        arg.init.as_ref().map(|init| {
-                            tc_expr(
-                                init, ctx, /*&mut TypeCheckContext::new(ctx.source_file)*/
-                            )
-                        })
-                    })
-                    .collect::<Result<Vec<_>, _>>()?
-            } else {
-                vec![]
-            };
-
-            for ((arg_ty, arg), decl) in args_ty.iter().zip(args.iter()).zip(args_decl.iter()) {
-                tc_coerce_type(&arg_ty, &decl, arg.expr.span, ctx)?;
+                    ));
+                };
+                tc_coerce_type(&ty_arg, &decl.ty, e.span, ctx)?;
             }
-            let func = ctx.get_fn(*str).ok_or_else(|| {
-                TypeCheckError::new(
-                    format!("function {} is not defined", str),
-                    e.span,
-                    ctx.source_file,
-                )
-            })?;
+
+            let func = ctx
+                .get_fn(*fname)
+                .ok_or_else(|| TypeCheckError::undefined_fn(fname, e.span, ctx.source_file))?;
             match func {
                 FuncDef::Code(code) => code.ret_type.clone().unwrap_or(TypeDecl::Any),
                 FuncDef::Native(native) => native.ret_type.clone().unwrap_or(TypeDecl::Any),
@@ -429,6 +482,16 @@ where
                 );
                 let mut subctx = TypeCheckContext::push_stack(ctx);
                 for arg in args.iter() {
+                    if let Some(ref init) = arg.init {
+                        // Use a new context to denote constant expression
+                        let init_ty = tc_expr(init, &mut TypeCheckContext::new(ctx.source_file))?;
+                        tc_coerce_type(
+                            &init_ty,
+                            &arg.ty,
+                            Span::new(name),
+                            &mut TypeCheckContext::new(ctx.source_file),
+                        )?;
+                    }
                     subctx.variables.insert(arg.name, arg.ty.clone());
                 }
                 let last_stmt = type_check(stmts, &mut subctx)?;
