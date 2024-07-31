@@ -370,7 +370,7 @@ fn tc_coerce_type<'src>(
                         ));
                     }
                 }
-                (ArraySize::Dynamic, ArraySize::Dynamic) => {}
+                (ArraySize::Dynamic | ArraySize::Any, ArraySize::Dynamic) => {}
                 _ => {
                     return Err(TypeCheckError::new(format!("Array size constraint is not compatible between {v_len:?} and {t_len:?}"), span, ctx.source_file));
                 }
