@@ -362,9 +362,11 @@ fn tc_coerce_type<'src>(
             match (v_len, t_len) {
                 (_, ArraySize::Any) => {}
                 (ArraySize::Fixed(v_len), ArraySize::Fixed(t_len)) => {
-                    if v_len < t_len {
+                    if v_len != t_len {
                         return Err(TypeCheckError::new(
-                            "Assignee array is smaller than assigner".to_string(),
+                            format!(
+                                "Array size is not compatible: {v_len} cannot assign to {t_len}"
+                            ),
                             span,
                             ctx.source_file,
                         ));

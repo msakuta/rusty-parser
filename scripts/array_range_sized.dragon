@@ -4,7 +4,7 @@ var i: i32 = 0;
 // Pushing to a fixed size array is prohibited
 // push(a, a[0]);
 
-fn f(b: [i32; 3]) {
+fn f(b: [i32; 3..4]) {
     print(b, type(b));
 }
 
