@@ -2,7 +2,7 @@ use std::io::{Read, Write};
 
 use crate::ReadError;
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum ArraySize {
     /// Either dynamic or fixed array
     Any,
@@ -10,6 +10,7 @@ pub enum ArraySize {
     Dynamic,
     /// Fixed array with a length
     Fixed(usize),
+    Range(std::ops::Range<usize>),
 }
 
 impl ArraySize {
@@ -18,6 +19,7 @@ impl ArraySize {
             Self::Any => 0,
             Self::Dynamic => 1,
             Self::Fixed(_) => 2,
+            Self::Range(_) => 3,
         }
     }
 

@@ -839,3 +839,36 @@ fn test_fixed_sz_array() {
         )
     );
 }
+
+#[test]
+fn test_range_sz_array() {
+    let span = Span::new("var a: [i32; ..];");
+    assert_eq!(
+        statement(span).finish().unwrap().1,
+        Statement::VarDecl(
+            &*span.subslice(4, 1),
+            TypeDecl::Array(Box::new(TypeDecl::I32), ArraySize::Range(0..usize::MAX)),
+            None
+        )
+    );
+
+    let span = Span::new("var a: [i32; 3..];");
+    assert_eq!(
+        statement(span).finish().unwrap().1,
+        Statement::VarDecl(
+            &*span.subslice(4, 1),
+            TypeDecl::Array(Box::new(TypeDecl::I32), ArraySize::Range(3..usize::MAX)),
+            None
+        )
+    );
+
+    let span = Span::new("var a: [i32; ..10];");
+    assert_eq!(
+        statement(span).finish().unwrap().1,
+        Statement::VarDecl(
+            &*span.subslice(4, 1),
+            TypeDecl::Array(Box::new(TypeDecl::I32), ArraySize::Range(0..10)),
+            None
+        )
+    );
+}

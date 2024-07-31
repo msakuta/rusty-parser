@@ -377,7 +377,7 @@ fn tc_coerce_type<'src>(
             }
             Array(
                 Box::new(tc_coerce_type(v_inner, t_inner, span, ctx)?),
-                *t_len,
+                t_len.clone(),
             )
         }
         (Float, Float) => Float,
@@ -439,7 +439,7 @@ fn tc_cast_type<'src>(
             // Array doesn't recursively type cast for performance reasons.
             Array(
                 Box::new(tc_coerce_type(v_inner, t_inner, span, ctx)?),
-                *t_len,
+                t_len.clone(),
             )
         }
         (I32 | I64 | F32 | F64 | Integer | Float, Float) => Float,

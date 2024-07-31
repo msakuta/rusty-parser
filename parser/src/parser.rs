@@ -217,21 +217,43 @@ fn type_scalar(input: Span) -> IResult<Span, TypeDecl> {
     ))
 }
 
+fn array_size_range(input: Span) -> IResult<Span, ArraySize> {
+    let (r, start) = opt(ws(decimal))(input)?;
+    let (r, _) = ws(tag(".."))(r)?;
+    let (r, end) = opt(ws(decimal))(r)?;
+    let start = start.and_then(|v| v.parse().ok()).unwrap_or(0);
+    let end = end.and_then(|v| v.parse().ok()).unwrap_or(usize::MAX);
+    Ok((r, ArraySize::Range(start..end)))
+}
+
+fn array_size_fixed(input: Span) -> IResult<Span, ArraySize> {
+    let (r, v) = ws(decimal)(input)?;
+    Ok((
+        r,
+        ArraySize::Fixed(v.parse().map_err(|_| {
+            nom::Err::Error(nom::error::Error {
+                input,
+                code: nom::error::ErrorKind::Digit,
+            })
+        })?),
+    ))
+}
+
 fn type_array(input: Span) -> IResult<Span, TypeDecl> {
-    let (r, (arr, len)) = delimited(
+    let (r, (arr, range)) = delimited(
         ws(char('[')),
-        pair(type_decl, opt(preceded(tag(";"), ws(decimal)))),
+        pair(
+            type_decl,
+            opt(preceded(
+                tag(";"),
+                alt((array_size_range, array_size_fixed)),
+            )),
+        ),
         ws(char(']')),
     )(input)?;
     Ok((
         r,
-        TypeDecl::Array(
-            Box::new(arr),
-            match len.and_then(|len| len.parse().ok()) {
-                Some(len) => ArraySize::Fixed(len),
-                None => ArraySize::Any,
-            },
-        ),
+        TypeDecl::Array(Box::new(arr), range.unwrap_or_else(|| ArraySize::Any)),
     ))
 }
 
