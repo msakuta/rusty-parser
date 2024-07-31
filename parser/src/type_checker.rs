@@ -373,16 +373,21 @@ fn tc_coerce_type<'src>(
                     }
                 }
                 (ArraySize::Range(v_range), ArraySize::Range(t_range)) => {
+                    array_range_verify(v_range, span, ctx)?;
+                    array_range_verify(t_range, span, ctx)?;
                     if t_range.end < v_range.end || v_range.start < t_range.start {
                         return Err(TypeCheckError::new(format!("Array range is not compatible: {v_range:?} cannot assign to {t_range:?}"), span, ctx.source_file));
                     }
                 }
                 (ArraySize::Fixed(v_len), ArraySize::Range(t_range)) => {
+                    array_range_verify(t_range, span, ctx)?;
                     if *v_len < t_range.start || t_range.end < *v_len {
                         return Err(TypeCheckError::new(format!("Array range is not compatible: {v_len} cannot assign to {t_range:?}"), span, ctx.source_file));
                     }
                 }
-                (ArraySize::Dynamic | ArraySize::Any, ArraySize::Dynamic) => {}
+                (ArraySize::Any, ArraySize::Range(t_range)) => {
+                    array_range_verify(t_range, span, ctx)?;
+                }
                 _ => {
                     return Err(TypeCheckError::new(format!("Array size constraint is not compatible between {v_len:?} and {t_len:?}"), span, ctx.source_file));
                 }
@@ -421,6 +426,21 @@ fn tc_coerce_type<'src>(
             ))
         }
     })
+}
+
+fn array_range_verify<'src>(
+    range: &std::ops::Range<usize>,
+    span: Span<'src>,
+    ctx: &TypeCheckContext<'src, '_, '_>,
+) -> Result<(), TypeCheckError<'src>> {
+    if range.end < range.start {
+        return Err(TypeCheckError::new(
+            format!("Array size has invalid range: {range:?}; start should be less than end"),
+            span,
+            ctx.source_file,
+        ));
+    }
+    Ok(())
 }
 
 fn tc_cast_type<'src>(

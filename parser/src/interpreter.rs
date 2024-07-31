@@ -1009,7 +1009,7 @@ pub(crate) fn std_functions<'src, 'native>() -> HashMap<String, FuncDef<'src, 'n
             vec![
                 ArgDecl::new(
                     "array",
-                    TypeDecl::Array(Box::new(TypeDecl::Any), ArraySize::Dynamic),
+                    TypeDecl::Array(Box::new(TypeDecl::Any), ArraySize::Range(0..usize::MAX)),
                 ),
                 ArgDecl::new("value", TypeDecl::Any),
             ],

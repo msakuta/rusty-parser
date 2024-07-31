@@ -118,7 +118,6 @@ impl std::fmt::Display for TypeDecl {
             TypeDecl::Str => write!(f, "str")?,
             TypeDecl::Array(inner, len) => match len {
                 ArraySize::Any => write!(f, "[{}]", inner.to_string())?,
-                ArraySize::Dynamic => write!(f, "[{}; _]", inner.to_string())?,
                 ArraySize::Fixed(len) => write!(f, "[{}; {}]", inner.to_string(), len)?,
                 ArraySize::Range(r) => write!(f, "[{}; {:?}]", inner.to_string(), r)?,
             },
