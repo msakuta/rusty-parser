@@ -615,9 +615,7 @@ fn binary_op<'src, 'ast, 'native>(
 where
     'native: 'src,
 {
-    binary_op_gen(lhs, rhs, span, ctx, op, |lhs, rhs, span, ctx| {
-        binary_op_type(lhs, rhs, span, ctx)
-    })
+    binary_op_gen(lhs, rhs, span, ctx, op, binary_op_type)
 }
 
 fn binary_op_type<'src>(
