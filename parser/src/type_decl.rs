@@ -117,8 +117,8 @@ impl std::fmt::Display for TypeDecl {
             TypeDecl::I32 => write!(f, "i32")?,
             TypeDecl::Str => write!(f, "str")?,
             TypeDecl::Array(inner, len) => match len {
-                ArraySize::Any => write!(f, "[{}]", inner.to_string())?,
-                _ => write!(f, "[{}; {}]", inner.to_string(), len)?,
+                ArraySize::Any => write!(f, "[{}]", inner)?,
+                _ => write!(f, "[{}; {}]", inner, len)?,
             },
             TypeDecl::Float => write!(f, "<Float>")?,
             TypeDecl::Integer => write!(f, "<Integer>")?,
