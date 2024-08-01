@@ -643,7 +643,7 @@ fn binary_op_type<'src>(
         (Integer, I64) | (I64, Integer) => I64,
         (Integer, I32) | (I32, Integer) => I32,
         (Array(lhs, lhs_len), Array(rhs, rhs_len)) => {
-            tc_array_size(lhs_len, rhs_len)
+            tc_array_size(rhs_len, lhs_len)
                 .map_err(|e| TypeCheckError::new(e, span, ctx.source_file))?;
             if let Some((lhs_len, rhs_len)) = lhs_len.zip(rhs_len) {
                 if lhs_len < rhs_len {
@@ -704,8 +704,13 @@ fn binary_cmp_type<'src>(
         (Float, F64 | F32) | (F64 | F32, Float) => I32,
         (Integer, I64 | I32) | (I64 | I32, Integer) => I32,
         (Array(lhs, lhs_len), Array(rhs, rhs_len)) => {
-            tc_array_size(lhs_len, rhs_len)
-                .map_err(|e| TypeCheckError::new(e, span, ctx.source_file))?;
+            if lhs_len != rhs_len {
+                return Err(TypeCheckError::new(
+                    "Array size must be the same for comparison".to_string(),
+                    span,
+                    ctx.source_file,
+                ));
+            }
             return binary_cmp_type(lhs, rhs, span, ctx);
         }
         _ => {

@@ -784,10 +784,22 @@ fn array_sized_error_test() {
     let ast = source(span).finish().unwrap().1;
     match type_check(&ast, &mut TypeCheckContext::new(Some("input"))) {
         Ok(_) => panic!(),
-        Err(e) => assert_eq!(e.to_string(), "Operation Assignment between incompatible type [i32; 3] and [i32; 4]: Array size is not compatible: 3 cannot assign to 4\ninput:1:57"),
+        Err(e) => assert_eq!(e.to_string(), "Operation Assignment between incompatible type [i32; 3] and [i32; 4]: Array size is not compatible: 4 cannot assign to 3\ninput:1:57"),
     }
     // It will run successfully although the typecheck fails.
     run0(&ast).unwrap();
+}
+
+#[test]
+fn array_sized_cmp_error_test() {
+    let span = Span::new("var a: [i32; 3] = [1,2,3]; var b: [i32; 4] = [4,5,6,7]; a < b;");
+    let ast = source(span).finish().unwrap().1;
+    match type_check(&ast, &mut TypeCheckContext::new(Some("input"))) {
+        Ok(_) => panic!(),
+        Err(e) => assert_eq!(e.to_string(), "Operation LT between incompatible type [i32; 3] and [i32; 4]: Array size must be the same for comparison\ninput:1:57"),
+    }
+    // It will fail at runtime
+    assert!(run0(&ast).is_err());
 }
 
 #[test]
