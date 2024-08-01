@@ -3,7 +3,7 @@ use std::{collections::HashMap, fmt::Display};
 use crate::{
     interpreter::{std_functions, FuncCode},
     parser::{ExprEnum, Expression, Statement},
-    type_decl::TypeDecl,
+    type_decl::{ArraySize, TypeDecl},
     FuncDef, Span, Value,
 };
 
@@ -34,6 +34,54 @@ impl<'src> TypeCheckError<'src> {
             span,
             source_file,
         }
+    }
+
+    pub(crate) fn undefined_fn(
+        name: &str,
+        span: Span<'src>,
+        source_file: Option<&'src str>,
+    ) -> Self {
+        Self::new(
+            format!("function {} is not defined", name),
+            span,
+            source_file,
+        )
+    }
+
+    pub(crate) fn undefined_arg(
+        name: &str,
+        span: Span<'src>,
+        source_file: Option<&'src str>,
+    ) -> Self {
+        Self::new(
+            format!("argument {} is not defined", name),
+            span,
+            source_file,
+        )
+    }
+
+    pub(crate) fn undefined_var(
+        name: &str,
+        span: Span<'src>,
+        source_file: Option<&'src str>,
+    ) -> Self {
+        Self::new(
+            format!("variable {} is not defined", name),
+            span,
+            source_file,
+        )
+    }
+
+    pub(crate) fn unassigned_arg(
+        name: &str,
+        span: Span<'src>,
+        source_file: Option<&'src str>,
+    ) -> Self {
+        Self::new(
+            format!("argument {} is not assigned in function invocation", name),
+            span,
+            source_file,
+        )
     }
 }
 
@@ -129,7 +177,7 @@ where
                 .first()
                 .map(|e| tc_expr(e, ctx))
                 .unwrap_or(Ok(TypeDecl::Any))?;
-            TypeDecl::Array(Box::new(ty))
+            TypeDecl::Array(Box::new(ty), ArraySize::Fixed(val.len()))
         }
         ExprEnum::TupleLiteral(val) => {
             let ty = val
@@ -138,65 +186,70 @@ where
                 .collect::<Result<Vec<_>, _>>()?;
             TypeDecl::Tuple(ty)
         }
-        ExprEnum::Variable(str) => ctx.get_var(str).ok_or_else(|| {
-            TypeCheckError::new(
-                format!("Variable {} not found in scope", str),
-                e.span,
-                ctx.source_file,
-            )
-        })?,
+        ExprEnum::Variable(str) => ctx
+            .get_var(str)
+            .ok_or_else(|| TypeCheckError::undefined_var(str, e.span, ctx.source_file))?,
         ExprEnum::Cast(ex, decl) => {
             let res = tc_expr(ex, ctx)?;
             tc_cast_type(&res, decl, ex.span, ctx)?
         }
-        ExprEnum::VarAssign(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Assignment")?,
-        ExprEnum::FnInvoke(str, args) => {
-            let args_ty = args
-                .iter()
-                .map(|v| tc_expr(&v.expr, ctx))
-                .collect::<Result<Vec<_>, _>>()?;
+        ExprEnum::VarAssign(lhs, rhs) => binary_op(&lhs, &rhs, e.span, ctx, "Assignment")?,
+        ExprEnum::FnInvoke(fname, args) => {
             let fn_args = ctx
-                .get_fn(*str)
-                .ok_or_else(|| {
-                    TypeCheckError::new(
-                        format!("function {} is not defined", str),
+                .get_fn(*fname)
+                .ok_or_else(|| TypeCheckError::undefined_fn(*fname, e.span, ctx.source_file))?
+                .args()
+                .clone();
+
+            let mut ty_args = vec![None; fn_args.len().max(args.len())];
+
+            // Fill unnamed args
+            for (arg, ty_arg) in args.iter().zip(ty_args.iter_mut()) {
+                if arg.name.is_none() {
+                    *ty_arg = Some(tc_expr(&arg.expr, ctx)?);
+                }
+            }
+
+            // Find and assign named args
+            for arg in args.iter() {
+                if let Some(name) = arg.name {
+                    if let Some(ty_arg) = fn_args
+                        .iter()
+                        .enumerate()
+                        .find(|f| f.1.name == *name)
+                        .and_then(|(i, _)| ty_args.get_mut(i))
+                    {
+                        *ty_arg = Some(tc_expr(&arg.expr, ctx)?);
+                    } else {
+                        return Err(TypeCheckError::undefined_arg(
+                            *name,
+                            e.span,
+                            ctx.source_file,
+                        ));
+                    }
+                }
+            }
+
+            for (ty_arg, decl) in ty_args.iter().zip(fn_args.iter()) {
+                let Some(ty_arg) = ty_arg.as_ref().or_else(|| {
+                    if decl.init.is_some() {
+                        Some(&decl.ty)
+                    } else {
+                        None
+                    }
+                }) else {
+                    return Err(TypeCheckError::unassigned_arg(
+                        decl.name,
                         e.span,
                         ctx.source_file,
-                    )
-                })?
-                .args();
-
-            let args_decl = if args.len() <= fn_args.len() {
-                let fn_args = fn_args[args.len()..].to_vec();
-
-                fn_args
-                    .into_iter()
-                    .filter_map(|arg| {
-                        // We use a new temporary EvalContext to avoid referencing outer variables, i.e. make it
-                        // a constant expression, in order to match the semantics with the bytecode compiler.
-                        // Theoretically, it is possible to evaluate the expression ahead of time to reduce
-                        // computation, but our priority is bytecode compiler which already does constant folding.
-                        arg.init.as_ref().map(|init| {
-                            tc_expr(
-                                init, ctx, /*&mut TypeCheckContext::new(ctx.source_file)*/
-                            )
-                        })
-                    })
-                    .collect::<Result<Vec<_>, _>>()?
-            } else {
-                vec![]
-            };
-
-            for ((arg_ty, arg), decl) in args_ty.iter().zip(args.iter()).zip(args_decl.iter()) {
-                tc_coerce_type(&arg_ty, &decl, arg.expr.span, ctx)?;
+                    ));
+                };
+                tc_coerce_type(&ty_arg, &decl.ty, e.span, ctx)?;
             }
-            let func = ctx.get_fn(*str).ok_or_else(|| {
-                TypeCheckError::new(
-                    format!("function {} is not defined", str),
-                    e.span,
-                    ctx.source_file,
-                )
-            })?;
+
+            let func = ctx
+                .get_fn(*fname)
+                .ok_or_else(|| TypeCheckError::undefined_fn(fname, e.span, ctx.source_file))?;
             match func {
                 FuncDef::Code(code) => code.ret_type.clone().unwrap_or(TypeDecl::Any),
                 FuncDef::Native(native) => native.ret_type.clone().unwrap_or(TypeDecl::Any),
@@ -219,7 +272,7 @@ where
                     ));
                 }
             };
-            if let TypeDecl::Array(inner) = tc_expr(ex, ctx)? {
+            if let TypeDecl::Array(inner, _) = tc_expr(ex, ctx)? {
                 *inner.clone()
             } else {
                 return Err(TypeCheckError::new(
@@ -256,23 +309,23 @@ where
             TypeDecl::I32
         }
         ExprEnum::BitNot(val) => tc_expr(val, ctx)?,
-        ExprEnum::Add(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Add")?,
-        ExprEnum::Sub(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Sub")?,
-        ExprEnum::Mult(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Mult")?,
-        ExprEnum::Div(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Div")?,
-        ExprEnum::LT(lhs, rhs) => binary_cmp(&lhs, &rhs, ctx, "LT")?,
-        ExprEnum::GT(lhs, rhs) => binary_cmp(&lhs, &rhs, ctx, "GT")?,
-        ExprEnum::BitAnd(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "BitAnd")?,
-        ExprEnum::BitXor(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "BitXor")?,
-        ExprEnum::BitOr(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "BitOr")?,
-        ExprEnum::And(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "And")?,
-        ExprEnum::Or(lhs, rhs) => binary_op(&lhs, &rhs, ctx, "Or")?,
+        ExprEnum::Add(lhs, rhs) => binary_op(&lhs, &rhs, e.span, ctx, "Add")?,
+        ExprEnum::Sub(lhs, rhs) => binary_op(&lhs, &rhs, e.span, ctx, "Sub")?,
+        ExprEnum::Mult(lhs, rhs) => binary_op(&lhs, &rhs, e.span, ctx, "Mult")?,
+        ExprEnum::Div(lhs, rhs) => binary_op(&lhs, &rhs, e.span, ctx, "Div")?,
+        ExprEnum::LT(lhs, rhs) => binary_cmp(&lhs, &rhs, e.span, ctx, "LT")?,
+        ExprEnum::GT(lhs, rhs) => binary_cmp(&lhs, &rhs, e.span, ctx, "GT")?,
+        ExprEnum::BitAnd(lhs, rhs) => binary_op(&lhs, &rhs, e.span, ctx, "BitAnd")?,
+        ExprEnum::BitXor(lhs, rhs) => binary_op(&lhs, &rhs, e.span, ctx, "BitXor")?,
+        ExprEnum::BitOr(lhs, rhs) => binary_op(&lhs, &rhs, e.span, ctx, "BitOr")?,
+        ExprEnum::And(lhs, rhs) => binary_op(&lhs, &rhs, e.span, ctx, "And")?,
+        ExprEnum::Or(lhs, rhs) => binary_op(&lhs, &rhs, e.span, ctx, "Or")?,
         ExprEnum::Conditional(cond, true_branch, false_branch) => {
             tc_coerce_type(&tc_expr(cond, ctx)?, &TypeDecl::I32, cond.span, ctx)?;
             let true_type = type_check(true_branch, ctx)?;
             if let Some(false_type) = false_branch {
                 let false_type = type_check(false_type, ctx)?;
-                binary_op_type(&true_type, &false_type).map_err(|_| {
+                binary_op_type(&true_type, &false_type, e.span, ctx).map_err(|_| {
                     TypeCheckError::new(
                         format!("Conditional expression doesn't have the compatible types in true and false branch: {:?} and {:?}", true_type, false_type),
                         e.span,
@@ -290,6 +343,45 @@ where
     })
 }
 
+fn tc_array_size(value: &ArraySize, target: &ArraySize) -> Result<(), String> {
+    match (value, target) {
+        (_, ArraySize::Any) => {}
+        (ArraySize::Fixed(v_len), ArraySize::Fixed(t_len)) => {
+            if v_len != t_len {
+                return Err(format!(
+                    "Array size is not compatible: {v_len} cannot assign to {t_len}"
+                ));
+            }
+        }
+        (ArraySize::Range(v_range), ArraySize::Range(t_range)) => {
+            array_range_verify(v_range)?;
+            array_range_verify(t_range)?;
+            if t_range.end < v_range.end || v_range.start < t_range.start {
+                return Err(format!(
+                    "Array range is not compatible: {value} cannot assign to {target}"
+                ));
+            }
+        }
+        (ArraySize::Fixed(v_len), ArraySize::Range(t_range)) => {
+            array_range_verify(t_range)?;
+            if *v_len < t_range.start || t_range.end < *v_len {
+                return Err(format!(
+                    "Array range is not compatible: {v_len} cannot assign to {target}"
+                ));
+            }
+        }
+        (ArraySize::Any, ArraySize::Range(t_range)) => {
+            array_range_verify(t_range)?;
+        }
+        _ => {
+            return Err(format!(
+                "Array size constraint is not compatible between {value:?} and {target:?}"
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn tc_coerce_type<'src>(
     value: &TypeDecl,
     target: &TypeDecl,
@@ -305,8 +397,13 @@ fn tc_coerce_type<'src>(
         (I64 | Integer, I64) => I64,
         (I32 | Integer, I32) => I32,
         (Str, Str) => Str,
-        (Array(v_inner), Array(t_inner)) => {
-            Array(Box::new(tc_coerce_type(v_inner, t_inner, span, ctx)?))
+        (Array(v_inner, v_len), Array(t_inner, t_len)) => {
+            tc_array_size(v_len, t_len)
+                .map_err(|e| TypeCheckError::new(e, span, ctx.source_file))?;
+            Array(
+                Box::new(tc_coerce_type(v_inner, t_inner, span, ctx)?),
+                t_len.clone(),
+            )
         }
         (Float, Float) => Float,
         (Integer, Integer) => Integer,
@@ -339,6 +436,15 @@ fn tc_coerce_type<'src>(
     })
 }
 
+fn array_range_verify(range: &std::ops::Range<usize>) -> Result<(), String> {
+    if range.end < range.start {
+        return Err(format!(
+            "Array size has invalid range: {range:?}; start should be less than end"
+        ));
+    }
+    Ok(())
+}
+
 fn tc_cast_type<'src>(
     value: &TypeDecl,
     target: &TypeDecl,
@@ -354,9 +460,21 @@ fn tc_cast_type<'src>(
         (I32 | I64 | F32 | F64 | Integer | Float, I64) => I64,
         (I32 | I64 | F32 | F64 | Integer | Float, I32) => I32,
         (Str, Str) => Str,
-        (Array(v_inner), Array(t_inner)) => {
+        (Array(v_inner, v_len), Array(t_inner, t_len)) => {
+            if let Some((v_len, t_len)) = v_len.zip(t_len) {
+                if v_len < t_len {
+                    return Err(TypeCheckError::new(
+                        "Assignee array is smaller than assigner".to_string(),
+                        span,
+                        ctx.source_file,
+                    ));
+                }
+            }
             // Array doesn't recursively type cast for performance reasons.
-            Array(Box::new(tc_coerce_type(v_inner, t_inner, span, ctx)?))
+            Array(
+                Box::new(tc_coerce_type(v_inner, t_inner, span, ctx)?),
+                t_len.clone(),
+            )
         }
         (I32 | I64 | F32 | F64 | Integer | Float, Float) => Float,
         (I32 | I64 | F32 | F64 | Integer | Float, Integer) => Integer,
@@ -405,6 +523,16 @@ where
                 );
                 let mut subctx = TypeCheckContext::push_stack(ctx);
                 for arg in args.iter() {
+                    if let Some(ref init) = arg.init {
+                        // Use a new context to denote constant expression
+                        let init_ty = tc_expr(init, &mut TypeCheckContext::new(ctx.source_file))?;
+                        tc_coerce_type(
+                            &init_ty,
+                            &arg.ty,
+                            Span::new(name),
+                            &mut TypeCheckContext::new(ctx.source_file),
+                        )?;
+                    }
                     subctx.variables.insert(arg.name, arg.ty.clone());
                 }
                 let last_stmt = type_check(stmts, &mut subctx)?;
@@ -450,20 +578,26 @@ where
 fn binary_op_gen<'src, 'ast, 'native>(
     lhs: &'ast Expression<'src>,
     rhs: &'ast Expression<'src>,
+    span: Span<'src>,
     ctx: &mut TypeCheckContext<'src, 'native, '_>,
     op: &str,
-    mut f: impl FnMut(&TypeDecl, &TypeDecl) -> Result<TypeDecl, ()>,
+    mut f: impl FnMut(
+        &TypeDecl,
+        &TypeDecl,
+        Span<'src>,
+        &TypeCheckContext<'src, 'native, '_>,
+    ) -> Result<TypeDecl, TypeCheckError<'src>>,
 ) -> Result<TypeDecl, TypeCheckError<'src>>
 where
     'native: 'src,
 {
     let lhst = tc_expr(lhs, ctx)?;
     let rhst = tc_expr(rhs, ctx)?;
-    f(&lhst, &rhst).map_err(|()| {
+    f(&lhst, &rhst, span, ctx).map_err(|e| {
         TypeCheckError::new(
             format!(
-                "Operation {op} between incompatible type: {:?} and {:?}",
-                lhst, rhst,
+                "Operation {op} between incompatible type {} and {}: {}",
+                lhst, rhst, e.msg
             ),
             lhs.span,
             ctx.source_file,
@@ -474,16 +608,24 @@ where
 fn binary_op<'src, 'ast, 'native>(
     lhs: &'ast Expression<'src>,
     rhs: &'ast Expression<'src>,
+    span: Span<'src>,
     ctx: &mut TypeCheckContext<'src, 'native, '_>,
     op: &str,
 ) -> Result<TypeDecl, TypeCheckError<'src>>
 where
     'native: 'src,
 {
-    binary_op_gen(lhs, rhs, ctx, op, binary_op_type)
+    binary_op_gen(lhs, rhs, span, ctx, op, |lhs, rhs, span, ctx| {
+        binary_op_type(lhs, rhs, span, ctx)
+    })
 }
 
-fn binary_op_type(lhs: &TypeDecl, rhs: &TypeDecl) -> Result<TypeDecl, ()> {
+fn binary_op_type<'src>(
+    lhs: &TypeDecl,
+    rhs: &TypeDecl,
+    span: Span<'src>,
+    ctx: &TypeCheckContext<'src, '_, '_>,
+) -> Result<TypeDecl, TypeCheckError<'src>> {
     use TypeDecl::*;
     let res = match (&lhs, &rhs) {
         // `Any` type spreads contamination in the source code.
@@ -500,10 +642,30 @@ fn binary_op_type(lhs: &TypeDecl, rhs: &TypeDecl) -> Result<TypeDecl, ()> {
         (Float, F32) | (F32, Float) => F32,
         (Integer, I64) | (I64, Integer) => I64,
         (Integer, I32) | (I32, Integer) => I32,
-        (Array(lhs), Array(rhs)) => {
-            return Ok(Array(Box::new(binary_op_type(lhs, rhs)?)));
+        (Array(lhs, lhs_len), Array(rhs, rhs_len)) => {
+            tc_array_size(rhs_len, lhs_len)
+                .map_err(|e| TypeCheckError::new(e, span, ctx.source_file))?;
+            if let Some((lhs_len, rhs_len)) = lhs_len.zip(rhs_len) {
+                if lhs_len < rhs_len {
+                    return Err(TypeCheckError::new(
+                        "Binary operation between an array with different length".to_string(),
+                        span,
+                        ctx.source_file,
+                    ));
+                }
+            }
+            return Ok(Array(
+                Box::new(binary_op_type(lhs, rhs, span, ctx)?),
+                lhs_len.or(rhs_len),
+            ));
         }
-        _ => return Err(()),
+        _ => {
+            return Err(TypeCheckError::new(
+                "Binary operation incompatible".to_string(),
+                span,
+                ctx.source_file,
+            ))
+        }
     };
     Ok(res)
 }
@@ -511,17 +673,23 @@ fn binary_op_type(lhs: &TypeDecl, rhs: &TypeDecl) -> Result<TypeDecl, ()> {
 fn binary_cmp<'src, 'ast, 'native>(
     lhs: &'ast Expression<'src>,
     rhs: &'ast Expression<'src>,
+    span: Span<'src>,
     ctx: &mut TypeCheckContext<'src, 'native, '_>,
     op: &str,
 ) -> Result<TypeDecl, TypeCheckError<'src>>
 where
     'native: 'src,
 {
-    binary_op_gen(lhs, rhs, ctx, op, binary_cmp_type)
+    binary_op_gen(lhs, rhs, span, ctx, op, binary_cmp_type)
 }
 
 /// Binary comparison operator type check. It will always return i32, which is used as a bool in this language.
-fn binary_cmp_type(lhs: &TypeDecl, rhs: &TypeDecl) -> Result<TypeDecl, ()> {
+fn binary_cmp_type<'src>(
+    lhs: &TypeDecl,
+    rhs: &TypeDecl,
+    span: Span<'src>,
+    ctx: &TypeCheckContext<'src, '_, '_>,
+) -> Result<TypeDecl, TypeCheckError<'src>> {
     use TypeDecl::*;
     let res = match (&lhs, &rhs) {
         (Any, _) => I32,
@@ -535,10 +703,23 @@ fn binary_cmp_type(lhs: &TypeDecl, rhs: &TypeDecl) -> Result<TypeDecl, ()> {
         (Integer, Integer) => I32,
         (Float, F64 | F32) | (F64 | F32, Float) => I32,
         (Integer, I64 | I32) | (I64 | I32, Integer) => I32,
-        (Array(lhs), Array(rhs)) => {
-            return binary_cmp_type(lhs, rhs);
+        (Array(lhs, lhs_len), Array(rhs, rhs_len)) => {
+            if lhs_len != rhs_len {
+                return Err(TypeCheckError::new(
+                    "Array size must be the same for comparison".to_string(),
+                    span,
+                    ctx.source_file,
+                ));
+            }
+            return binary_cmp_type(lhs, rhs, span, ctx);
         }
-        _ => return Err(()),
+        _ => {
+            return Err(TypeCheckError::new(
+                "Binary comparison incompatible".to_string(),
+                span,
+                ctx.source_file,
+            ))
+        }
     };
     Ok(res)
 }

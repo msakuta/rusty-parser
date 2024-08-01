@@ -1,5 +1,6 @@
 use crate::{
     parser::*,
+    type_decl::ArraySize,
     value::{ArrayInt, TupleEntry},
     TypeDecl, Value,
 };
@@ -37,6 +38,7 @@ pub enum EvalError {
     IndexNonArray,
     NeedRef(String),
     NoMatchingArg(String, String),
+    MissingArg(String),
     BreakInToplevel,
     BreakInFnArg,
     NonIntegerIndex,
@@ -44,6 +46,7 @@ pub enum EvalError {
     NoMainFound,
     NonNameFnRef(String),
     CallStackUndeflow,
+    IncompatibleArrayLength(usize, usize),
 }
 
 impl std::error::Error for EvalError {}
@@ -88,6 +91,7 @@ impl std::fmt::Display for EvalError {
                 f,
                 "No matching named parameter \"{arg}\" is found in function \"{fun}\""
             ),
+            Self::MissingArg(arg) => write!(f, "No argument is given to \"{arg}\""),
             Self::BreakInToplevel => write!(f, "break in function toplevel"),
             Self::BreakInFnArg => write!(f, "Break in function argument is not supported yet!"),
             Self::NonIntegerIndex => write!(f, "Subscript type should be integer types"),
@@ -100,6 +104,10 @@ impl std::fmt::Display for EvalError {
                 "Function can be only specified by a name (yet), but got {val}"
             ),
             Self::CallStackUndeflow => write!(f, "Call stack underflow!"),
+            Self::IncompatibleArrayLength(dst, src) => write!(
+                f,
+                "Array length is incompatible; tried to assign {src} to {dst}"
+            ),
         }
     }
 }
@@ -355,12 +363,17 @@ pub fn coerce_type(value: &Value, target: &TypeDecl) -> Result<Value, EvalError>
         TypeDecl::I64 => Value::I64(coerce_i64(value)?),
         TypeDecl::I32 => Value::I32(coerce_i64(value)? as i32),
         TypeDecl::Str => Value::Str(coerce_str(value)?),
-        TypeDecl::Array(inner) => {
+        TypeDecl::Array(inner, len) => {
             if let Value::Array(array) = value {
+                let array = array.borrow();
+                if let ArraySize::Fixed(len) = len {
+                    if *len != array.values.len() {
+                        return Err(EvalError::IncompatibleArrayLength(*len, array.values.len()));
+                    }
+                }
                 Value::Array(ArrayInt::new(
                     (**inner).clone(),
                     array
-                        .borrow()
                         .values
                         .iter()
                         .map(|value_elem| -> Result<_, EvalError> {
@@ -466,80 +479,67 @@ where
             };
             RunResult::Yield(result)
         }
-        ExprEnum::FnInvoke(str, args) => {
-            let default_args = {
-                let fn_args = ctx
-                    .get_fn(*str)
-                    .ok_or_else(|| EvalError::FnNotFound(str.to_string()))?
-                    .args();
+        ExprEnum::FnInvoke(fname, args) => {
+            let fn_args = ctx
+                .get_fn(*fname)
+                .ok_or_else(|| EvalError::FnNotFound(fname.to_string()))?
+                .args()
+                .clone();
 
-                if args.len() <= fn_args.len() {
-                    let fn_args = fn_args[args.len()..].to_vec();
+            let mut eval_args = vec![None; fn_args.len().max(args.len())];
 
-                    fn_args
-                        .into_iter()
-                        .filter_map(|arg| {
-                            // We use a new temporary EvalContext to avoid referencing outer variables, i.e. make it
-                            // a constant expression, in order to match the semantics with the bytecode compiler.
-                            // Theoretically, it is possible to evaluate the expression ahead of time to reduce
-                            // computation, but our priority is bytecode compiler which already does constant folding.
-                            arg.init
-                                .as_ref()
-                                .map(|init| eval(init, &mut EvalContext::new()))
-                        })
-                        .collect::<Result<Vec<_>, _>>()?
-                } else {
-                    vec![]
+            // Fill unnamed args
+            for (arg, eval_arg) in args.iter().zip(eval_args.iter_mut()) {
+                if arg.name.is_none() {
+                    *eval_arg = Some(eval(&arg.expr, ctx)?);
                 }
-            };
+            }
 
-            // Collect unordered args first
-            let mut eval_args = args
-                .iter()
-                .filter(|v| v.name.is_none())
-                .map(|v| eval(&v.expr, ctx))
-                .chain(default_args.into_iter().map(Ok))
-                .collect::<Result<Vec<_>, _>>()?;
-            let named_args: Vec<_> = args
-                .into_iter()
-                .filter_map(|arg| {
-                    if let Some(ref name) = arg.name {
-                        Some((name, &arg.expr))
+            // Find and assign named args
+            for arg in args.iter() {
+                if let Some(name) = arg.name {
+                    if let Some(eval_arg) = fn_args
+                        .iter()
+                        .enumerate()
+                        .find(|f| f.1.name == *name)
+                        .and_then(|(i, _)| eval_args.get_mut(i))
+                    {
+                        *eval_arg = Some(eval(&arg.expr, ctx)?);
                     } else {
-                        None
+                        return Err(EvalError::VarNotFound(name.to_string()));
                     }
-                })
-                .map(|(name, expr)| Ok::<_, EvalError>((name, eval(expr, ctx)?)))
-                .collect::<Result<Vec<_>, _>>()?;
+                }
+            }
+
+            for (arg, fn_arg) in eval_args.iter_mut().zip(fn_args.iter()) {
+                if arg.is_some() {
+                    continue;
+                }
+                if let Some(ref init) = fn_arg.init {
+                    // We use a new temporary EvalContext to avoid referencing outer variables, i.e. make it
+                    // a constant expression, in order to match the semantics with the bytecode compiler.
+                    // Theoretically, it is possible to evaluate the expression ahead of time to reduce
+                    // computation, but our priority is bytecode compiler which already does constant folding.
+                    *arg = Some(eval(init, &mut EvalContext::new())?);
+                }
+            }
 
             let func = ctx
-                .get_fn(*str)
-                .ok_or_else(|| EvalError::FnNotFound(str.to_string()))?;
+                .get_fn(*fname)
+                .ok_or_else(|| EvalError::FnNotFound(fname.to_string()))?;
 
             let mut subctx = EvalContext::push_stack(ctx);
             match func {
                 FuncDef::Code(func) => {
-                    for (name, val) in named_args.into_iter() {
-                        if let Some((i, _decl_arg)) =
-                            func.args.iter().enumerate().find(|f| f.1.name == **name)
-                        {
-                            if eval_args.len() <= i {
-                                eval_args.resize(i + 1, RunResult::Yield(Value::I32(0)));
-                            }
-                            eval_args[i] = val;
-                        } else {
-                            return Err(EvalError::NoMatchingArg(
-                                name.to_string(),
-                                str.to_string(),
-                            ));
-                        }
-                    }
-
                     for (k, v) in func.args.iter().zip(&eval_args) {
-                        subctx.variables.borrow_mut().insert(
-                            k.name,
-                            Rc::new(RefCell::new(coerce_type(&unwrap_run!(v.clone()), &k.ty)?)),
-                        );
+                        if let Some(v) = v {
+                            subctx.variables.borrow_mut().insert(
+                                k.name,
+                                Rc::new(RefCell::new(coerce_type(&unwrap_run!(v.clone()), &k.ty)?)),
+                            );
+                        } else {
+                            return Err(EvalError::MissingArg(k.name.to_string()));
+                        }
                     }
                     let run_result = run(&func.stmts, &mut subctx)?;
                     match unwrap_deref(run_result)? {
@@ -553,11 +553,10 @@ where
                 FuncDef::Native(native) => RunResult::Yield((native.code)(
                     &eval_args
                         .into_iter()
-                        .map(|e| {
-                            Ok(match e {
-                                RunResult::Yield(v) => v.clone(),
-                                RunResult::Break => return Err(EvalError::BreakInFnArg),
-                            })
+                        .map(|e| match e {
+                            Some(RunResult::Yield(v)) => Ok(v.clone()),
+                            Some(RunResult::Break) => Err(EvalError::BreakInFnArg),
+                            _ => Err(EvalError::MissingArg("arg".to_string())),
                         })
                         .collect::<Result<Vec<_>, _>>()?,
                 )?),
@@ -998,7 +997,7 @@ pub(crate) fn std_functions<'src, 'native>() -> HashMap<String, FuncDef<'src, 'n
             &s_len,
             vec![ArgDecl::new(
                 "array",
-                TypeDecl::Array(Box::new(TypeDecl::Any)),
+                TypeDecl::Array(Box::new(TypeDecl::Any), ArraySize::Any),
             )],
             Some(TypeDecl::I64),
         ),
@@ -1008,7 +1007,10 @@ pub(crate) fn std_functions<'src, 'native>() -> HashMap<String, FuncDef<'src, 'n
         FuncDef::new_native(
             &s_push,
             vec![
-                ArgDecl::new("array", TypeDecl::Array(Box::new(TypeDecl::Any))),
+                ArgDecl::new(
+                    "array",
+                    TypeDecl::Array(Box::new(TypeDecl::Any), ArraySize::Range(0..usize::MAX)),
+                ),
                 ArgDecl::new("value", TypeDecl::Any),
             ],
             None,

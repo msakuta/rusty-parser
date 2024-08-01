@@ -244,7 +244,8 @@ impl Value {
         match self {
             Value::Ref(r) => r.borrow_mut().array_push(value),
             Value::Array(array) => {
-                array.borrow_mut().values.push(value.deref()?);
+                let mut array_int = array.borrow_mut();
+                array_int.values.push(value.deref()?);
                 Ok(())
             }
             _ => Err("push() must be called for an array".to_string().into()),

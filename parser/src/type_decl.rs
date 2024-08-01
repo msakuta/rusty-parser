@@ -1,6 +1,14 @@
+mod array_size;
+
+pub use self::array_size::ArraySize;
+use self::array_size::{read_array_size, write_array_size};
 use std::io::{Read, Write};
 
-use crate::{type_tags::*, Value};
+use crate::{
+    bytecode::{read_bool, write_bool},
+    type_tags::*,
+    ReadError, Value,
+};
 
 #[derive(Debug, PartialEq, Clone)]
 #[repr(u8)]
@@ -11,7 +19,7 @@ pub enum TypeDecl {
     I64,
     I32,
     Str,
-    Array(Box<TypeDecl>),
+    Array(Box<TypeDecl>, ArraySize),
     /// An abstract type that can match F64 or F32
     Float,
     /// An abstract type that can match I64 or I32
@@ -27,7 +35,7 @@ impl TypeDecl {
             Value::I32(_) => Self::I32,
             Value::I64(_) => Self::I64,
             Value::Str(_) => Self::Str,
-            Value::Array(a) => Self::Array(Box::new(a.borrow().type_decl.clone())),
+            Value::Array(a) => Self::Array(Box::new(a.borrow().type_decl.clone()), ArraySize::Any),
             Value::Ref(a) => Self::from_value(&*a.borrow()),
             Value::ArrayRef(a, _) => a.borrow().type_decl.clone(),
             Value::Tuple(a) => Self::Tuple(
@@ -47,8 +55,9 @@ impl TypeDecl {
             Self::I64 => I64_TAG,
             Self::I32 => I32_TAG,
             Self::Str => STR_TAG,
-            Self::Array(inner) => {
+            Self::Array(inner, len) => {
                 writer.write_all(&ARRAY_TAG.to_le_bytes())?;
+                write_array_size(len, writer)?;
                 inner.serialize(writer)?;
                 return Ok(());
             }
@@ -83,7 +92,13 @@ impl TypeDecl {
             I64_TAG => Self::I64,
             I32_TAG => Self::I32,
             STR_TAG => Self::Str,
-            ARRAY_TAG => Self::Array(Box::new(Self::deserialize(reader)?)),
+            ARRAY_TAG => Self::Array(
+                Box::new(Self::deserialize(reader)?),
+                read_array_size(reader).map_err(|e| {
+                    let ReadError::IO(e) = e else { panic!() };
+                    e
+                })?,
+            ),
             REF_TAG => todo!(),
             FLOAT_TAG => Self::Float,
             INTEGER_TAG => Self::Integer,
@@ -101,7 +116,10 @@ impl std::fmt::Display for TypeDecl {
             TypeDecl::I64 => write!(f, "i64")?,
             TypeDecl::I32 => write!(f, "i32")?,
             TypeDecl::Str => write!(f, "str")?,
-            TypeDecl::Array(inner) => write!(f, "[{}]", inner.to_string())?,
+            TypeDecl::Array(inner, len) => match len {
+                ArraySize::Any => write!(f, "[{}]", inner.to_string())?,
+                _ => write!(f, "[{}; {}]", inner.to_string(), len)?,
+            },
             TypeDecl::Float => write!(f, "<Float>")?,
             TypeDecl::Integer => write!(f, "<Integer>")?,
             TypeDecl::Tuple(inner) => write!(
@@ -114,4 +132,25 @@ impl std::fmt::Display for TypeDecl {
         }
         Ok(())
     }
+}
+
+#[allow(dead_code)]
+fn write_opt_usize(value: &Option<usize>, writer: &mut impl Write) -> std::io::Result<()> {
+    write_bool(value.is_some(), writer)?;
+    if let Some(value) = value {
+        writer.write_all(&value.to_le_bytes())?;
+    }
+    Ok(())
+}
+
+#[allow(dead_code)]
+fn read_opt_usize(reader: &mut impl Read) -> Result<Option<usize>, ReadError> {
+    let has_value = read_bool(reader)?;
+    Ok(if has_value {
+        let mut buf = [0u8; std::mem::size_of::<usize>()];
+        reader.read_exact(&mut buf)?;
+        Some(usize::from_le_bytes(buf))
+    } else {
+        None
+    })
 }

@@ -28,3 +28,14 @@ fn digits(a: f64, b: f64) -> f64 {
 
 print(digits(a: 1. + 2., b: 5.));
 print(digits(b: 1. + 2., a: 5.));
+
+fn my_pow(base: f64 = 10., p: i64 = 2) -> f64 {
+    var ret = 1.;
+    for i in 0..p {
+        ret = ret * base;
+    }
+    ret;
+}
+
+print(my_pow(base: 10.));
+print(my_pow(p: 2));

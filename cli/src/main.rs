@@ -87,7 +87,7 @@ fn main() -> Result<(), String> {
             }
         } else {
             run(&result.1, &mut EvalContext::new())
-                .map_err(|e| format!("Error in run(): {:?}", e))?;
+                .map_err(|e| format!("Error in run(): {}", e))?;
         }
 
         Ok(())

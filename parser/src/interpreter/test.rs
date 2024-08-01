@@ -3,7 +3,10 @@
 use nom::{Finish, IResult};
 
 use super::*;
-use crate::parser::{source, span_source, Subslice};
+use crate::{
+    parser::{source, span_source, Subslice},
+    type_check, TypeCheckContext,
+};
 use ExprEnum::*;
 
 fn span_expr<'a, 'b>(s: &'a str) -> IResult<Span, Expression> {
@@ -550,11 +553,18 @@ fn array_decl_test() {
     );
     assert_eq!(
         type_spec(Span::new(": [i32]")).finish().unwrap().1,
-        TypeDecl::Array(Box::new(TypeDecl::I32))
+        TypeDecl::Array(Box::new(TypeDecl::I32), ArraySize::Any)
     );
     assert_eq!(
         type_spec(Span::new(": [[f32]]")).finish().unwrap().1,
-        TypeDecl::Array(Box::new(TypeDecl::Array(Box::new(TypeDecl::F32))))
+        TypeDecl::Array(
+            Box::new(TypeDecl::Array(Box::new(TypeDecl::F32), ArraySize::Any)),
+            ArraySize::Any
+        )
+    );
+    assert_eq!(
+        type_spec(Span::new(": [f32; 3]")).finish().unwrap().1,
+        TypeDecl::Array(Box::new(TypeDecl::F32), ArraySize::Fixed(3))
     );
 }
 
@@ -648,7 +658,10 @@ fn fn_array_decl_test() {
         func_decl(span).finish().unwrap().1,
         Statement::FnDecl {
             name: "f",
-            args: vec![ArgDecl::new("a", TypeDecl::Array(Box::new(TypeDecl::I32)))],
+            args: vec![ArgDecl::new(
+                "a",
+                TypeDecl::Array(Box::new(TypeDecl::I32), ArraySize::Any)
+            )],
             ret_type: None,
             stmts: Rc::new(vec![Statement::Expression(Expression::new(
                 VarAssign(
@@ -755,6 +768,38 @@ fn array_index_assign_test() {
         run0(&span_source("var a: [i32] = [1,3,5]; a[1] = 123").unwrap().1),
         Ok(RunResult::Yield(I64(123)))
     );
+}
+
+#[test]
+fn array_sized_test() {
+    let span = Span::new("var a: [i32; 3] = [1,2,3]; var b: [i32; 3] = [4,5,6]; a = b;");
+    let ast = source(span).finish().unwrap().1;
+    type_check(&ast, &mut TypeCheckContext::new(None)).unwrap();
+    run0(&ast).unwrap();
+}
+
+#[test]
+fn array_sized_error_test() {
+    let span = Span::new("var a: [i32; 3] = [1,2,3]; var b: [i32; 4] = [4,5,6,7]; a = b;");
+    let ast = source(span).finish().unwrap().1;
+    match type_check(&ast, &mut TypeCheckContext::new(Some("input"))) {
+        Ok(_) => panic!(),
+        Err(e) => assert_eq!(e.to_string(), "Operation Assignment between incompatible type [i32; 3] and [i32; 4]: Array size is not compatible: 4 cannot assign to 3\ninput:1:57"),
+    }
+    // It will run successfully although the typecheck fails.
+    run0(&ast).unwrap();
+}
+
+#[test]
+fn array_sized_cmp_error_test() {
+    let span = Span::new("var a: [i32; 3] = [1,2,3]; var b: [i32; 4] = [4,5,6,7]; a < b;");
+    let ast = source(span).finish().unwrap().1;
+    match type_check(&ast, &mut TypeCheckContext::new(Some("input"))) {
+        Ok(_) => panic!(),
+        Err(e) => assert_eq!(e.to_string(), "Operation LT between incompatible type [i32; 3] and [i32; 4]: Array size must be the same for comparison\ninput:1:57"),
+    }
+    // It will fail at runtime
+    assert!(run0(&ast).is_err());
 }
 
 #[test]
