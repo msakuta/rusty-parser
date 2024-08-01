@@ -358,7 +358,7 @@ fn tc_array_size(value: &ArraySize, target: &ArraySize) -> Result<(), String> {
             array_range_verify(t_range)?;
             if t_range.end < v_range.end || v_range.start < t_range.start {
                 return Err(format!(
-                    "Array range is not compatible: {v_range:?} cannot assign to {t_range:?}"
+                    "Array range is not compatible: {value} cannot assign to {target}"
                 ));
             }
         }
@@ -366,7 +366,7 @@ fn tc_array_size(value: &ArraySize, target: &ArraySize) -> Result<(), String> {
             array_range_verify(t_range)?;
             if *v_len < t_range.start || t_range.end < *v_len {
                 return Err(format!(
-                    "Array range is not compatible: {v_len} cannot assign to {t_range:?}"
+                    "Array range is not compatible: {v_len} cannot assign to {target}"
                 ));
             }
         }
@@ -596,7 +596,7 @@ where
     f(&lhst, &rhst, span, ctx).map_err(|e| {
         TypeCheckError::new(
             format!(
-                "Operation {op} between incompatible type {:?} and {:?}: {}",
+                "Operation {op} between incompatible type {} and {}: {}",
                 lhst, rhst, e.msg
             ),
             lhs.span,

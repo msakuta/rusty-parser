@@ -75,7 +75,7 @@ fn test_array_range_shorter_err() {
     assert_eq!(
         res,
         Err(TypeCheckError::new(
-            "Array range is not compatible: 4 cannot assign to 0..3".to_string(),
+            "Array range is not compatible: 4 cannot assign to ..3".to_string(),
             span.subslice(20, 12),
             None
         ))
@@ -90,7 +90,7 @@ fn test_array_range_longer_err() {
     assert_eq!(
         res,
         Err(TypeCheckError::new(
-            "Array range is not compatible: 2 cannot assign to 3..18446744073709551615".to_string(),
+            "Array range is not compatible: 2 cannot assign to 3..".to_string(),
             span.subslice(20, 6),
             None
         ))

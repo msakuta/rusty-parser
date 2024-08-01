@@ -47,6 +47,21 @@ impl ArraySize {
     }
 }
 
+impl std::fmt::Display for ArraySize {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Any => write!(f, "_"),
+            Self::Fixed(v) => write!(f, "{v}"),
+            Self::Range(range) => match (range.start, range.end) {
+                (0, usize::MAX) => write!(f, ".."),
+                (start, usize::MAX) => write!(f, "{start}.."),
+                (0, end) => write!(f, "..{end}"),
+                (start, end) => write!(f, "{start}..{end}"),
+            },
+        }
+    }
+}
+
 pub(super) fn write_array_size(value: &ArraySize, writer: &mut impl Write) -> std::io::Result<()> {
     writer.write_all(&mut [value.tag()])?;
     match value {
