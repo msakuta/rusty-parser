@@ -135,6 +135,7 @@ impl std::fmt::Display for TypeDecl {
     }
 }
 
+#[allow(dead_code)]
 fn write_opt_usize(value: &Option<usize>, writer: &mut impl Write) -> std::io::Result<()> {
     write_bool(value.is_some(), writer)?;
     if let Some(value) = value {
@@ -143,6 +144,7 @@ fn write_opt_usize(value: &Option<usize>, writer: &mut impl Write) -> std::io::R
     Ok(())
 }
 
+#[allow(dead_code)]
 fn read_opt_usize(reader: &mut impl Read) -> Result<Option<usize>, ReadError> {
     let has_value = read_bool(reader)?;
     Ok(if has_value {
