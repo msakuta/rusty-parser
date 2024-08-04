@@ -111,7 +111,7 @@ pub(super) fn write_array_size_axis(
 pub(super) fn read_array_size(reader: &mut impl Read) -> Result<ArraySize, ReadError> {
     let mut buf = [0u8; std::mem::size_of::<u64>()];
     reader.read_exact(&mut buf)?;
-    let size = usize::from_le_bytes(buf);
+    let size = u64::from_le_bytes(buf) as usize;
     let values = (0..size)
         .map(|_| read_array_size_axis(reader))
         .collect::<Result<_, _>>()?;

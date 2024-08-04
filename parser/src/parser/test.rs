@@ -884,3 +884,19 @@ fn test_range_sz_array() {
         )
     );
 }
+
+#[test]
+fn test_muldim_array() {
+    let span = Span::new("var a: [i32; 2, 3];");
+    assert_eq!(
+        statement(span).finish().unwrap().1,
+        Statement::VarDecl(
+            &*span.subslice(4, 1),
+            TypeDecl::Array(
+                Box::new(TypeDecl::I32),
+                ArraySize(vec![ArraySizeAxis::Fixed(2), ArraySizeAxis::Fixed(3)])
+            ),
+            None
+        )
+    );
+}
