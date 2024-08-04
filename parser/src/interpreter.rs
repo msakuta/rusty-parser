@@ -34,6 +34,7 @@ pub enum EvalError {
     VarNotFound(String),
     FnNotFound(String),
     ArrayOutOfBounds(usize, usize),
+    NonRectangularArray,
     TupleOutOfBounds(usize, usize),
     IndexNonArray,
     NeedRef(String),
@@ -78,6 +79,9 @@ impl std::fmt::Display for EvalError {
                 f,
                 "ArrayRef index out of range: {idx} is larger than array length {len}"
             ),
+            Self::NonRectangularArray => {
+                write!(f, "The array has different number of columns among rows")
+            }
             Self::TupleOutOfBounds(idx, len) => write!(
                 f,
                 "Tuple index out of range: {idx} is larger than tuple length {len}"
@@ -437,6 +441,52 @@ pub fn coerce_type(value: &Value, target: &TypeDecl) -> Result<Value, EvalError>
     })
 }
 
+fn eval_array_literal<'src, 'native>(
+    val: &[Vec<Expression<'src>>],
+    ctx: &mut EvalContext<'src, 'native, '_>,
+) -> EvalResult<RunResult>
+where
+    'native: 'src,
+{
+    let Some(cols) = val.first().map(|row| row.len()) else {
+        // An empty array has 1 dimension by convention
+        let int = ArrayInt::new(TypeDecl::Any, vec![0], vec![]);
+        return Ok(RunResult::Yield(Value::Array(int)));
+    };
+
+    let total_size = val.len() * cols;
+
+    // Validate array shape
+    for row in val {
+        if row.len() != cols {
+            return Err(EvalError::NonRectangularArray);
+        }
+    }
+
+    let mut rows = Vec::with_capacity(total_size);
+    for row in val.iter() {
+        for cell in row.iter() {
+            if let RunResult::Yield(y) = eval(cell, ctx)? {
+                rows.push(y);
+            } else {
+                return Err(EvalError::DisallowedBreak);
+            }
+        }
+    }
+
+    let shape = if val.len() == 1 {
+        vec![cols]
+    } else {
+        vec![val.len(), cols]
+    };
+
+    Ok(RunResult::Yield(Value::Array(ArrayInt::new(
+        TypeDecl::Any,
+        shape,
+        rows,
+    ))))
+}
+
 pub(crate) fn eval<'src, 'native>(
     e: &Expression<'src>,
     ctx: &mut EvalContext<'src, 'native, '_>,
@@ -447,19 +497,7 @@ where
     Ok(match &e.expr {
         ExprEnum::NumLiteral(val) => RunResult::Yield(val.clone()),
         ExprEnum::StrLiteral(val) => RunResult::Yield(Value::Str(val.clone())),
-        ExprEnum::ArrLiteral(val) => RunResult::Yield(Value::Array(ArrayInt::new(
-            TypeDecl::Any,
-            vec![val.len()],
-            val.iter()
-                .map(|v| {
-                    if let RunResult::Yield(y) = eval(v, ctx)? {
-                        Ok(y)
-                    } else {
-                        Err(EvalError::DisallowedBreak)
-                    }
-                })
-                .collect::<Result<Vec<_>, _>>()?,
-        ))),
+        ExprEnum::ArrLiteral(val) => eval_array_literal(val, ctx)?,
         ExprEnum::TupleLiteral(val) => RunResult::Yield(Value::Tuple(Rc::new(RefCell::new(
             val.iter()
                 .map(|v| {
@@ -717,50 +755,9 @@ where
 
 pub(crate) fn s_print(vals: &[Value]) -> EvalResult<Value> {
     println!("print:");
-    fn print_inner(val: &Value) -> EvalResult<()> {
-        match val {
-            Value::F64(val) => print!("{}", val),
-            Value::F32(val) => print!("{}", val),
-            Value::I64(val) => print!("{}", val),
-            Value::I32(val) => print!("{}", val),
-            Value::Str(val) => print!("{}", val),
-            Value::Array(val) => {
-                print!("[");
-                for (i, val) in val.borrow().values.iter().enumerate() {
-                    if i != 0 {
-                        print!(", ");
-                    }
-                    print_inner(val)?;
-                }
-                print!("]");
-            }
-            Value::Ref(r) => {
-                print!("ref(");
-                print_inner(&r.borrow())?;
-                print!(")");
-            }
-            Value::ArrayRef(r, idx) => {
-                print!("arrayref(");
-                print_inner((*r.borrow()).values.eget(*idx)?)?;
-                print!(")");
-            }
-            Value::Tuple(val) => {
-                print!("(");
-                for (i, val) in val.borrow().iter().enumerate() {
-                    if i != 0 {
-                        print!(", ");
-                    }
-                    print_inner(&val.value)?;
-                }
-                print!(")");
-            }
-        }
-        Ok(())
-    }
     for val in vals {
-        print_inner(val)?;
         // Put a space between tokens
-        print!(" ");
+        print!(" {val}");
     }
     print!("\n");
     Ok(Value::I32(0))

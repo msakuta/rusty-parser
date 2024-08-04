@@ -65,17 +65,29 @@ impl std::fmt::Display for Value {
             Self::I64(v) => write!(f, "{v}"),
             Self::I32(v) => write!(f, "{v}"),
             Self::Str(v) => write!(f, "{v}"),
-            Self::Array(v) => write!(
-                f,
-                "[{}]",
-                &v.borrow().values.iter().fold("".to_string(), |acc, cur| {
-                    if acc.is_empty() {
-                        cur.to_string()
-                    } else {
-                        acc + ", " + &cur.to_string()
-                    }
-                })
-            ),
+            Self::Array(v) => {
+                let v = v.borrow();
+                write!(
+                    f,
+                    "[{}]",
+                    &v.values
+                        .iter()
+                        .enumerate()
+                        .fold("".to_string(), |acc, (i, cur)| {
+                            if acc.is_empty() {
+                                cur.to_string()
+                            } else {
+                                let sep =
+                                    if v.shape.get(1).is_some_and(|sz| *sz != 0 && i % *sz == 0) {
+                                        "; "
+                                    } else {
+                                        ", "
+                                    };
+                                acc + sep + &cur.to_string()
+                            }
+                        }),
+                )
+            }
             Self::Ref(v) => write!(f, "&{}", v.borrow()),
             Self::ArrayRef(v, idx) => {
                 if let Some(v) = (*v.borrow()).values.get(*idx) {

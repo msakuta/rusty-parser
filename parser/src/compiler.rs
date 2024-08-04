@@ -409,30 +409,47 @@ fn emit_stmts(stmts: &[Statement], compiler: &mut Compiler) -> CompileResult<Opt
     Ok(last_target)
 }
 
+fn emit_array_literal(val: &[Vec<Expression>], compiler: &mut Compiler) -> CompileResult<usize> {
+    let Some(cols) = val.first().map(|row| row.len()) else {
+        // An empty array has 1 dimension by convention
+        let int = ArrayInt::new(TypeDecl::Any, vec![0], vec![]);
+        return Ok(compiler.find_or_create_literal(&Value::Array(int)));
+    };
+
+    let total_size = val.len() * cols;
+
+    // Validate array shape
+    for row in val {
+        if row.len() != cols {
+            return Err(CompileError::EvalError(EvalError::NonRectangularArray));
+        }
+    }
+
+    let mut ctx = EvalContext::new();
+    let mut values = Vec::with_capacity(total_size);
+    for row in val.iter() {
+        for cell in row.iter() {
+            if let RunResult::Yield(y) = eval(cell, &mut ctx).map_err(CompileError::EvalError)? {
+                values.push(y);
+            } else {
+                return Err(CompileError::BreakInArrayLiteral);
+            }
+        }
+    }
+
+    let val = Value::Array(Rc::new(RefCell::new(ArrayInt {
+        type_decl: TypeDecl::Any,
+        shape: vec![val.len()],
+        values,
+    })));
+    Ok(compiler.find_or_create_literal(&val))
+}
+
 fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> CompileResult<usize> {
     match &expr.expr {
         ExprEnum::NumLiteral(val) => Ok(compiler.find_or_create_literal(val)),
         ExprEnum::StrLiteral(val) => Ok(compiler.find_or_create_literal(&Value::Str(val.clone()))),
-        ExprEnum::ArrLiteral(val) => {
-            let mut ctx = EvalContext::new();
-            let val = Value::Array(Rc::new(RefCell::new(ArrayInt {
-                type_decl: TypeDecl::Any,
-                shape: vec![val.len()],
-                values: val
-                    .iter()
-                    .map(|v| {
-                        if let RunResult::Yield(y) =
-                            eval(v, &mut ctx).map_err(CompileError::EvalError)?
-                        {
-                            Ok(y)
-                        } else {
-                            Err(CompileError::BreakInArrayLiteral)
-                        }
-                    })
-                    .collect::<Result<Vec<_>, _>>()?,
-            })));
-            Ok(compiler.find_or_create_literal(&val))
-        }
+        ExprEnum::ArrLiteral(val) => emit_array_literal(val, compiler),
         ExprEnum::TupleLiteral(val) => {
             let mut ctx = EvalContext::new();
             let val = Value::Tuple(Rc::new(RefCell::new(

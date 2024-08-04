@@ -28,9 +28,9 @@ impl<'src> Display for TypeCheckError<'src> {
 }
 
 impl<'src> TypeCheckError<'src> {
-    fn new(msg: String, span: Span<'src>, source_file: Option<&'src str>) -> Self {
+    fn new(msg: impl Into<String>, span: Span<'src>, source_file: Option<&'src str>) -> Self {
         Self {
-            msg,
+            msg: msg.into(),
             span,
             source_file,
         }
@@ -139,6 +139,51 @@ impl<'src, 'native, 'ctx> TypeCheckContext<'src, 'native, 'ctx> {
     }
 }
 
+fn tc_array_literal<'src, 'native>(
+    val: &[Vec<Expression<'src>>],
+    span: Span<'src>,
+    ctx: &mut TypeCheckContext<'src, 'native, '_>,
+) -> Result<TypeDecl, TypeCheckError<'src>>
+where
+    'native: 'src,
+{
+    let Some((first, cols)) = val.first().and_then(|row| Some((row.first()?, row.len()))) else {
+        // An empty array has 1 dimension by convention
+        return Ok(TypeDecl::Array(
+            Box::new(TypeDecl::Any),
+            ArraySize(vec![ArraySizeAxis::Fixed(0)]),
+        ));
+    };
+
+    let first = tc_expr(first, ctx)?;
+
+    // Validate array shape
+    for row in val {
+        if row.len() != cols {
+            return Err(TypeCheckError::new(
+                "Array doesn't have a rectangular array",
+                span,
+                ctx.source_file,
+            ));
+        }
+    }
+
+    for row in val.iter() {
+        for cell in row.iter() {
+            let value = tc_expr(cell, ctx)?;
+            tc_coerce_type(&value, &first, span, ctx)?;
+        }
+    }
+
+    let shape = if val.len() == 1 {
+        vec![ArraySizeAxis::Fixed(cols)]
+    } else {
+        vec![ArraySizeAxis::Fixed(val.len()), ArraySizeAxis::Fixed(cols)]
+    };
+
+    Ok(TypeDecl::Array(Box::new(first), ArraySize(shape)))
+}
+
 fn tc_expr<'src, 'b, 'native>(
     e: &'b Expression<'src>,
     ctx: &mut TypeCheckContext<'src, 'native, '_>,
@@ -159,29 +204,7 @@ where
             }
         },
         ExprEnum::StrLiteral(_val) => TypeDecl::Str,
-        ExprEnum::ArrLiteral(val) => {
-            if !val.is_empty() {
-                for (ex1, ex2) in val[..val.len() - 1].iter().zip(val[1..].iter()) {
-                    let el1 = tc_expr(ex1, ctx)?;
-                    let el2 = tc_expr(ex2, ctx)?;
-                    if el1 != el2 {
-                        return Err(TypeCheckError::new(
-                            format!("Types in an array is not homogeneous: {el1:?} and {el2:?}"),
-                            e.span,
-                            ctx.source_file,
-                        ));
-                    }
-                }
-            }
-            let ty = val
-                .first()
-                .map(|e| tc_expr(e, ctx))
-                .unwrap_or(Ok(TypeDecl::Any))?;
-            TypeDecl::Array(
-                Box::new(ty),
-                ArraySize(vec![ArraySizeAxis::Fixed(val.len())]),
-            )
-        }
+        ExprEnum::ArrLiteral(val) => tc_array_literal(val, e.span, ctx)?,
         ExprEnum::TupleLiteral(val) => {
             let ty = val
                 .iter()

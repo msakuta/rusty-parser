@@ -581,22 +581,22 @@ fn array_literal_test() {
     assert_eq!(
         array_literal(span).finish().unwrap().1,
         Expression::new(
-            ArrLiteral(vec![
+            ArrLiteral(vec![vec![
                 nl(I64(1), span.subslice(1, 1)),
                 nl(I64(3), span.subslice(3, 1)),
                 nl(I64(5), span.subslice(5, 1))
-            ]),
+            ]]),
             span
         )
     );
     assert_eq!(
         full_expression(span).finish().unwrap().1,
         Expression::new(
-            ArrLiteral(vec![
+            ArrLiteral(vec![vec![
                 nl(I64(1), span.subslice(1, 1)),
                 nl(I64(3), span.subslice(3, 1)),
                 nl(I64(5), span.subslice(5, 1))
-            ]),
+            ]]),
             span
         )
     );
@@ -604,24 +604,24 @@ fn array_literal_test() {
     assert_eq!(
         full_expression(span).finish().unwrap().1,
         Expression::new(
-            ArrLiteral(vec![
+            ArrLiteral(vec![vec![
                 Expression::new(
-                    ArrLiteral(vec![
+                    ArrLiteral(vec![vec![
                         nl(I64(1), span.subslice(2, 1)),
                         nl(I64(3), span.subslice(4, 1)),
                         nl(I64(5), span.subslice(6, 1))
-                    ]),
+                    ]]),
                     span.subslice(1, 7)
                 ),
                 Expression::new(
-                    ArrLiteral(vec![
+                    ArrLiteral(vec![vec![
                         nl(I64(7), span.subslice(10, 1)),
                         nl(I64(8), span.subslice(12, 1)),
                         nl(I64(9), span.subslice(14, 1))
-                    ]),
+                    ]]),
                     span.subslice(9, 7)
                 ),
-            ]),
+            ]]),
             span
         )
     );
