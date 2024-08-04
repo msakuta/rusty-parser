@@ -553,18 +553,24 @@ fn array_decl_test() {
     );
     assert_eq!(
         type_spec(Span::new(": [i32]")).finish().unwrap().1,
-        TypeDecl::Array(Box::new(TypeDecl::I32), ArraySize::Any)
+        TypeDecl::Array(Box::new(TypeDecl::I32), ArraySize::default())
     );
     assert_eq!(
         type_spec(Span::new(": [[f32]]")).finish().unwrap().1,
         TypeDecl::Array(
-            Box::new(TypeDecl::Array(Box::new(TypeDecl::F32), ArraySize::Any)),
-            ArraySize::Any
+            Box::new(TypeDecl::Array(
+                Box::new(TypeDecl::F32),
+                ArraySize::default()
+            )),
+            ArraySize::default()
         )
     );
     assert_eq!(
         type_spec(Span::new(": [f32; 3]")).finish().unwrap().1,
-        TypeDecl::Array(Box::new(TypeDecl::F32), ArraySize::Fixed(3))
+        TypeDecl::Array(
+            Box::new(TypeDecl::F32),
+            ArraySize(vec![ArraySizeAxis::Fixed(3)])
+        )
     );
 }
 
@@ -635,6 +641,7 @@ fn array_literal_eval_test() {
         // Right now array literals have "Any" internal type, but it should be decided somehow.
         RunResult::Yield(Value::Array(ArrayInt::new(
             TypeDecl::Any,
+            vec![3],
             vec![i64(1), i64(3), i64(5)]
         )))
     );
@@ -645,6 +652,7 @@ fn array_literal_eval_test() {
         Ok(RunResult::Yield(Value::Ref(Rc::new(RefCell::new(
             Value::Array(ArrayInt::new(
                 TypeDecl::F64,
+                vec![3],
                 vec![f64(1.), f64(3.), f64(5.)]
             ))
         )))))
@@ -660,7 +668,7 @@ fn fn_array_decl_test() {
             name: "f",
             args: vec![ArgDecl::new(
                 "a",
-                TypeDecl::Array(Box::new(TypeDecl::I32), ArraySize::Any)
+                TypeDecl::Array(Box::new(TypeDecl::I32), ArraySize::default())
             )],
             ret_type: None,
             stmts: Rc::new(vec![Statement::Expression(Expression::new(

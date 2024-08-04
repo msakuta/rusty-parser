@@ -14,12 +14,23 @@ use crate::{
 #[derive(Debug, PartialEq, Clone)]
 pub struct ArrayInt {
     pub(crate) type_decl: TypeDecl,
+    /// Shape of multi-dimensional array.
+    pub(crate) shape: Vec<usize>,
+    /// Flattened payload for values. First axis changes last.
     pub(crate) values: Vec<Value>,
 }
 
 impl ArrayInt {
-    pub(crate) fn new(type_decl: TypeDecl, values: Vec<Value>) -> Rc<RefCell<Self>> {
-        Rc::new(RefCell::new(Self { type_decl, values }))
+    pub(crate) fn new(
+        type_decl: TypeDecl,
+        shape: Vec<usize>,
+        values: Vec<Value>,
+    ) -> Rc<RefCell<Self>> {
+        Rc::new(RefCell::new(Self {
+            type_decl,
+            shape,
+            values,
+        }))
     }
 
     pub fn values(&self) -> &[Value] {
@@ -112,10 +123,11 @@ impl Value {
             Self::Array(rc) => {
                 let ArrayInt {
                     type_decl: decl,
+                    shape,
                     values,
                 } = &rc.borrow() as &ArrayInt;
                 writer.write_all(&ARRAY_TAG.to_le_bytes())?;
-                writer.write_all(&values.len().to_le_bytes())?;
+                write_sizes(shape, writer)?;
                 decl.serialize(writer)?;
                 for value in values {
                     value.serialize(writer)?;
@@ -176,12 +188,13 @@ impl Value {
                 String::from_utf8(buf)?
             }),
             ARRAY_TAG => {
-                let value_count = parse!(usize);
+                let shape = read_sizes(reader)?;
+                let value_count = shape.iter().fold(1usize, |acc, cur| acc * *cur);
                 let decl = TypeDecl::deserialize(reader)?;
                 let values = (0..value_count)
                     .map(|_| Value::deserialize(reader))
                     .collect::<Result<_, _>>()?;
-                Self::Array(ArrayInt::new(decl, values))
+                Self::Array(ArrayInt::new(decl, shape, values))
             }
             TUPLE_TAG => {
                 let value_count = parse!(usize);
@@ -284,6 +297,28 @@ impl Value {
             _ => self,
         })
     }
+}
+
+fn write_sizes(shape: &[usize], writer: &mut impl Write) -> std::io::Result<()> {
+    writer.write_all(&(shape.len() as u64).to_le_bytes())?;
+    for shape_axis in shape {
+        writer.write_all(&(*shape_axis as u64).to_le_bytes())?;
+    }
+    Ok(())
+}
+
+fn read_sizes(reader: &mut impl Read) -> std::io::Result<Vec<usize>> {
+    let mut buf = [0u8; std::mem::size_of::<u64>()];
+    reader.read_exact(&mut buf)?;
+    let size = u64::from_le_bytes(buf) as usize;
+    let ret = (0..size)
+        .map(|_| -> std::io::Result<_> {
+            let mut buf = [0u8; std::mem::size_of::<u64>()];
+            reader.read_exact(&mut buf)?;
+            Ok(u64::from_le_bytes(buf) as usize)
+        })
+        .collect::<Result<_, _>>()?;
+    Ok(ret)
 }
 
 pub type TupleInt = Vec<TupleEntry>;

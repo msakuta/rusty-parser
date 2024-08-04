@@ -1,6 +1,6 @@
 use crate::{
     parser::*,
-    type_decl::ArraySize,
+    type_decl::{ArraySize, ArraySizeAxis},
     value::{ArrayInt, TupleEntry},
     TypeDecl, Value,
 };
@@ -283,6 +283,7 @@ fn _coerce_var(value: &Value, target: &Value) -> Result<Value, EvalError> {
         Value::Array(array) => {
             let ArrayInt {
                 type_decl: inner_type,
+                shape,
                 values: inner,
             } = &array.borrow() as &ArrayInt;
             if inner.len() == 0 {
@@ -299,6 +300,7 @@ fn _coerce_var(value: &Value, target: &Value) -> Result<Value, EvalError> {
                 if let Value::Array(array) = value {
                     Value::Array(ArrayInt::new(
                         inner_type.clone(),
+                        shape.clone(),
                         array
                             .borrow()
                             .values
@@ -366,13 +368,33 @@ pub fn coerce_type(value: &Value, target: &TypeDecl) -> Result<Value, EvalError>
         TypeDecl::Array(inner, len) => {
             if let Value::Array(array) = value {
                 let array = array.borrow();
-                if let ArraySize::Fixed(len) = len {
-                    if *len != array.values.len() {
-                        return Err(EvalError::IncompatibleArrayLength(*len, array.values.len()));
+                for (v_axis, t_axis) in array.shape.iter().zip(len.0.iter()) {
+                    match t_axis {
+                        ArraySizeAxis::Fixed(len) => {
+                            if *len != *v_axis {
+                                return Err(EvalError::IncompatibleArrayLength(
+                                    *len,
+                                    array.values.len(),
+                                ));
+                            }
+                        }
+                        ArraySizeAxis::Range(range) => {
+                            if *v_axis < range.start {
+                                return Err(EvalError::IncompatibleArrayLength(
+                                    range.start,
+                                    *v_axis,
+                                ));
+                            }
+                            if range.end < *v_axis {
+                                return Err(EvalError::IncompatibleArrayLength(range.end, *v_axis));
+                            }
+                        }
+                        _ => {}
                     }
                 }
                 Value::Array(ArrayInt::new(
                     (**inner).clone(),
+                    array.shape.clone(),
                     array
                         .values
                         .iter()
@@ -427,6 +449,7 @@ where
         ExprEnum::StrLiteral(val) => RunResult::Yield(Value::Str(val.clone())),
         ExprEnum::ArrLiteral(val) => RunResult::Yield(Value::Array(ArrayInt::new(
             TypeDecl::Any,
+            vec![val.len()],
             val.iter()
                 .map(|v| {
                     if let RunResult::Yield(y) = eval(v, ctx)? {
@@ -997,7 +1020,7 @@ pub(crate) fn std_functions<'src, 'native>() -> HashMap<String, FuncDef<'src, 'n
             &s_len,
             vec![ArgDecl::new(
                 "array",
-                TypeDecl::Array(Box::new(TypeDecl::Any), ArraySize::Any),
+                TypeDecl::Array(Box::new(TypeDecl::Any), ArraySize::default()),
             )],
             Some(TypeDecl::I64),
         ),
@@ -1009,7 +1032,10 @@ pub(crate) fn std_functions<'src, 'native>() -> HashMap<String, FuncDef<'src, 'n
             vec![
                 ArgDecl::new(
                     "array",
-                    TypeDecl::Array(Box::new(TypeDecl::Any), ArraySize::Range(0..usize::MAX)),
+                    TypeDecl::Array(
+                        Box::new(TypeDecl::Any),
+                        ArraySize(vec![ArraySizeAxis::Range(0..usize::MAX)]),
+                    ),
                 ),
                 ArgDecl::new("value", TypeDecl::Any),
             ],

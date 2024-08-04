@@ -417,6 +417,7 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> CompileResult<usize>
             let mut ctx = EvalContext::new();
             let val = Value::Array(Rc::new(RefCell::new(ArrayInt {
                 type_decl: TypeDecl::Any,
+                shape: vec![val.len()],
                 values: val
                     .iter()
                     .map(|v| {

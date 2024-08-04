@@ -1,5 +1,5 @@
 use crate::{
-    type_decl::{ArraySize, TypeDecl},
+    type_decl::{ArraySize, ArraySizeAxis, TypeDecl},
     Value,
 };
 
@@ -20,12 +20,14 @@ use std::{rc::Rc, string::FromUtf8Error};
 
 pub type Span<'a> = LocatedSpan<&'a str>;
 
+#[non_exhaustive]
 #[derive(Debug)]
 pub enum ReadError {
     IO(std::io::Error),
     FromUtf8(FromUtf8Error),
     NoMainFound,
     UndefinedOpCode(u8),
+    ZeroDimShape,
 }
 
 impl From<std::io::Error> for ReadError {
@@ -47,6 +49,7 @@ impl std::fmt::Display for ReadError {
             ReadError::FromUtf8(e) => write!(f, "{e}"),
             ReadError::NoMainFound => write!(f, "No main function found"),
             ReadError::UndefinedOpCode(code) => write!(f, "Opcode \"{code:02X}\" unrecognized!"),
+            Self::ZeroDimShape => write!(f, "Array has zero dimensions"),
         }
     }
 }
@@ -217,26 +220,31 @@ fn type_scalar(input: Span) -> IResult<Span, TypeDecl> {
     ))
 }
 
-fn array_size_range(input: Span) -> IResult<Span, ArraySize> {
+fn array_size_range(input: Span) -> IResult<Span, ArraySizeAxis> {
     let (r, start) = opt(ws(decimal))(input)?;
     let (r, _) = ws(tag(".."))(r)?;
     let (r, end) = opt(ws(decimal))(r)?;
     let start = start.and_then(|v| v.parse().ok()).unwrap_or(0);
     let end = end.and_then(|v| v.parse().ok()).unwrap_or(usize::MAX);
-    Ok((r, ArraySize::Range(start..end)))
+    Ok((r, ArraySizeAxis::Range(start..end)))
 }
 
-fn array_size_fixed(input: Span) -> IResult<Span, ArraySize> {
+fn array_size_fixed(input: Span) -> IResult<Span, ArraySizeAxis> {
     let (r, v) = ws(decimal)(input)?;
     Ok((
         r,
-        ArraySize::Fixed(v.parse().map_err(|_| {
+        ArraySizeAxis::Fixed(v.parse().map_err(|_| {
             nom::Err::Error(nom::error::Error {
                 input,
                 code: nom::error::ErrorKind::Digit,
             })
         })?),
     ))
+}
+
+fn type_array_axis(input: Span) -> IResult<Span, ArraySizeAxis> {
+    let (r, range) = alt((array_size_range, array_size_fixed))(input)?;
+    Ok((r, range))
 }
 
 fn type_array(input: Span) -> IResult<Span, TypeDecl> {
@@ -246,14 +254,17 @@ fn type_array(input: Span) -> IResult<Span, TypeDecl> {
             type_decl,
             opt(preceded(
                 tag(";"),
-                alt((array_size_range, array_size_fixed)),
+                separated_list1(tag(","), type_array_axis),
             )),
         ),
         ws(char(']')),
     )(input)?;
     Ok((
         r,
-        TypeDecl::Array(Box::new(arr), range.unwrap_or_else(|| ArraySize::Any)),
+        TypeDecl::Array(
+            Box::new(arr),
+            range.map_or_else(ArraySize::default, ArraySize),
+        ),
     ))
 }
 
