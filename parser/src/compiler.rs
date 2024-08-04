@@ -437,9 +437,15 @@ fn emit_array_literal(val: &[Vec<Expression>], compiler: &mut Compiler) -> Compi
         }
     }
 
+    let shape = if val.len() == 1 {
+        vec![cols]
+    } else {
+        vec![val.len(), cols]
+    };
+
     let val = Value::Array(Rc::new(RefCell::new(ArrayInt {
         type_decl: TypeDecl::Any,
-        shape: vec![val.len()],
+        shape,
         values,
     })));
     Ok(compiler.find_or_create_literal(&val))
