@@ -92,8 +92,44 @@ pub(crate) fn s_push(vals: &[Value]) -> Result<Value, EvalError> {
     }
 }
 
+fn s_transpose(vals: &[Value]) -> Result<Value, EvalError> {
+    let [arr, ..] = vals else {
+        return Err(EvalError::RuntimeError(
+            "transpose does not have enough arguments".to_string(),
+        ));
+    };
+    let Value::Array(arr) = arr.clone().deref()? else {
+        return Err(EvalError::RuntimeError(
+            "transpose's argument (array) must be of type array".to_string(),
+        ));
+    };
+    let arr = arr
+        .try_borrow()
+        .map_err(|e| EvalError::RuntimeError(e.to_string()))?;
+    let cols = arr.shape.last().ok_or_else(|| {
+        EvalError::RuntimeError("transpose's argument must have at least one dimension".to_string())
+    })?;
+    let mut new_shape = arr.shape.clone();
+    new_shape.reverse();
+    let new_cols = new_shape.last().ok_or_else(|| {
+        EvalError::RuntimeError("transpose's argument must have at least one dimension".to_string())
+    })?;
+    let new_values = (0..arr.values.len())
+        .map(|i| {
+            let col = i % new_cols;
+            let row = i / new_cols;
+            arr.values[col * cols + row].clone()
+        })
+        .collect();
+    Ok(Value::Array(ArrayInt::new(
+        arr.type_decl.clone(),
+        new_shape,
+        new_values,
+    )))
+}
+
 /// Reshape a given array with a new shape.
-pub(crate) fn s_reshape(vals: &[Value]) -> Result<Value, EvalError> {
+fn s_reshape(vals: &[Value]) -> Result<Value, EvalError> {
     let [arr, shape, ..] = vals else {
         return Err(EvalError::RuntimeError(
             "reshape does not have enough arguments".to_string(),
@@ -102,7 +138,7 @@ pub(crate) fn s_reshape(vals: &[Value]) -> Result<Value, EvalError> {
     let shape = shape.clone().deref()?;
     let Value::Array(shape) = shape else {
         return Err(EvalError::RuntimeError(
-            "reshape's second argument (shape) must be an array".to_string(),
+            "reshape's second argument (shape) must be of type array".to_string(),
         ));
     };
     let shape = shape.borrow();
@@ -113,12 +149,12 @@ pub(crate) fn s_reshape(vals: &[Value]) -> Result<Value, EvalError> {
         .collect::<Result<Vec<_>, _>>()?;
     let Value::Array(arr) = arr.clone().deref()? else {
         return Err(EvalError::RuntimeError(
-            "reshape's first argument (array) must be an array".to_string(),
+            "reshape's first argument (array) must be of type array".to_string(),
         ));
     };
     let arr = arr
         .try_borrow()
-        .map_err(|e| EvalError::Other(e.to_string()))?;
+        .map_err(|e| EvalError::RuntimeError(e.to_string()))?;
     let arr_elems: usize = arr.shape.iter().copied().product();
     let shape_elems: usize = shape.iter().copied().product();
     if arr_elems != shape_elems {
@@ -200,6 +236,15 @@ pub(crate) fn std_functions_gen<'src, 'native>(
             ),
             ArgDecl::new("value", TypeDecl::Any),
         ],
+        None,
+    );
+    set_fn(
+        "transpose",
+        &s_transpose,
+        vec![ArgDecl::new(
+            "array",
+            TypeDecl::Array(Box::new(TypeDecl::Any), ArraySize::all_dyn()),
+        )],
         None,
     );
     set_fn(
