@@ -66,6 +66,7 @@ const samples = document.getElementById("samples");
     "mandel_canvas.dragon", "str.dragon", "type.dragon", "sieve.dragon",
     "if.dragon", "for.dragon", "fn.dragon",
     "array.dragon", "array_reverse.dragon", "array_range_sized.dragon", "array_muldim.dragon",
+    "array_transpose.dragon", "array_reshape.dragon",
     "canvas.dragon",
     "typecheck.dragon", "cast.dragon", "cast_error.dragon",
 ]

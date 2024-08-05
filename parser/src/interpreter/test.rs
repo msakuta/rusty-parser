@@ -662,6 +662,21 @@ fn array_literal_eval_test() {
 }
 
 #[test]
+fn array_shape_test() {
+    use Value::*;
+
+    let src = "var v: [i64; 2, 3] = [1,2,3;4,5,6]; shape(v)";
+    assert_eq!(
+        run0(&span_source(src).finish().unwrap().1),
+        Ok(RunResult::Yield(Value::Array(ArrayInt::new(
+            TypeDecl::I64,
+            vec![2],
+            vec![I64(2), I64(3)]
+        ))))
+    );
+}
+
+#[test]
 fn array_transpose_test() {
     use Value::*;
 

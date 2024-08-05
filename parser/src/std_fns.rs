@@ -92,6 +92,32 @@ pub(crate) fn s_push(vals: &[Value]) -> Result<Value, EvalError> {
     }
 }
 
+fn s_shape(vals: &[Value]) -> Result<Value, EvalError> {
+    let [arr, ..] = vals else {
+        return Err(EvalError::RuntimeError(
+            "transpose does not have enough arguments".to_string(),
+        ));
+    };
+    let Value::Array(arr) = arr.clone().deref()? else {
+        return Err(EvalError::RuntimeError(
+            "transpose's argument (array) must be of type array".to_string(),
+        ));
+    };
+    let arr = arr
+        .try_borrow()
+        .map_err(|e| EvalError::RuntimeError(e.to_string()))?;
+    let shape = arr
+        .shape
+        .iter()
+        .map(|v| Value::I64(*v as i64))
+        .collect::<Vec<_>>();
+    Ok(Value::Array(ArrayInt::new(
+        TypeDecl::I64,
+        vec![shape.len()],
+        shape,
+    )))
+}
+
 fn s_transpose(vals: &[Value]) -> Result<Value, EvalError> {
     let [arr, ..] = vals else {
         return Err(EvalError::RuntimeError(
@@ -240,6 +266,18 @@ pub(crate) fn std_functions_gen<'src, 'native>(
             ArgDecl::new("value", TypeDecl::Any),
         ],
         None,
+    );
+    set_fn(
+        "shape",
+        &s_shape,
+        vec![ArgDecl::new(
+            "array",
+            TypeDecl::Array(Box::new(TypeDecl::Any), ArraySize::all_dyn()),
+        )],
+        Some(TypeDecl::Array(
+            Box::new(TypeDecl::I64),
+            ArraySize::all_dyn(),
+        )),
     );
     set_fn(
         "transpose",
