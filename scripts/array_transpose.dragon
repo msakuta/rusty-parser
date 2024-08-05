@@ -5,3 +5,5 @@ print(a);
 var b: [i32; 3, 2] = transpose(a);
 
 print(b);
+
+print(transpose([1, 2, 3]));

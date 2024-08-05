@@ -111,6 +111,9 @@ fn s_transpose(vals: &[Value]) -> Result<Value, EvalError> {
     })?;
     let mut new_shape = arr.shape.clone();
     new_shape.reverse();
+    if new_shape.len() == 1 {
+        new_shape = vec![new_shape[0], 1];
+    }
     let new_cols = new_shape.last().ok_or_else(|| {
         EvalError::RuntimeError("transpose's argument must have at least one dimension".to_string())
     })?;

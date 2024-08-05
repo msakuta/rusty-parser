@@ -674,6 +674,16 @@ fn array_transpose_test() {
             vec![I64(1), I64(4), I64(2), I64(5), I64(3), I64(6)]
         ))))
     );
+
+    let src = "var v: [i64; 3] = [1,2,3]; transpose(v)";
+    assert_eq!(
+        run0(&span_source(src).finish().unwrap().1),
+        Ok(RunResult::Yield(Value::Array(ArrayInt::new(
+            TypeDecl::I64,
+            vec![3, 1],
+            vec![I64(1), I64(2), I64(3)]
+        ))))
+    );
 }
 
 #[test]
