@@ -662,6 +662,36 @@ fn array_literal_eval_test() {
 }
 
 #[test]
+fn array_transpose_test() {
+    use Value::*;
+
+    let src = "var v: [i64; 2, 3] = [1,2,3;4,5,6]; transpose(v)";
+    assert_eq!(
+        run0(&span_source(src).finish().unwrap().1),
+        Ok(RunResult::Yield(Value::Array(ArrayInt::new(
+            TypeDecl::I64,
+            vec![3, 2],
+            vec![I64(1), I64(4), I64(2), I64(5), I64(3), I64(6)]
+        ))))
+    );
+}
+
+#[test]
+fn array_reshape_test() {
+    use Value::*;
+
+    let src = "var v: [i64; 2, 3] = [1,2,3;4,5,6]; reshape(v, [3, 2])";
+    assert_eq!(
+        run0(&span_source(src).finish().unwrap().1),
+        Ok(RunResult::Yield(Value::Array(ArrayInt::new(
+            TypeDecl::I64,
+            vec![3, 2],
+            vec![I64(1), I64(2), I64(3), I64(4), I64(5), I64(6)]
+        ))))
+    );
+}
+
+#[test]
 fn fn_array_decl_test() {
     let span = Span::new("fn f(a: [i32]) { x = 123; }");
     assert_eq!(
