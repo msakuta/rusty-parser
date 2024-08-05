@@ -9,6 +9,7 @@ mod bytecode;
 mod compiler;
 mod interpreter;
 mod parser;
+mod std_fns;
 mod type_checker;
 mod type_decl;
 mod type_tags;

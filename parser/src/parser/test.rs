@@ -808,12 +808,12 @@ fn test_array_decl() {
         statement(span).finish().unwrap().1,
         Statement::VarDecl(
             &*span.subslice(4, 1),
-            TypeDecl::Array(Box::new(TypeDecl::I32), ArraySize::Any),
+            TypeDecl::Array(Box::new(TypeDecl::I32), ArraySize::default()),
             Some(Expression::new(
-                ArrLiteral(vec![
+                ArrLiteral(vec![vec![
                     Expression::new(NumLiteral(Value::I64(1)), span.subslice(16, 1)),
                     Expression::new(NumLiteral(Value::I64(2)), span.subslice(19, 1)),
-                ]),
+                ]]),
                 span.subslice(15, 6)
             ))
         )
@@ -827,13 +827,16 @@ fn test_fixed_sz_array() {
         statement(span).finish().unwrap().1,
         Statement::VarDecl(
             &*span.subslice(4, 1),
-            TypeDecl::Array(Box::new(TypeDecl::I32), ArraySize::Fixed(3)),
+            TypeDecl::Array(
+                Box::new(TypeDecl::I32),
+                ArraySize(vec![ArraySizeAxis::Fixed(3)])
+            ),
             Some(Expression::new(
-                ArrLiteral(vec![
+                ArrLiteral(vec![vec![
                     Expression::new(NumLiteral(Value::I64(1)), span.subslice(19, 1)),
                     Expression::new(NumLiteral(Value::I64(2)), span.subslice(22, 1)),
                     Expression::new(NumLiteral(Value::I64(3)), span.subslice(25, 1)),
-                ]),
+                ]]),
                 span.subslice(18, 9)
             ))
         )
@@ -847,7 +850,10 @@ fn test_range_sz_array() {
         statement(span).finish().unwrap().1,
         Statement::VarDecl(
             &*span.subslice(4, 1),
-            TypeDecl::Array(Box::new(TypeDecl::I32), ArraySize::Range(0..usize::MAX)),
+            TypeDecl::Array(
+                Box::new(TypeDecl::I32),
+                ArraySize(vec![ArraySizeAxis::Range(0..usize::MAX)])
+            ),
             None
         )
     );
@@ -857,7 +863,10 @@ fn test_range_sz_array() {
         statement(span).finish().unwrap().1,
         Statement::VarDecl(
             &*span.subslice(4, 1),
-            TypeDecl::Array(Box::new(TypeDecl::I32), ArraySize::Range(3..usize::MAX)),
+            TypeDecl::Array(
+                Box::new(TypeDecl::I32),
+                ArraySize(vec![ArraySizeAxis::Range(3..usize::MAX)])
+            ),
             None
         )
     );
@@ -867,7 +876,26 @@ fn test_range_sz_array() {
         statement(span).finish().unwrap().1,
         Statement::VarDecl(
             &*span.subslice(4, 1),
-            TypeDecl::Array(Box::new(TypeDecl::I32), ArraySize::Range(0..10)),
+            TypeDecl::Array(
+                Box::new(TypeDecl::I32),
+                ArraySize(vec![ArraySizeAxis::Range(0..10)])
+            ),
+            None
+        )
+    );
+}
+
+#[test]
+fn test_muldim_array() {
+    let span = Span::new("var a: [i32; 2, 3];");
+    assert_eq!(
+        statement(span).finish().unwrap().1,
+        Statement::VarDecl(
+            &*span.subslice(4, 1),
+            TypeDecl::Array(
+                Box::new(TypeDecl::I32),
+                ArraySize(vec![ArraySizeAxis::Fixed(2), ArraySizeAxis::Fixed(3)])
+            ),
             None
         )
     );
