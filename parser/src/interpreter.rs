@@ -48,6 +48,8 @@ pub enum EvalError {
     NonNameFnRef(String),
     CallStackUndeflow,
     IncompatibleArrayLength(usize, usize),
+    /// Some other error that happened in a library code.
+    RuntimeError(String),
 }
 
 impl std::error::Error for EvalError {}
@@ -112,6 +114,7 @@ impl std::fmt::Display for EvalError {
                 f,
                 "Array length is incompatible; tried to assign {src} to {dst}"
             ),
+            Self::RuntimeError(e) => write!(f, "Runtime error: {e}"),
         }
     }
 }
@@ -837,6 +840,49 @@ pub(crate) fn s_push(vals: &[Value]) -> Result<Value, EvalError> {
     }
 }
 
+/// Reshape a given array with a new shape.
+pub(crate) fn s_reshape(vals: &[Value]) -> Result<Value, EvalError> {
+    let [arr, shape, ..] = vals else {
+        return Err(EvalError::RuntimeError(
+            "reshape does not have enough arguments".to_string(),
+        ));
+    };
+    let shape = shape.clone().deref()?;
+    let Value::Array(shape) = shape else {
+        return Err(EvalError::RuntimeError(
+            "reshape's second argument (shape) must be an array".to_string(),
+        ));
+    };
+    let shape = shape.borrow();
+    let shape = shape
+        .values
+        .iter()
+        .map(|val| coerce_i64(val).map(|val| val as usize))
+        .collect::<Result<Vec<_>, _>>()?;
+    let Value::Array(arr) = arr.clone().deref()? else {
+        return Err(EvalError::RuntimeError(
+            "reshape's first argument (array) must be an array".to_string(),
+        ));
+    };
+    let arr = arr
+        .try_borrow()
+        .map_err(|e| EvalError::Other(e.to_string()))?;
+    let arr_elems: usize = arr.shape.iter().copied().product();
+    let shape_elems: usize = shape.iter().copied().product();
+    if arr_elems != shape_elems {
+        return Err(EvalError::RuntimeError(format!(
+            "reshape's array ({:?}) and new shape ({:?}) does not have the same number of elements",
+            arr.shape, shape
+        )));
+    }
+    let new_values = arr.values.clone();
+    Ok(Value::Array(ArrayInt::new(
+        arr.type_decl.clone(),
+        shape,
+        new_values,
+    )))
+}
+
 pub(crate) fn s_hex_string(vals: &[Value]) -> Result<Value, EvalError> {
     if let [val, ..] = vals {
         match coerce_type(val, &TypeDecl::I64)? {
@@ -1035,6 +1081,23 @@ pub(crate) fn std_functions<'src, 'native>() -> HashMap<String, FuncDef<'src, 'n
                     ),
                 ),
                 ArgDecl::new("value", TypeDecl::Any),
+            ],
+            None,
+        ),
+    );
+    functions.insert(
+        "reshape".to_string(),
+        FuncDef::new_native(
+            &s_reshape,
+            vec![
+                ArgDecl::new(
+                    "array",
+                    TypeDecl::Array(Box::new(TypeDecl::Any), ArraySize::all_dyn()),
+                ),
+                ArgDecl::new(
+                    "shape",
+                    TypeDecl::Array(Box::new(TypeDecl::Integer), ArraySize::all_dyn()),
+                ),
             ],
             None,
         ),

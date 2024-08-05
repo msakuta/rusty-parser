@@ -2,12 +2,20 @@ use std::io::{Read, Write};
 
 use crate::ReadError;
 
+/// Array size that possibly define the shape of multi-dimensional arrays.
 #[derive(Debug, PartialEq, Clone)]
 pub struct ArraySize(pub Vec<ArraySizeAxis>);
 
 impl Default for ArraySize {
     fn default() -> Self {
         Self(vec![ArraySizeAxis::Any])
+    }
+}
+
+impl ArraySize {
+    /// Returns a 1-dimensional array with unbounded size.
+    pub fn all_dyn() -> Self {
+        Self(vec![ArraySizeAxis::Range(0..usize::MAX)])
     }
 }
 
