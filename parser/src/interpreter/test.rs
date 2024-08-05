@@ -5,7 +5,9 @@ use nom::{Finish, IResult};
 use super::*;
 use crate::{
     parser::{source, span_source, Subslice},
-    type_check, TypeCheckContext,
+    type_check,
+    type_decl::ArraySize,
+    TypeCheckContext,
 };
 use ExprEnum::*;
 

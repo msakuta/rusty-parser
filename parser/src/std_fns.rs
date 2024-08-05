@@ -149,75 +149,78 @@ pub(crate) fn s_hex_string(vals: &[Value]) -> Result<Value, EvalError> {
 }
 
 pub(crate) fn std_functions<'src, 'native>() -> HashMap<String, FuncDef<'src, 'native>> {
-    let mut functions = HashMap::new();
-    functions.insert(
-        "print".to_string(),
-        FuncDef::new_native(&s_print, vec![], None),
+    let mut ret = HashMap::new();
+    std_functions_gen(&mut |name, code, args, ret_type| {
+        ret.insert(name.to_string(), FuncDef::new_native(code, args, ret_type));
+    });
+    ret
+}
+
+pub(crate) fn std_functions_gen<'src, 'native>(
+    set_fn: &mut impl FnMut(
+        &str,
+        &'native dyn Fn(&[Value]) -> Result<Value, EvalError>,
+        Vec<ArgDecl<'native>>,
+        Option<TypeDecl>,
+    ),
+) {
+    // let mut functions = HashMap::new();
+    set_fn("print", &s_print, vec![], None);
+    set_fn(
+        "puts",
+        &s_puts,
+        vec![ArgDecl::new("val", TypeDecl::Any)],
+        None,
     );
-    functions.insert(
-        "puts".to_string(),
-        FuncDef::new_native(&s_puts, vec![ArgDecl::new("val", TypeDecl::Any)], None),
+    set_fn(
+        "type",
+        &s_type,
+        vec![ArgDecl::new("value", TypeDecl::Any)],
+        Some(TypeDecl::Str),
     );
-    functions.insert(
-        "type".to_string(),
-        FuncDef::new_native(
-            &s_type,
-            vec![ArgDecl::new("value", TypeDecl::Any)],
-            Some(TypeDecl::Str),
-        ),
+    set_fn(
+        "len",
+        &s_len,
+        vec![ArgDecl::new(
+            "array",
+            TypeDecl::Array(Box::new(TypeDecl::Any), ArraySize::default()),
+        )],
+        Some(TypeDecl::I64),
     );
-    functions.insert(
-        "len".to_string(),
-        FuncDef::new_native(
-            &s_len,
-            vec![ArgDecl::new(
+    set_fn(
+        "push",
+        &s_push,
+        vec![
+            ArgDecl::new(
                 "array",
-                TypeDecl::Array(Box::new(TypeDecl::Any), ArraySize::default()),
-            )],
-            Some(TypeDecl::I64),
-        ),
-    );
-    functions.insert(
-        "push".to_string(),
-        FuncDef::new_native(
-            &s_push,
-            vec![
-                ArgDecl::new(
-                    "array",
-                    TypeDecl::Array(
-                        Box::new(TypeDecl::Any),
-                        ArraySize(vec![ArraySizeAxis::Range(0..usize::MAX)]),
-                    ),
+                TypeDecl::Array(
+                    Box::new(TypeDecl::Any),
+                    ArraySize(vec![ArraySizeAxis::Range(0..usize::MAX)]),
                 ),
-                ArgDecl::new("value", TypeDecl::Any),
-            ],
-            None,
-        ),
+            ),
+            ArgDecl::new("value", TypeDecl::Any),
+        ],
+        None,
     );
-    functions.insert(
-        "reshape".to_string(),
-        FuncDef::new_native(
-            &s_reshape,
-            vec![
-                ArgDecl::new(
-                    "array",
-                    TypeDecl::Array(Box::new(TypeDecl::Any), ArraySize::all_dyn()),
-                ),
-                ArgDecl::new(
-                    "shape",
-                    TypeDecl::Array(Box::new(TypeDecl::Integer), ArraySize::all_dyn()),
-                ),
-            ],
-            None,
-        ),
+    set_fn(
+        "reshape",
+        &s_reshape,
+        vec![
+            ArgDecl::new(
+                "array",
+                TypeDecl::Array(Box::new(TypeDecl::Any), ArraySize::all_dyn()),
+            ),
+            ArgDecl::new(
+                "shape",
+                TypeDecl::Array(Box::new(TypeDecl::Integer), ArraySize::all_dyn()),
+            ),
+        ],
+        None,
     );
-    functions.insert(
-        "hex_string".to_string(),
-        FuncDef::new_native(
-            &s_hex_string,
-            vec![ArgDecl::new("value", TypeDecl::I64)],
-            Some(TypeDecl::Str),
-        ),
+    set_fn(
+        "hex_string",
+        &s_hex_string,
+        vec![ArgDecl::new("value", TypeDecl::I64)],
+        Some(TypeDecl::Str),
     );
-    functions
 }
