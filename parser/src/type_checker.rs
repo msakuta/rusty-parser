@@ -1,8 +1,9 @@
 use std::{collections::HashMap, fmt::Display};
 
 use crate::{
-    interpreter::{std_functions, FuncCode},
+    interpreter::FuncCode,
     parser::{ExprEnum, Expression, Statement},
+    std_fns::std_functions,
     type_decl::{ArraySize, ArraySizeAxis, TypeDecl},
     FuncDef, Span, Value,
 };

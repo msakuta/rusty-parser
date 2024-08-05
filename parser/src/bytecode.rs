@@ -7,8 +7,9 @@ use std::{
 };
 
 use crate::{
-    interpreter::{s_hex_string, s_len, s_print, s_push, s_type, EvalError},
+    interpreter::EvalError,
     parser::ReadError,
+    std_fns::{s_hex_string, s_len, s_print, s_push, s_type},
     value::Value,
 };
 
