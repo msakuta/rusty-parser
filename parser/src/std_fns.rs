@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{cell::Ref, collections::HashMap};
 
 use crate::{
     coerce_type,
@@ -200,6 +200,73 @@ fn s_reshape(vals: &[Value]) -> Result<Value, EvalError> {
     )))
 }
 
+/// Stack 2 arrays vertically
+fn s_vstack(vals: &[Value]) -> Result<Value, EvalError> {
+    let [a, b, ..] = vals else {
+        return Err(EvalError::RuntimeError(
+            "vstack does not have enough arguments".to_string(),
+        ));
+    };
+
+    fn borrow<'a>(a: &'a Value, name: &str) -> EvalResult<Ref<'a, ArrayInt>> {
+        let Value::Array(a) = a else {
+            return Err(EvalError::RuntimeError(format!(
+                "vstack's argument {} must be of type array",
+                name
+            )));
+        };
+        Ok(a.borrow())
+    }
+
+    fn read_raw_array<'a>(
+        a: &'a Ref<'a, ArrayInt>,
+        name: &str,
+    ) -> EvalResult<(TypeDecl, &'a Vec<Value>, Vec<usize>)> {
+        let ty = a.type_decl.clone();
+        let mut shape = a.shape.clone();
+        if shape.len() == 0 {
+            return Err(EvalError::RuntimeError(format!(
+                "vstack's argument {} has empty shape",
+                name
+            )));
+        }
+        if shape.len() == 1 {
+            shape = vec![1, shape[0]];
+        }
+        let values = &a.values;
+        Ok((ty, values, shape))
+    }
+
+    let a = a.clone().deref()?;
+    let a = borrow(&a, "a")?;
+    let (a_type, a, a_shape) = read_raw_array(&a, "a")?;
+    let b = b.clone().deref()?;
+    let b = borrow(&b, "b")?;
+    let (b_type, b, b_shape) = read_raw_array(&b, "b")?;
+
+    if a_shape[1..] != b_shape[1..] {
+        return Err(EvalError::RuntimeError(format!(
+            "vstack's arguments have incompatible shape: {:?} and {:?}",
+            a_shape, b_shape
+        )));
+    }
+
+    if a_type != b_type {
+        return Err(EvalError::RuntimeError(format!(
+            "vstack's arguments have incompatible type: {:?} and {:?}",
+            a_type, b_type
+        )));
+    }
+
+    let mut values = a.clone();
+    values.extend_from_slice(&b);
+
+    let mut shape = vec![a_shape[0] + b_shape[0]];
+    shape.extend_from_slice(&a_shape[1..]);
+
+    Ok(Value::Array(ArrayInt::new(a_type, shape, values)))
+}
+
 pub(crate) fn s_hex_string(vals: &[Value]) -> Result<Value, EvalError> {
     if let [val, ..] = vals {
         match coerce_type(val, &TypeDecl::I64)? {
@@ -299,6 +366,21 @@ pub(crate) fn std_functions_gen<'src, 'native>(
             ArgDecl::new(
                 "shape",
                 TypeDecl::Array(Box::new(TypeDecl::Integer), ArraySize::all_dyn()),
+            ),
+        ],
+        None,
+    );
+    set_fn(
+        "vstack",
+        &s_vstack,
+        vec![
+            ArgDecl::new(
+                "a",
+                TypeDecl::Array(Box::new(TypeDecl::Any), ArraySize::all_dyn()),
+            ),
+            ArgDecl::new(
+                "b",
+                TypeDecl::Array(Box::new(TypeDecl::Any), ArraySize::all_dyn()),
             ),
         ],
         None,
