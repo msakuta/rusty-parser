@@ -314,11 +314,14 @@ fn s_hstack(vals: &[Value]) -> Result<Value, EvalError> {
         )));
     }
 
+    let a_stride: usize = a_shape[1..].iter().product();
+    let b_stride: usize = b_shape[1..].iter().product();
+
     let values: Vec<Value> = (0..a_shape[0])
         .map(|i| {
-            a[i * a_shape[1]..(i + 1) * a_shape[1]]
+            a[i * a_stride..(i + 1) * a_stride]
                 .iter()
-                .chain(b[i * b_shape[1]..(i + 1) * b_shape[1]].iter())
+                .chain(b[i * b_stride..(i + 1) * b_stride].iter())
                 .cloned()
         })
         .flatten()

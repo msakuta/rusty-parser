@@ -67,26 +67,7 @@ impl std::fmt::Display for Value {
             Self::Str(v) => write!(f, "{v}"),
             Self::Array(v) => {
                 let v = v.borrow();
-                write!(
-                    f,
-                    "[{}]",
-                    &v.values
-                        .iter()
-                        .enumerate()
-                        .fold("".to_string(), |acc, (i, cur)| {
-                            if acc.is_empty() {
-                                cur.to_string()
-                            } else {
-                                let sep =
-                                    if v.shape.get(1).is_some_and(|sz| *sz != 0 && i % *sz == 0) {
-                                        "; "
-                                    } else {
-                                        ", "
-                                    };
-                                acc + sep + &cur.to_string()
-                            }
-                        }),
-                )
+                array_recurse(f, &v.values, &v.shape, 0, true)
             }
             Self::Ref(v) => write!(f, "&{}", v.borrow()),
             Self::ArrayRef(v, idx) => {
@@ -109,6 +90,52 @@ impl std::fmt::Display for Value {
             ),
         }
     }
+}
+
+fn array_recurse(
+    f: &mut std::fmt::Formatter<'_>,
+    arr: &[Value],
+    shape: &[usize],
+    level: usize,
+    last: bool,
+) -> std::fmt::Result {
+    if shape.is_empty() {
+        write!(f, "{}, ", arr[0])?;
+        return Ok(());
+    }
+    let indent = " ".repeat(2 + level);
+    if shape.len() == 2 {
+        write!(f, "[\n")?;
+    } else {
+        write!(f, "{indent}[")?;
+    }
+    let stride: usize = shape[1..].iter().product();
+    for i in 0..shape[0] {
+        if 1 < shape.len() {
+            array_recurse(
+                f,
+                &arr[i * stride..(i + 1) * stride],
+                &shape[1..],
+                level + 1,
+                i == shape[0] - 1,
+            )?;
+        } else {
+            if i != 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{}", arr[i])?;
+        }
+    }
+    if shape.len() == 1 {
+        write!(f, "],{indent}\n")?;
+    } else {
+        if last {
+            write!(f, "]")?;
+        } else {
+            write!(f, "],")?;
+        }
+    }
+    Ok(())
 }
 
 impl Value {
