@@ -158,7 +158,7 @@ fn s_transpose(vals: &[Value]) -> Result<Value, EvalError> {
 }
 
 /// Reshape a given array with a new shape.
-fn s_reshape(vals: &[Value]) -> Result<Value, EvalError> {
+fn s_reshape(vals: &[Value]) -> EvalResult<Value> {
     let [arr, shape, ..] = vals else {
         return Err(EvalError::RuntimeError(
             "reshape does not have enough arguments".to_string(),
@@ -171,10 +171,10 @@ fn s_reshape(vals: &[Value]) -> Result<Value, EvalError> {
         ));
     };
     let shape = shape.borrow();
-    let shape = shape
+    let mut shape = shape
         .values
         .iter()
-        .map(|val| coerce_i64(val).map(|val| val as usize))
+        .map(|val| coerce_i64(val).map(|val| val))
         .collect::<Result<Vec<_>, _>>()?;
     let Value::Array(arr) = arr.clone().deref()? else {
         return Err(EvalError::RuntimeError(
@@ -185,7 +185,26 @@ fn s_reshape(vals: &[Value]) -> Result<Value, EvalError> {
         .try_borrow()
         .map_err(|e| EvalError::RuntimeError(e.to_string()))?;
     let arr_elems: usize = arr.shape.iter().copied().product();
-    let shape_elems: usize = shape.iter().copied().product();
+    let shape_known_elems: usize =
+        shape.iter().copied().filter(|v| 0 < *v).product::<i64>() as usize;
+    let mut shape_unknown_elem = None;
+    for v in shape.iter_mut().filter(|v| **v < 0) {
+        if shape_unknown_elem.is_some() {
+            return Err(EvalError::RuntimeError(
+                "reshape can only specify one unknown dimension".to_string(),
+            ));
+        }
+        if arr_elems % shape_known_elems != 0 {
+            return Err(EvalError::RuntimeError(format!(
+                "reshape cannot reshape array of size {} into shape {:?}",
+                arr_elems, shape
+            )));
+        }
+        *v = (arr_elems / shape_known_elems) as i64;
+        shape_unknown_elem = Some(*v);
+    }
+    let shape_elems: usize = shape.iter().copied().product::<i64>() as usize;
+
     if arr_elems != shape_elems {
         return Err(EvalError::RuntimeError(format!(
             "reshape's array ({:?}) and new shape ({:?}) does not have the same number of elements",
@@ -195,7 +214,7 @@ fn s_reshape(vals: &[Value]) -> Result<Value, EvalError> {
     let new_values = arr.values.clone();
     Ok(Value::Array(ArrayInt::new(
         arr.type_decl.clone(),
-        shape,
+        shape.into_iter().map(|v| v as usize).collect(),
         new_values,
     )))
 }
