@@ -219,6 +219,34 @@ fn s_reshape(vals: &[Value]) -> EvalResult<Value> {
     )))
 }
 
+fn borrow<'a>(a: &'a Value, name: &str, fname: &str) -> EvalResult<Ref<'a, ArrayInt>> {
+    let Value::Array(a) = a else {
+        return Err(EvalError::RuntimeError(format!(
+            "{fname}'s argument {name} must be of type array"
+        )));
+    };
+    Ok(a.borrow())
+}
+
+fn read_raw_array<'a>(
+    a: &'a Ref<'a, ArrayInt>,
+    name: &str,
+    fname: &str,
+) -> EvalResult<(TypeDecl, &'a Vec<Value>, Vec<usize>)> {
+    let ty = a.type_decl.clone();
+    let mut shape = a.shape.clone();
+    if shape.len() == 0 {
+        return Err(EvalError::RuntimeError(format!(
+            "{fname}'s argument {name} has empty shape"
+        )));
+    }
+    if shape.len() == 1 {
+        shape = vec![1, shape[0]];
+    }
+    let values = &a.values;
+    Ok((ty, values, shape))
+}
+
 /// Stack 2 arrays vertically
 fn s_vstack(vals: &[Value]) -> Result<Value, EvalError> {
     let [a, b, ..] = vals else {
@@ -227,41 +255,12 @@ fn s_vstack(vals: &[Value]) -> Result<Value, EvalError> {
         ));
     };
 
-    fn borrow<'a>(a: &'a Value, name: &str) -> EvalResult<Ref<'a, ArrayInt>> {
-        let Value::Array(a) = a else {
-            return Err(EvalError::RuntimeError(format!(
-                "vstack's argument {} must be of type array",
-                name
-            )));
-        };
-        Ok(a.borrow())
-    }
-
-    fn read_raw_array<'a>(
-        a: &'a Ref<'a, ArrayInt>,
-        name: &str,
-    ) -> EvalResult<(TypeDecl, &'a Vec<Value>, Vec<usize>)> {
-        let ty = a.type_decl.clone();
-        let mut shape = a.shape.clone();
-        if shape.len() == 0 {
-            return Err(EvalError::RuntimeError(format!(
-                "vstack's argument {} has empty shape",
-                name
-            )));
-        }
-        if shape.len() == 1 {
-            shape = vec![1, shape[0]];
-        }
-        let values = &a.values;
-        Ok((ty, values, shape))
-    }
-
     let a = a.clone().deref()?;
-    let a = borrow(&a, "a")?;
-    let (a_type, a, a_shape) = read_raw_array(&a, "a")?;
+    let a = borrow(&a, "a", "vstack")?;
+    let (a_type, a, a_shape) = read_raw_array(&a, "a", "vstack")?;
     let b = b.clone().deref()?;
-    let b = borrow(&b, "b")?;
-    let (b_type, b, b_shape) = read_raw_array(&b, "b")?;
+    let b = borrow(&b, "b", "vstack")?;
+    let (b_type, b, b_shape) = read_raw_array(&b, "b", "vstack")?;
 
     if a_shape[1..] != b_shape[1..] {
         return Err(EvalError::RuntimeError(format!(
@@ -282,6 +281,52 @@ fn s_vstack(vals: &[Value]) -> Result<Value, EvalError> {
 
     let mut shape = vec![a_shape[0] + b_shape[0]];
     shape.extend_from_slice(&a_shape[1..]);
+
+    Ok(Value::Array(ArrayInt::new(a_type, shape, values)))
+}
+
+/// Stack 2 arrays horizontally
+fn s_hstack(vals: &[Value]) -> Result<Value, EvalError> {
+    let [a, b, ..] = vals else {
+        return Err(EvalError::RuntimeError(
+            "hstack does not have enough arguments".to_string(),
+        ));
+    };
+
+    let a = a.clone().deref()?;
+    let a = borrow(&a, "a", "hstack")?;
+    let (a_type, a, a_shape) = read_raw_array(&a, "a", "hstack")?;
+    let b = b.clone().deref()?;
+    let b = borrow(&b, "b", "hstack")?;
+    let (b_type, b, b_shape) = read_raw_array(&b, "b", "hstack")?;
+
+    if a_shape[0] != b_shape[0] {
+        return Err(EvalError::RuntimeError(format!(
+            "hstack's arguments have incompatible shape: {:?} and {:?}",
+            a_shape, b_shape
+        )));
+    }
+
+    if a_type != b_type {
+        return Err(EvalError::RuntimeError(format!(
+            "hstack's arguments have incompatible type: {:?} and {:?}",
+            a_type, b_type
+        )));
+    }
+
+    let values: Vec<Value> = (0..a_shape[0])
+        .map(|i| {
+            a[i * a_shape[1]..(i + 1) * a_shape[1]]
+                .iter()
+                .chain(b[i * b_shape[1]..(i + 1) * b_shape[1]].iter())
+                .cloned()
+        })
+        .flatten()
+        .collect();
+
+    let mut shape = a_shape[..1].to_vec();
+    shape.push(a_shape[1] + b_shape[1]);
+    shape.extend_from_slice(&a_shape[2..]);
 
     Ok(Value::Array(ArrayInt::new(a_type, shape, values)))
 }
@@ -392,6 +437,21 @@ pub(crate) fn std_functions_gen<'src, 'native>(
     set_fn(
         "vstack",
         &s_vstack,
+        vec![
+            ArgDecl::new(
+                "a",
+                TypeDecl::Array(Box::new(TypeDecl::Any), ArraySize::all_dyn()),
+            ),
+            ArgDecl::new(
+                "b",
+                TypeDecl::Array(Box::new(TypeDecl::Any), ArraySize::all_dyn()),
+            ),
+        ],
+        None,
+    );
+    set_fn(
+        "hstack",
+        &s_hstack,
         vec![
             ArgDecl::new(
                 "a",
