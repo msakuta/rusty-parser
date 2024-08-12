@@ -16,7 +16,7 @@ use nom::{
     IResult, InputTake, Offset,
 };
 use nom_locate::LocatedSpan;
-use std::{rc::Rc, string::FromUtf8Error, sync::atomic::Ordering::Relaxed};
+use std::{cell::Cell, rc::Rc, string::FromUtf8Error, sync::atomic::Ordering::Relaxed};
 
 pub type Span<'a> = LocatedSpan<&'a str>;
 
@@ -395,10 +395,27 @@ fn array_rows(i: Span) -> IResult<Span, Vec<Vec<Expression>>> {
     terminated(separated_list0(char(';'), array_row), opt(ws(char(';'))))(i)
 }
 
-static ARRAY_LIT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+thread_local! {
+    static ARRAY_LIT: Cell<usize> = Cell::new(0);
+    static NEST: Cell<usize> = Cell::new(1);
+}
+
+struct NestDrop;
+
+impl Drop for NestDrop {
+    fn drop(&mut self) {
+        println!("leave array_literal[{}]", NEST.get());
+        NEST.with(|v| v.set(v.get() - 1));
+    }
+}
 
 pub(crate) fn array_literal(i: Span) -> IResult<Span, Expression> {
-    ARRAY_LIT.fetch_add(1, Relaxed);
+    ARRAY_LIT.with(|v| v.set(v.get() + 1));
+    NEST.with(|v| {
+        let level = v.replace(v.get() + 1);
+        println!("{}enter array_literal[{}]: {i:?}", " ".repeat(level), level);
+    });
+    let _nest_drop = NestDrop;
     let (r, _) = multispace0(i)?;
     let (r, open_br) = tag("[")(r)?;
     let (r, val) = array_rows(r)?;
@@ -494,8 +511,8 @@ pub(crate) fn func_invoke(i: Span) -> IResult<Span, Expression> {
     ))
 }
 
-pub(crate) fn array_index(i: Span) -> IResult<Span, Expression> {
-    let (r, prim) = primary_expression(i)?;
+/// Parse `[b, c][d]` as `vec![vec![b, c], vec![d]]`. Returns a vector of vectors of array index expression, excluding the prefix
+pub(crate) fn array_index(i: Span) -> IResult<Span, Vec<Vec<Expression>>> {
     let (r, indices) = many1(delimited(
         multispace0,
         delimited(
@@ -504,41 +521,26 @@ pub(crate) fn array_index(i: Span) -> IResult<Span, Expression> {
             tag("]"),
         ),
         multispace0,
-    ))(r)?;
-    let prim_span = prim.span;
-    Ok((
-        r,
-        indices.into_iter().fold(prim, |acc, v| {
-            Expression::new(
-                ExprEnum::ArrIndex(Box::new(acc), v),
-                i.subslice(i.offset(&prim_span), prim_span.offset(&r)),
-            )
-        }),
-    ))
+    ))(i)?;
+    Ok((r, indices))
 }
 
-pub(crate) fn tuple_index(i: Span) -> IResult<Span, Expression> {
-    let (r, prim) = primary_expression(i)?;
-    let (r, indices) = many1(ws(preceded(tag("."), digit1)))(r)?;
-    let prim_span = prim.span;
+/// Parse `.0.1` as `vec![0, 1]`. Returns a vector of tuple suffices, excluding the prefix
+pub(crate) fn tuple_index(i: Span) -> IResult<Span, Vec<usize>> {
+    let (r, indices) = many1(ws(preceded(tag("."), digit1)))(i)?;
     Ok((
         r,
         indices
             .into_iter()
-            .fold(Ok(prim), |acc, v: Span| -> Result<_, _> {
-                Ok(Expression::new(
-                    ExprEnum::TupleIndex(
-                        Box::new(acc?),
-                        v.parse().map_err(|_| {
-                            nom::Err::Error(nom::error::Error {
-                                input: i,
-                                code: nom::error::ErrorKind::Digit,
-                            })
-                        })?,
-                    ),
-                    i.subslice(i.offset(&prim_span), prim_span.offset(&r)),
-                ))
-            })?,
+            .map(|v| -> Result<_, _> {
+                v.parse::<usize>().map_err(|_| {
+                    nom::Err::Error(nom::error::Error {
+                        input: i,
+                        code: nom::error::ErrorKind::Digit,
+                    })
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?,
     ))
 }
 
@@ -560,9 +562,42 @@ pub(crate) fn primary_expression(i: Span) -> IResult<Span, Expression> {
 
 static POSTFIX_EX: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
+/// Postfix expression has a bit special implementation to avoid backtracking.
 fn postfix_expression(i: Span) -> IResult<Span, Expression> {
     POSTFIX_EX.fetch_add(1, Relaxed);
-    alt((func_invoke, array_index, tuple_index, primary_expression))(i)
+
+    // Function calls can be invoked to identifiers (yet).
+    if let Ok(fn_result) = func_invoke(i) {
+        return Ok(fn_result);
+    }
+
+    let (r, prim) = primary_expression(i)?;
+    let prim_span = prim.span;
+    if let Ok((r, arr_result)) = array_index(r) {
+        return Ok((
+            r,
+            arr_result.into_iter().fold(prim, |acc, v| {
+                Expression::new(
+                    ExprEnum::ArrIndex(Box::new(acc), v),
+                    i.subslice(i.offset(&prim_span), prim_span.offset(&r)),
+                )
+            }),
+        ));
+    }
+
+    if let Ok((r, tuple_result)) = tuple_index(r) {
+        return Ok((
+            r,
+            tuple_result.into_iter().fold(prim, |acc, v| {
+                Expression::new(
+                    ExprEnum::TupleIndex(Box::new(acc), v),
+                    i.subslice(i.offset(&prim_span), prim_span.offset(&r)),
+                )
+            }),
+        ));
+    }
+
+    Ok((r, prim))
 }
 
 fn not(i: Span) -> IResult<Span, Expression> {
@@ -854,7 +889,7 @@ pub(crate) fn statement(input: Span) -> IResult<Span, Statement> {
 
 pub fn source(input: Span) -> IResult<Span, Vec<Statement>> {
     ARRAY_ROW.store(0, Relaxed);
-    ARRAY_LIT.store(0, Relaxed);
+    ARRAY_LIT.set(0);
     PRIMARY_EXP.store(0, Relaxed);
     POSTFIX_EX.store(0, Relaxed);
     FN_INVOKE_ARG.store(0, Relaxed);
@@ -868,7 +903,7 @@ pub fn source(input: Span) -> IResult<Span, Vec<Statement>> {
         v.push(last);
     }
     let array_rows_calls = ARRAY_ROW.load(Relaxed);
-    let array_literal_calls = ARRAY_LIT.load(Relaxed);
+    let array_literal_calls = ARRAY_LIT.get();
     let primary_expression_calls = PRIMARY_EXP.load(Relaxed);
     let postfix_expression_calls = POSTFIX_EX.load(Relaxed);
     let fn_invoke_arg = FN_INVOKE_ARG.load(Relaxed);

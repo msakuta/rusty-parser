@@ -744,7 +744,7 @@ fn array_index_test() {
     use Value::*;
     let span = Span::new("a[1]");
     assert_eq!(
-        array_index(span).finish().unwrap().1,
+        full_expression(span).finish().unwrap().1,
         Expression::new(
             ArrIndex(
                 var_r(span.subslice(0, 1)),
