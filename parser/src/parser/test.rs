@@ -900,3 +900,42 @@ fn test_muldim_array() {
         )
     );
 }
+
+#[test]
+fn test_multiline_array() {
+    let span = Span::new("var a: [[i32; 3]; 2] = [\r\n[1, 2, 3], [4, 5, 6]\r\n];");
+    assert_eq!(
+        statement(span).finish().unwrap().1,
+        Statement::VarDecl(
+            &*span.subslice(4, 1),
+            TypeDecl::Array(
+                Box::new(TypeDecl::Array(
+                    Box::new(TypeDecl::I32),
+                    ArraySize(vec![ArraySizeAxis::Fixed(3)])
+                )),
+                ArraySize(vec![ArraySizeAxis::Fixed(2)])
+            ),
+            Some(Expression::new(
+                ArrLiteral(vec![vec![
+                    Expression::new(
+                        ArrLiteral(vec![vec![
+                            Expression::new(NumLiteral(Value::I64(1)), span.subslice(27, 1)),
+                            Expression::new(NumLiteral(Value::I64(2)), span.subslice(30, 1)),
+                            Expression::new(NumLiteral(Value::I64(3)), span.subslice(33, 1)),
+                        ]]),
+                        span.subslice(26, 9)
+                    ),
+                    Expression::new(
+                        ArrLiteral(vec![vec![
+                            Expression::new(NumLiteral(Value::I64(4)), span.subslice(38, 1)),
+                            Expression::new(NumLiteral(Value::I64(5)), span.subslice(41, 1)),
+                            Expression::new(NumLiteral(Value::I64(6)), span.subslice(44, 1)),
+                        ]]),
+                        span.subslice(37, 9)
+                    ),
+                ]]),
+                span.subslice(23, 26)
+            ))
+        )
+    );
+}

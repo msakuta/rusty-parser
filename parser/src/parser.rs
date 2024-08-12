@@ -381,7 +381,7 @@ fn str_literal(i: Span) -> IResult<Span, Expression> {
 
 fn array_row(i: Span) -> IResult<Span, Vec<Expression>> {
     let (r, (mut val, last)) = pair(
-        many0(terminated(full_expression, tag(","))),
+        many0(terminated(full_expression, ws(tag(",")))),
         opt(full_expression),
     )(i)?;
     if let Some(last) = last {
@@ -393,7 +393,7 @@ fn array_row(i: Span) -> IResult<Span, Vec<Expression>> {
 fn array_rows(i: Span) -> IResult<Span, Vec<Vec<Expression>>> {
     // 2D arrays should be rectangular in shape, i.e. all rows should have the same length.
     // We do not apply that constrait here, but in evaluation.
-    let (r, (mut val, last)) = pair(many0(terminated(array_row, tag(";"))), opt(array_row))(i)?;
+    let (r, (mut val, last)) = pair(many0(terminated(array_row, ws(tag(";")))), opt(array_row))(i)?;
     if let Some(last) = last {
         val.push(last);
     }
@@ -404,7 +404,7 @@ pub(crate) fn array_literal(i: Span) -> IResult<Span, Expression> {
     let (r, _) = multispace0(i)?;
     let (r, open_br) = tag("[")(r)?;
     let (r, val) = array_rows(r)?;
-    let (r, close_br) = tag("]")(r)?;
+    let (r, close_br) = ws(tag("]"))(r)?;
     let span = i.subslice(
         i.offset(&open_br),
         open_br.offset(&close_br) + close_br.len(),
