@@ -383,13 +383,16 @@ static ARRAY_ROW: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsiz
 
 fn array_row(i: Span) -> IResult<Span, Vec<Expression>> {
     ARRAY_ROW.fetch_add(1, Relaxed);
-    terminated(separated_list0(char(','), full_expression), opt(char(',')))(i)
+    terminated(
+        separated_list0(char(','), full_expression),
+        opt(ws(char(','))),
+    )(i)
 }
 
 fn array_rows(i: Span) -> IResult<Span, Vec<Vec<Expression>>> {
     // 2D arrays should be rectangular in shape, i.e. all rows should have the same length.
     // We do not apply that constrait here, but in evaluation.
-    terminated(separated_list0(char(';'), array_row), opt(char(';')))(i)
+    terminated(separated_list0(char(';'), array_row), opt(ws(char(';'))))(i)
 }
 
 static ARRAY_LIT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
@@ -470,21 +473,18 @@ pub(crate) fn fn_invoke_arg(i: Span) -> IResult<Span, FnArg> {
     ))
 }
 
+static FN_INVOKE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 pub(crate) fn func_invoke(i: Span) -> IResult<Span, Expression> {
+    FN_INVOKE.fetch_add(1, Relaxed);
     let (r, ident) = ws(identifier)(i)?;
     // println!("func_invoke ident: {}", ident);
-    let (r, args) = delimited(
-        multispace0,
-        delimited(
-            char('('),
-            terminated(
-                separated_list0(ws(char(',')), fn_invoke_arg),
-                opt(ws(char(','))),
-            ),
-            char(')'),
-        ),
-        multispace0,
+    let (r, _) = ws(char('('))(r)?;
+    let (r, args) = terminated(
+        separated_list0(ws(char(',')), fn_invoke_arg),
+        opt(ws(char(','))),
     )(r)?;
+    let (r, _) = ws(char(')'))(r)?;
     Ok((
         r,
         Expression::new(
@@ -625,21 +625,6 @@ pub(crate) fn expr(i: Span) -> IResult<Span, Expression> {
     )(r)
 }
 
-fn cmp(i: Span) -> IResult<Span, Expression> {
-    let (r, lhs) = expr(i)?;
-
-    let (r, (op, val)) = pair(alt((char('<'), char('>'))), expr)(r)?;
-    let span = calc_offset(i, r);
-    Ok((
-        r,
-        if op == '<' {
-            Expression::new(ExprEnum::LT(Box::new(lhs), Box::new(val)), span)
-        } else {
-            Expression::new(ExprEnum::GT(Box::new(lhs), Box::new(val)), span)
-        },
-    ))
-}
-
 pub(crate) fn conditional(i: Span) -> IResult<Span, Expression> {
     let (r, _) = ws(tag("if"))(i)?;
     let (r, cond) = or(r)?;
@@ -678,7 +663,22 @@ static CMP_EXPR: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize
 
 pub(crate) fn cmp_expr(i: Span) -> IResult<Span, Expression> {
     CMP_EXPR.fetch_add(1, Relaxed);
-    alt((cmp, expr))(i)
+    let (r, lhs) = expr(i)?;
+
+    let (r, rhs) = opt(pair(alt((char('<'), char('>'))), expr))(r)?;
+    if let Some((op, val)) = rhs {
+        let span = calc_offset(i, r);
+        Ok((
+            r,
+            if op == '<' {
+                Expression::new(ExprEnum::LT(Box::new(lhs), Box::new(val)), span)
+            } else {
+                Expression::new(ExprEnum::GT(Box::new(lhs), Box::new(val)), span)
+            },
+        ))
+    } else {
+        Ok((r, lhs))
+    }
 }
 
 /// A functor to create a function for a binary operator
@@ -858,6 +858,7 @@ pub fn source(input: Span) -> IResult<Span, Vec<Statement>> {
     PRIMARY_EXP.store(0, Relaxed);
     POSTFIX_EX.store(0, Relaxed);
     FN_INVOKE_ARG.store(0, Relaxed);
+    FN_INVOKE.store(0, Relaxed);
     CMP_EXPR.store(0, Relaxed);
     ASSIGN_EXPR.store(0, Relaxed);
     let (r, mut v) = many0(statement)(input)?;
@@ -871,6 +872,7 @@ pub fn source(input: Span) -> IResult<Span, Vec<Statement>> {
     let primary_expression_calls = PRIMARY_EXP.load(Relaxed);
     let postfix_expression_calls = POSTFIX_EX.load(Relaxed);
     let fn_invoke_arg = FN_INVOKE_ARG.load(Relaxed);
+    let fn_invoke = FN_INVOKE.load(Relaxed);
     let cmp_expr_calls = CMP_EXPR.load(Relaxed);
     let expr_calls = ASSIGN_EXPR.load(Relaxed);
     println!(
@@ -880,6 +882,7 @@ pub fn source(input: Span) -> IResult<Span, Vec<Statement>> {
     primary_expression_calls: {primary_expression_calls}
     postfix_expression_calls: {postfix_expression_calls}
     fn_invoke_arg: {fn_invoke_arg}
+    fn_invoke: {fn_invoke}
     cmp_expr: {cmp_expr_calls}
     expr_calls: {expr_calls}
     "#

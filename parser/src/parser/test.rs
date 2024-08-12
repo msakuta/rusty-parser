@@ -407,7 +407,7 @@ fn test_variable() {
 fn test_cmp_vars() {
     let span = Span::new("a < b");
     assert_eq!(
-        cmp(span).finish().unwrap().1,
+        cmp_expr(span).finish().unwrap().1,
         Expression::new(
             LT(
                 Box::new(Expression::new(Variable("a"), span.take(1))),
@@ -421,7 +421,7 @@ fn test_cmp_vars() {
 fn test_cmp_literal() {
     let span = Span::new("a < 100");
     assert_eq!(
-        cmp(span).finish().unwrap().1,
+        cmp_expr(span).finish().unwrap().1,
         Expression::new(
             LT(
                 Box::new(Expression::new(Variable("a"), span.take(1))),
