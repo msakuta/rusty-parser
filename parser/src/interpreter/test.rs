@@ -107,7 +107,10 @@ fn var_assign_test() {
         )
     );
     assert_eq!(
-        eval(&assign_expr(Span::new("x=12")).finish().unwrap().1, &mut ctx),
+        eval(
+            &assign_expr(Span::new("x=12")).finish().unwrap().1,
+            &mut ctx
+        ),
         Ok(RunResult::Yield(Value::I64(12)))
     );
 }

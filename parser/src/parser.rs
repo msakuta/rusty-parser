@@ -397,25 +397,10 @@ fn array_rows(i: Span) -> IResult<Span, Vec<Vec<Expression>>> {
 
 thread_local! {
     static ARRAY_LIT: Cell<usize> = Cell::new(0);
-    static NEST: Cell<usize> = Cell::new(1);
-}
-
-struct NestDrop;
-
-impl Drop for NestDrop {
-    fn drop(&mut self) {
-        println!("leave array_literal[{}]", NEST.get());
-        NEST.with(|v| v.set(v.get() - 1));
-    }
 }
 
 pub(crate) fn array_literal(i: Span) -> IResult<Span, Expression> {
     ARRAY_LIT.with(|v| v.set(v.get() + 1));
-    NEST.with(|v| {
-        let level = v.replace(v.get() + 1);
-        println!("{}enter array_literal[{}]: {i:?}", " ".repeat(level), level);
-    });
-    let _nest_drop = NestDrop;
     let (r, _) = multispace0(i)?;
     let (r, open_br) = tag("[")(r)?;
     let (r, val) = array_rows(r)?;
