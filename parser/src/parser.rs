@@ -685,15 +685,6 @@ pub(crate) fn conditional(i: Span) -> IResult<Span, Expression> {
     ))
 }
 
-pub(crate) fn var_assign(i: Span) -> IResult<Span, Expression> {
-    let (r, res) = tuple((cmp_expr, char('='), assign_expr))(i)?;
-    let span = calc_offset(i, r);
-    Ok((
-        r,
-        Expression::new(ExprEnum::VarAssign(Box::new(res.0), Box::new(res.2)), span),
-    ))
-}
-
 static CMP_EXPR: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 pub(crate) fn cmp_expr(i: Span) -> IResult<Span, Expression> {
@@ -763,9 +754,18 @@ fn or(i: Span) -> IResult<Span, Expression> {
 
 static ASSIGN_EXPR: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
-fn assign_expr(i: Span) -> IResult<Span, Expression> {
+pub(crate) fn assign_expr(i: Span) -> IResult<Span, Expression> {
     ASSIGN_EXPR.fetch_add(1, Relaxed);
-    alt((var_assign, or))(i)
+    let (r, (lhs, rhs)) = pair(or, opt(preceded(char('='), assign_expr)))(i)?;
+    if let Some(rhs) = rhs {
+        let span = calc_offset(i, r);
+        Ok((
+            r,
+            Expression::new(ExprEnum::VarAssign(Box::new(lhs), Box::new(rhs)), span),
+        ))
+    } else {
+        Ok((r, lhs))
+    }
 }
 
 pub(crate) fn conditional_expr(i: Span) -> IResult<Span, Expression> {
@@ -909,7 +909,7 @@ pub fn source(input: Span) -> IResult<Span, Vec<Statement>> {
     let fn_invoke_arg = FN_INVOKE_ARG.load(Relaxed);
     let fn_invoke = FN_INVOKE.load(Relaxed);
     let cmp_expr_calls = CMP_EXPR.load(Relaxed);
-    let expr_calls = ASSIGN_EXPR.load(Relaxed);
+    let assign_expr_calls = ASSIGN_EXPR.load(Relaxed);
     println!(
         r#"
     array_rows: {array_rows_calls}
@@ -919,7 +919,7 @@ pub fn source(input: Span) -> IResult<Span, Vec<Statement>> {
     fn_invoke_arg: {fn_invoke_arg}
     fn_invoke: {fn_invoke}
     cmp_expr: {cmp_expr_calls}
-    expr_calls: {expr_calls}
+    assign_expr_calls: {assign_expr_calls}
     "#
     );
     Ok((r, v))

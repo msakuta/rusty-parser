@@ -97,7 +97,7 @@ fn var_assign_test() {
         .insert("x", Rc::new(RefCell::new(Value::F64(42.))));
     let span = Span::new("x=12");
     assert_eq!(
-        var_assign(span).finish().unwrap().1,
+        assign_expr(span).finish().unwrap().1,
         Expression::new(
             VarAssign(
                 var_r(span.subslice(0, 1)),
@@ -107,7 +107,7 @@ fn var_assign_test() {
         )
     );
     assert_eq!(
-        eval(&var_assign(Span::new("x=12")).finish().unwrap().1, &mut ctx),
+        eval(&assign_expr(Span::new("x=12")).finish().unwrap().1, &mut ctx),
         Ok(RunResult::Yield(Value::I64(12)))
     );
 }
