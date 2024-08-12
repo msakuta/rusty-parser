@@ -384,7 +384,7 @@ static ARRAY_ROW: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsiz
 fn array_row(i: Span) -> IResult<Span, Vec<Expression>> {
     ARRAY_ROW.fetch_add(1, Relaxed);
     terminated(
-        separated_list0(char(','), full_expression),
+        separated_list1(char(','), full_expression),
         opt(ws(char(','))),
     )(i)
 }
