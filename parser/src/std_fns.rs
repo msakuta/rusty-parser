@@ -92,6 +92,68 @@ pub(crate) fn s_push(vals: &[Value]) -> Result<Value, EvalError> {
     }
 }
 
+fn array_flatten(values: &[Value], shape: &[usize]) -> EvalResult<(Vec<Value>, Vec<usize>)> {
+    let mut inner_size = None;
+    let flattened = values
+        .iter()
+        .filter_map(|v| {
+            if let Value::Array(arr_inner) = v {
+                let arr_inner = arr_inner.borrow();
+                inner_size = Some(arr_inner.shape.clone());
+                Some(arr_inner.values.clone().into_iter())
+            } else {
+                None
+            }
+        })
+        .flatten()
+        .collect();
+    let mut shape = shape.to_vec();
+
+    if let Some(inner_size) = inner_size {
+        shape.extend_from_slice(&inner_size);
+    }
+
+    Ok((flattened, shape))
+}
+
+fn s_array(vals: &[Value]) -> EvalResult<Value> {
+    let [val, ..] = vals else {
+        return Err(EvalError::RuntimeError(
+            "array does not have enough arguments".to_string(),
+        ));
+    };
+    let Value::Array(arr) = val.clone().deref()? else {
+        return Err(EvalError::RuntimeError(
+            "array needs a (possibly arrays of ) arrays as an argument".to_string(),
+        ));
+    };
+    let borrow = arr.borrow();
+    dbg!(&borrow.values, &borrow.type_decl);
+    let TypeDecl::Array(ty, _size) = &borrow.type_decl else {
+        dbg!(&val);
+        return Ok(val.clone());
+    };
+    dbg!(&ty, _size);
+
+    // if let TypeDecl::Array(_ty_inner, size_inner) = &**ty {
+    let is_nested_array = borrow
+        .values
+        .first()
+        .is_some_and(|v| matches!(v, Value::Array(_)));
+    dbg!(is_nested_array);
+    if is_nested_array {
+        let (flattened, shape) = array_flatten(&borrow.values, &borrow.shape)?;
+
+        return Ok(Value::Array(ArrayInt::new(
+            (**ty).clone(),
+            shape,
+            flattened,
+        )));
+    }
+
+    Ok(Value::Array(arr.clone()))
+}
+
 fn s_shape(vals: &[Value]) -> Result<Value, EvalError> {
     let [arr, ..] = vals else {
         return Err(EvalError::RuntimeError(
@@ -400,6 +462,19 @@ pub(crate) fn std_functions_gen<'src, 'native>(
             ArgDecl::new("value", TypeDecl::Any),
         ],
         None,
+    );
+    set_fn(
+        "array",
+        &s_array,
+        vec![ArgDecl::new(
+            "array",
+            TypeDecl::Array(Box::new(TypeDecl::Any), ArraySize::all_dyn()),
+        )],
+        Some(TypeDecl::Any),
+        // Some(TypeDecl::Array(
+        //     Box::new(TypeDecl::Any),
+        //     ArraySize::all_dyn(),
+        // )),
     );
     set_fn(
         "shape",

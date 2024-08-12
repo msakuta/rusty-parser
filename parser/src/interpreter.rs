@@ -485,7 +485,7 @@ where
     };
 
     Ok(RunResult::Yield(Value::Array(ArrayInt::new(
-        TypeDecl::Any,
+        rows.first().map_or(TypeDecl::Any, TypeDecl::from_value),
         shape,
         rows,
     ))))
