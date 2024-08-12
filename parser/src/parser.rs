@@ -16,7 +16,7 @@ use nom::{
     IResult, InputTake, Offset,
 };
 use nom_locate::LocatedSpan;
-use std::{rc::Rc, string::FromUtf8Error};
+use std::{rc::Rc, string::FromUtf8Error, sync::atomic::Ordering::Relaxed};
 
 pub type Span<'a> = LocatedSpan<&'a str>;
 
@@ -379,28 +379,43 @@ fn str_literal(i: Span) -> IResult<Span, Expression> {
     ))
 }
 
+static ARRAY_ROW: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 fn array_row(i: Span) -> IResult<Span, Vec<Expression>> {
-    let (r, (mut val, last)) = pair(
-        many0(terminated(full_expression, ws(tag(",")))),
-        opt(full_expression),
-    )(i)?;
-    if let Some(last) = last {
-        val.push(last);
-    }
+    ARRAY_ROW.fetch_add(1, Relaxed);
+    let (r, first_cell) = full_expression(i)?;
+    let (r, val) = fold_many0(
+        preceded(ws(char(',')), full_expression),
+        move || vec![first_cell.clone()],
+        |mut lhs, rhs| {
+            lhs.push(rhs);
+            lhs
+        },
+    )(r)?;
+    let (r, _) = opt(char(','))(r)?;
     Ok((r, val))
 }
 
 fn array_rows(i: Span) -> IResult<Span, Vec<Vec<Expression>>> {
     // 2D arrays should be rectangular in shape, i.e. all rows should have the same length.
     // We do not apply that constrait here, but in evaluation.
-    let (r, (mut val, last)) = pair(many0(terminated(array_row, ws(tag(";")))), opt(array_row))(i)?;
-    if let Some(last) = last {
-        val.push(last);
-    }
+    let (r, first_row) = array_row(i)?;
+    let (r, val) = fold_many0(
+        preceded(ws(char(';')), array_row),
+        move || vec![first_row.clone()],
+        |mut lhs, rhs| {
+            lhs.push(rhs);
+            lhs
+        },
+    )(r)?;
+    let (r, _) = opt(char(';'))(r)?;
     Ok((r, val))
 }
 
+static ARRAY_LIT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 pub(crate) fn array_literal(i: Span) -> IResult<Span, Expression> {
+    ARRAY_LIT.fetch_add(1, Relaxed);
     let (r, _) = multispace0(i)?;
     let (r, open_br) = tag("[")(r)?;
     let (r, val) = array_rows(r)?;
@@ -460,7 +475,10 @@ where
     delimited(ws_comment, inner, ws_comment)
 }
 
+static FN_INVOKE_ARG: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 pub(crate) fn fn_invoke_arg(i: Span) -> IResult<Span, FnArg> {
+    FN_INVOKE_ARG.fetch_add(1, Relaxed);
     let (r, name) = opt(pair(ws(identifier), ws(tag(":"))))(i)?;
     let (r, expr) = full_expression(r)?;
     Ok((
@@ -544,7 +562,10 @@ pub(crate) fn tuple_index(i: Span) -> IResult<Span, Expression> {
     ))
 }
 
+static PRIMARY_EXP: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 pub(crate) fn primary_expression(i: Span) -> IResult<Span, Expression> {
+    PRIMARY_EXP.fetch_add(1, Relaxed);
     alt((
         numeric_literal_expression,
         str_literal,
@@ -557,7 +578,10 @@ pub(crate) fn primary_expression(i: Span) -> IResult<Span, Expression> {
     ))(i)
 }
 
+static POSTFIX_EX: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 fn postfix_expression(i: Span) -> IResult<Span, Expression> {
+    POSTFIX_EX.fetch_add(1, Relaxed);
     alt((func_invoke, array_index, tuple_index, primary_expression))(i)
 }
 
@@ -670,7 +694,10 @@ pub(crate) fn var_assign(i: Span) -> IResult<Span, Expression> {
     ))
 }
 
+static CMP_EXPR: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 pub(crate) fn cmp_expr(i: Span) -> IResult<Span, Expression> {
+    CMP_EXPR.fetch_add(1, Relaxed);
     alt((cmp, expr))(i)
 }
 
@@ -719,7 +746,10 @@ fn or(i: Span) -> IResult<Span, Expression> {
     bin_op("||", and, |lhs, rhs| ExprEnum::Or(lhs, rhs))(i)
 }
 
+static ASSIGN_EXPR: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 fn assign_expr(i: Span) -> IResult<Span, Expression> {
+    ASSIGN_EXPR.fetch_add(1, Relaxed);
     alt((var_assign, or))(i)
 }
 
@@ -843,12 +873,37 @@ pub(crate) fn statement(input: Span) -> IResult<Span, Statement> {
 }
 
 pub fn source(input: Span) -> IResult<Span, Vec<Statement>> {
+    ARRAY_ROW.store(0, Relaxed);
+    ARRAY_LIT.store(0, Relaxed);
+    PRIMARY_EXP.store(0, Relaxed);
+    POSTFIX_EX.store(0, Relaxed);
+    FN_INVOKE_ARG.store(0, Relaxed);
+    CMP_EXPR.store(0, Relaxed);
+    ASSIGN_EXPR.store(0, Relaxed);
     let (r, mut v) = many0(statement)(input)?;
     let (r, last) = opt(last_statement)(r)?;
     let (r, _) = opt(multispace0)(r)?;
     if let Some(last) = last {
         v.push(last);
     }
+    let array_rows_calls = ARRAY_ROW.load(Relaxed);
+    let array_literal_calls = ARRAY_LIT.load(Relaxed);
+    let primary_expression_calls = PRIMARY_EXP.load(Relaxed);
+    let postfix_expression_calls = POSTFIX_EX.load(Relaxed);
+    let fn_invoke_arg = FN_INVOKE_ARG.load(Relaxed);
+    let cmp_expr_calls = CMP_EXPR.load(Relaxed);
+    let expr_calls = ASSIGN_EXPR.load(Relaxed);
+    println!(
+        r#"
+    array_rows: {array_rows_calls}
+    array_literal_calls: {array_literal_calls}
+    primary_expression_calls: {primary_expression_calls}
+    postfix_expression_calls: {postfix_expression_calls}
+    fn_invoke_arg: {fn_invoke_arg}
+    cmp_expr: {cmp_expr_calls}
+    expr_calls: {expr_calls}
+    "#
+    );
     Ok((r, v))
 }
 

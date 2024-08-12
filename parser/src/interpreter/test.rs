@@ -642,7 +642,7 @@ fn array_literal_eval_test() {
         eval0(&span_full_expression("[1,3,5]").finish().unwrap().1),
         // Right now array literals have "Any" internal type, but it should be decided somehow.
         RunResult::Yield(Value::Array(ArrayInt::new(
-            TypeDecl::Any,
+            TypeDecl::I64,
             vec![3],
             vec![i64(1), i64(3), i64(5)]
         )))
