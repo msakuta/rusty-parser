@@ -128,19 +128,19 @@ fn s_array(vals: &[Value]) -> EvalResult<Value> {
         ));
     };
     let borrow = arr.borrow();
-    dbg!(&borrow.values, &borrow.type_decl);
+    // dbg!(&borrow.values, &borrow.type_decl);
     let TypeDecl::Array(ty, _size) = &borrow.type_decl else {
         dbg!(&val);
         return Ok(val.clone());
     };
-    dbg!(&ty, _size);
+    // dbg!(&ty, _size);
 
     // if let TypeDecl::Array(_ty_inner, size_inner) = &**ty {
     let is_nested_array = borrow
         .values
         .first()
         .is_some_and(|v| matches!(v, Value::Array(_)));
-    dbg!(is_nested_array);
+    // dbg!(is_nested_array);
     if is_nested_array {
         let (flattened, shape) = array_flatten(&borrow.values, &borrow.shape)?;
 

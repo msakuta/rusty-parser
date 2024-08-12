@@ -383,33 +383,13 @@ static ARRAY_ROW: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsiz
 
 fn array_row(i: Span) -> IResult<Span, Vec<Expression>> {
     ARRAY_ROW.fetch_add(1, Relaxed);
-    let (r, first_cell) = full_expression(i)?;
-    let (r, val) = fold_many0(
-        preceded(ws(char(',')), full_expression),
-        move || vec![first_cell.clone()],
-        |mut lhs, rhs| {
-            lhs.push(rhs);
-            lhs
-        },
-    )(r)?;
-    let (r, _) = opt(char(','))(r)?;
-    Ok((r, val))
+    terminated(separated_list0(char(','), full_expression), opt(char(',')))(i)
 }
 
 fn array_rows(i: Span) -> IResult<Span, Vec<Vec<Expression>>> {
     // 2D arrays should be rectangular in shape, i.e. all rows should have the same length.
     // We do not apply that constrait here, but in evaluation.
-    let (r, first_row) = array_row(i)?;
-    let (r, val) = fold_many0(
-        preceded(ws(char(';')), array_row),
-        move || vec![first_row.clone()],
-        |mut lhs, rhs| {
-            lhs.push(rhs);
-            lhs
-        },
-    )(r)?;
-    let (r, _) = opt(char(';'))(r)?;
-    Ok((r, val))
+    terminated(separated_list0(char(';'), array_row), opt(char(';')))(i)
 }
 
 static ARRAY_LIT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
