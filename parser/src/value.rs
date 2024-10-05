@@ -25,6 +25,13 @@ impl ArrayInt {
     pub fn values(&self) -> &[Value] {
         &self.values
     }
+
+    pub fn get(&self, idx: usize) -> EvalResult<Value> {
+        self.values
+            .get(idx)
+            .ok_or_else(|| EvalError::ArrayOutOfBounds(self.values.len(), idx))
+            .cloned()
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -201,7 +208,7 @@ impl Value {
 
     /// We don't really need assignment operation for an array (yet), because
     /// array index will return a reference.
-    fn _array_assign(&mut self, idx: usize, value: Value) -> EvalResult<()> {
+    pub fn array_assign(&mut self, idx: usize, value: Value) -> EvalResult<()> {
         if let Value::Array(array) = self {
             array.borrow_mut().values[idx] = value.deref()?;
         } else {
@@ -210,9 +217,9 @@ impl Value {
         Ok(())
     }
 
-    fn _array_get(&self, idx: u64) -> EvalResult<Value> {
+    pub fn array_get(&self, idx: u64) -> EvalResult<Value> {
         match self {
-            Value::Ref(rc) => rc.borrow()._array_get(idx),
+            Value::Ref(rc) => rc.borrow().array_get(idx),
             Value::Array(array) => Ok(array.borrow_mut().values.eget(idx as usize)?.clone()),
             _ => Err(EvalError::IndexNonArray),
         }
@@ -235,6 +242,28 @@ impl Value {
             Value::ArrayRef(rc, idx2) => {
                 let array_int = rc.borrow();
                 array_int.values.eget(*idx2)?.array_get_ref(idx)?
+            }
+            _ => return Err(EvalError::IndexNonArray),
+        })
+    }
+
+    pub fn array_get_lvalue(&self, idx: u64) -> Result<LValue, EvalError> {
+        Ok(match self {
+            Value::Ref(rc) => rc.borrow().array_get_lvalue(idx)?,
+            Value::Array(array) => {
+                let array_int = array.borrow();
+                if (idx as usize) < array_int.values.len() {
+                    LValue::ArrayRef(array.clone(), idx as usize)
+                } else {
+                    return Err(EvalError::ArrayOutOfBounds(
+                        idx as usize,
+                        array_int.values.len(),
+                    ));
+                }
+            }
+            Value::ArrayRef(rc, idx2) => {
+                let array_int = rc.borrow();
+                array_int.values.eget(*idx2)?.array_get_lvalue(idx)?
             }
             _ => return Err(EvalError::IndexNonArray),
         })
@@ -298,4 +327,11 @@ impl TupleEntry {
     pub fn value(&self) -> &Value {
         &self.value
     }
+}
+
+pub enum LValue {
+    /// A variable identified by a name
+    Variable(String),
+    /// Reference to a refcounted variable, e.g. an array element.
+    ArrayRef(Rc<RefCell<ArrayInt>>, usize),
 }

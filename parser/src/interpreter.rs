@@ -1,7 +1,7 @@
 use crate::{
     parser::*,
     type_decl::ArraySize,
-    value::{ArrayInt, TupleEntry},
+    value::{ArrayInt, LValue, TupleEntry},
     TypeDecl, Value,
 };
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
@@ -47,6 +47,9 @@ pub enum EvalError {
     NonNameFnRef(String),
     CallStackUndeflow,
     IncompatibleArrayLength(usize, usize),
+    AssignToLiteral(String),
+    IndexNonNum,
+    NonLValue(String),
 }
 
 impl std::error::Error for EvalError {}
@@ -108,6 +111,9 @@ impl std::fmt::Display for EvalError {
                 f,
                 "Array length is incompatible; tried to assign {src} to {dst}"
             ),
+            Self::AssignToLiteral(name) => write!(f, "Cannot assign to a literal: {}", name),
+            Self::IndexNonNum => write!(f, "Indexed an array with a non-number"),
+            Self::NonLValue(ex) => write!(f, "Expression {} is not an lvalue.", ex),
         }
     }
 }
@@ -123,6 +129,7 @@ impl From<String> for EvalError {
 /// it's too long and shows up too often behind Rc.
 pub(crate) trait EGetExt<T> {
     fn eget(&self, idx: usize) -> EvalResult<&T>;
+    #[allow(dead_code)]
     fn eget_mut(&mut self, idx: usize) -> EvalResult<&mut T>;
 }
 
@@ -451,33 +458,25 @@ where
                 })
                 .collect::<Result<Vec<_>, _>>()?,
         )))),
-        ExprEnum::Variable(str) => RunResult::Yield(Value::Ref(
-            ctx.get_var_rc(str)
+        ExprEnum::Variable(str) => RunResult::Yield(
+            ctx.get_var(str)
                 .ok_or_else(|| EvalError::VarNotFound(str.to_string()))?,
-        )),
+        ),
         ExprEnum::Cast(ex, decl) => {
             RunResult::Yield(coerce_type(&unwrap_run!(eval(ex, ctx)?), decl)?)
         }
         ExprEnum::VarAssign(lhs, rhs) => {
-            let lhs_result = eval(lhs, ctx)?;
-            let result = match lhs_result {
-                RunResult::Yield(Value::Ref(rc)) => {
-                    let rhs_value = unwrap_run!(eval(rhs, ctx)?);
-                    *rc.borrow_mut() = rhs_value.clone();
-                    rhs_value
+            let rhs_value = unwrap_run!(eval(rhs, ctx)?);
+            let lhs_result = eval_lvalue(lhs, ctx)?;
+            match lhs_result {
+                LValue::Variable(name) => {
+                    if let Some(var) = ctx.variables.borrow_mut().get_mut(name.as_str()) {
+                        *var.borrow_mut() = rhs_value.clone();
+                    }
                 }
-                RunResult::Yield(Value::ArrayRef(rc, idx)) => {
-                    let mut array_int = rc.borrow_mut();
-                    let mref = array_int.values.eget_mut(idx)?;
-                    let rhs_value = unwrap_run!(eval(rhs, ctx)?);
-                    *mref = rhs_value.clone();
-                    rhs_value
-                }
-                _ => {
-                    return Err(EvalError::NeedRef(format!("{lhs_result:?}")));
-                }
-            };
-            RunResult::Yield(result)
+                LValue::ArrayRef(arr, idx) => arr.borrow_mut().values[idx] = rhs_value.clone(),
+            }
+            RunResult::Yield(rhs_value)
         }
         ExprEnum::FnInvoke(fname, args) => {
             let fn_args = ctx
@@ -692,8 +691,46 @@ where
     })
 }
 
+fn eval_lvalue<'src, 'native, 'ctx>(
+    expr: &Expression<'src>,
+    ctx: &'ctx mut EvalContext<'src, 'native, '_>,
+) -> EvalResult<LValue>
+where
+    'native: 'src,
+{
+    use ExprEnum::*;
+    match &expr.expr {
+        NumLiteral(_) | StrLiteral(_) | ArrLiteral(_) => {
+            Err(EvalError::AssignToLiteral(expr.span.to_string()))
+        }
+        Variable(name) => Ok(LValue::Variable(name.to_string())),
+        ArrIndex(ex, idx) => {
+            let idx = match eval(&idx[0], ctx)? {
+                RunResult::Yield(Value::I32(val)) => val as u64,
+                RunResult::Yield(Value::I64(val)) => val as u64,
+                RunResult::Yield(_) => return Err(EvalError::IndexNonNum),
+                RunResult::Break => return Err(EvalError::BreakInFnArg),
+            };
+            let arr = eval_lvalue(ex, ctx)?;
+            Ok(match arr {
+                LValue::Variable(name) => ctx
+                    .variables
+                    .borrow_mut()
+                    .get(name.as_str())
+                    .ok_or_else(|| EvalError::VarNotFound(name))?
+                    .borrow_mut()
+                    .array_get_lvalue(idx)?,
+                LValue::ArrayRef(value, subidx) => {
+                    let elem = RefCell::borrow(&value).get(subidx)?;
+                    elem.array_get_lvalue(idx)?
+                }
+            })
+        }
+        _ => Err(EvalError::NonLValue(expr.span.to_string())),
+    }
+}
+
 pub(crate) fn s_print(vals: &[Value]) -> EvalResult<Value> {
-    println!("print:");
     fn print_inner(val: &Value) -> EvalResult<()> {
         match val {
             Value::F64(val) => print!("{}", val),
@@ -942,21 +979,21 @@ impl<'src, 'ast, 'native, 'ctx> EvalContext<'src, 'native, 'ctx> {
         }
     }
 
-    fn _get_var(&self, name: &str) -> Option<Value> {
+    fn get_var(&self, name: &str) -> Option<Value> {
         if let Some(val) = self.variables.borrow().get(name) {
             Some(val.borrow().clone())
         } else if let Some(super_ctx) = self.super_context {
-            super_ctx._get_var(name)
+            super_ctx.get_var(name)
         } else {
             None
         }
     }
 
-    fn get_var_rc(&self, name: &str) -> Option<Rc<RefCell<Value>>> {
+    fn _get_var_rc(&self, name: &str) -> Option<Rc<RefCell<Value>>> {
         if let Some(val) = self.variables.borrow().get(name) {
             Some(val.clone())
         } else if let Some(super_ctx) = self.super_context {
-            super_ctx.get_var_rc(name)
+            super_ctx._get_var_rc(name)
         } else {
             None
         }
