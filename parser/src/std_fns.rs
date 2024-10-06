@@ -9,7 +9,6 @@ use crate::{
 };
 
 pub(crate) fn s_print(vals: &[Value]) -> EvalResult<Value> {
-    println!("print:");
     for val in vals {
         // Put a space between tokens
         print!(" {val}");
