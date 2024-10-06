@@ -28,15 +28,6 @@ fn s_puts(vals: &[Value]) -> Result<Value, EvalError> {
                 Value::I32(val) => print!("{}", val),
                 Value::Str(val) => print!("{}", val),
                 Value::Array(val) => puts_inner(&mut val.borrow().values.iter()),
-                Value::Ref(r) => {
-                    let v: &Value = &r.borrow();
-                    puts_inner(&mut std::iter::once(v))
-                }
-                Value::ArrayRef(r, idx) => {
-                    if let Some(r) = r.borrow().values.get(*idx) {
-                        puts_inner(&mut std::iter::once(r))
-                    }
-                }
                 Value::Tuple(val) => puts_inner(&mut val.borrow().iter().map(|v| &v.value)),
             }
         }
@@ -54,8 +45,6 @@ pub(crate) fn s_type(vals: &[Value]) -> Result<Value, EvalError> {
             Value::I32(_) => "i32".to_string(),
             Value::Str(_) => "str".to_string(),
             Value::Array(inner) => format!("[{}]", inner.borrow().type_decl),
-            Value::Ref(r) => format!("ref[{}]", type_str(&r.borrow())),
-            Value::ArrayRef(r, _) => format!("aref[{}]", r.borrow().type_decl),
             Value::Tuple(inner) => format!(
                 "({})",
                 &inner.borrow().iter().fold(String::new(), |acc, cur| {
@@ -85,7 +74,7 @@ pub(crate) fn s_len(vals: &[Value]) -> Result<Value, EvalError> {
 
 pub(crate) fn s_push(vals: &[Value]) -> Result<Value, EvalError> {
     if let [arr, val, ..] = vals {
-        let val = val.clone().deref()?;
+        let val = val.clone();
         arr.array_push(val).map(|_| Value::I32(0))
     } else {
         Ok(Value::I32(0))
@@ -122,7 +111,7 @@ fn s_array(vals: &[Value]) -> EvalResult<Value> {
             "array does not have enough arguments".to_string(),
         ));
     };
-    let Value::Array(arr) = val.clone().deref()? else {
+    let Value::Array(arr) = val.clone() else {
         return Err(EvalError::RuntimeError(
             "array needs a (possibly arrays of ) arrays as an argument".to_string(),
         ));
@@ -160,7 +149,7 @@ fn s_shape(vals: &[Value]) -> Result<Value, EvalError> {
             "transpose does not have enough arguments".to_string(),
         ));
     };
-    let Value::Array(arr) = arr.clone().deref()? else {
+    let Value::Array(arr) = arr.clone() else {
         return Err(EvalError::RuntimeError(
             "transpose's argument (array) must be of type array".to_string(),
         ));
@@ -186,7 +175,7 @@ fn s_transpose(vals: &[Value]) -> Result<Value, EvalError> {
             "transpose does not have enough arguments".to_string(),
         ));
     };
-    let Value::Array(arr) = arr.clone().deref()? else {
+    let Value::Array(arr) = arr.clone() else {
         return Err(EvalError::RuntimeError(
             "transpose's argument (array) must be of type array".to_string(),
         ));
@@ -226,7 +215,7 @@ fn s_reshape(vals: &[Value]) -> EvalResult<Value> {
             "reshape does not have enough arguments".to_string(),
         ));
     };
-    let shape = shape.clone().deref()?;
+    let shape = shape.clone();
     let Value::Array(shape) = shape else {
         return Err(EvalError::RuntimeError(
             "reshape's second argument (shape) must be of type array".to_string(),
@@ -238,7 +227,7 @@ fn s_reshape(vals: &[Value]) -> EvalResult<Value> {
         .iter()
         .map(|val| coerce_i64(val).map(|val| val))
         .collect::<Result<Vec<_>, _>>()?;
-    let Value::Array(arr) = arr.clone().deref()? else {
+    let Value::Array(arr) = arr.clone() else {
         return Err(EvalError::RuntimeError(
             "reshape's first argument (array) must be of type array".to_string(),
         ));
@@ -317,10 +306,10 @@ fn s_vstack(vals: &[Value]) -> Result<Value, EvalError> {
         ));
     };
 
-    let a = a.clone().deref()?;
+    let a = a.clone();
     let a = borrow(&a, "a", "vstack")?;
     let (a_type, a, a_shape) = read_raw_array(&a, "a", "vstack")?;
-    let b = b.clone().deref()?;
+    let b = b.clone();
     let b = borrow(&b, "b", "vstack")?;
     let (b_type, b, b_shape) = read_raw_array(&b, "b", "vstack")?;
 
@@ -355,10 +344,10 @@ fn s_hstack(vals: &[Value]) -> Result<Value, EvalError> {
         ));
     };
 
-    let a = a.clone().deref()?;
+    let a = a.clone();
     let a = borrow(&a, "a", "hstack")?;
     let (a_type, a, a_shape) = read_raw_array(&a, "a", "hstack")?;
-    let b = b.clone().deref()?;
+    let b = b.clone();
     let b = borrow(&b, "b", "hstack")?;
     let (b_type, b, b_shape) = read_raw_array(&b, "b", "hstack")?;
 

@@ -6,7 +6,7 @@ use crate::{
     bytecode::{Bytecode, FnBytecode, FnProto, OpCode},
     interpreter::{
         binary_op, binary_op_int, binary_op_str, coerce_f64, coerce_i64, coerce_type, truthy,
-        EGetExt, EvalError, EvalResult,
+        EvalError, EvalResult,
     },
     type_decl::TypeDecl,
     Value,
@@ -40,12 +40,27 @@ impl<'a> CallInfo<'a> {
     }
 }
 
+/// The virtual machine state run by the bytecode.
 struct Vm {
+    /// A stack for function call stack frames.
     stack: Vec<Value>,
+    /// The stack base address of the currently running function.
     stack_base: usize,
+    /// A special register to remember the target index in Set instruction, updated by SetReg instruction.
+    /// Similar to x64's RSI or RDI, it indicates the index of the array to set, because we need more arguments than
+    /// a fixed length arguments in an instruction for Set operation.
+    set_register: usize,
 }
 
 impl Vm {
+    fn new(stack_size: usize) -> Self {
+        Self {
+            stack: vec![Value::I64(0); stack_size],
+            stack_base: 0,
+            set_register: 0,
+        }
+    }
+
     fn get(&self, idx: impl Into<usize>) -> &Value {
         &self.stack[self.stack_base + idx.into()]
     }
@@ -110,10 +125,7 @@ fn interpret_fn(
     );
     dbg_println!("size callInfo: {}", std::mem::size_of::<CallInfo>());
     dbg_println!("literals: {:?}", bytecode.literals);
-    let mut vm = Vm {
-        stack: vec![Value::I64(0); bytecode.stack_size],
-        stack_base: 0,
-    };
+    let mut vm = Vm::new(bytecode.stack_size);
     let mut call_stack = vec![CallInfo {
         fun: &bytecode,
         ip: 0,
@@ -142,19 +154,8 @@ fn interpret_fn(
                         continue;
                     }
                 }
-                let val = match vm.get(inst.arg0) {
-                    Value::Ref(aref) => (*aref.borrow()).clone(),
-                    Value::ArrayRef(aref, idx) => (*aref.borrow()).values[*idx].clone(),
-                    v => v.clone(),
-                };
-                let target = vm.get_mut(inst.arg1);
-                match target {
-                    Value::Ref(vref) => {
-                        vref.replace(val);
-                    }
-                    Value::ArrayRef(vref, idx) => vref.borrow_mut().values[*idx] = val,
-                    _ => vm.set(inst.arg1, val),
-                }
+                let val = vm.get(inst.arg0).clone();
+                vm.set(inst.arg1, val);
             }
             OpCode::Incr => {
                 let val = vm.get_mut(inst.arg0);
@@ -164,7 +165,6 @@ fn interpret_fn(
                         Value::I32(i) => *i += 1,
                         Value::F64(i) => *i += 1.,
                         Value::F32(i) => *i += 1.,
-                        Value::Ref(r) => incr(&mut r.borrow_mut())?,
                         _ => {
                             return Err(format!(
                                 "Attempt to increment non-numerical value {:?}",
@@ -253,28 +253,21 @@ fn interpret_fn(
                 let target_collection = &vm.get(inst.arg0);
                 let target_index = &vm.get(inst.arg1);
                 let index = coerce_i64(target_index)? as u64;
-                let new_val = target_collection.array_get_ref(index).or_else(|_| {
+                let new_val = target_collection.array_get(index).or_else(|_| {
                     target_collection.tuple_get(index)
                 }).map_err(|e| {
                     format!("Get instruction failed with {target_collection:?} and {target_index:?}: {e:?}")
                 })?;
                 vm.set(inst.arg1, new_val);
             }
-            OpCode::Deref => {
-                let target = vm.get_mut(inst.arg0);
-                match target {
-                    Value::Ref(v) => {
-                        let cloned = v.borrow().clone();
-                        *target = cloned;
-                    }
-                    Value::ArrayRef(a, idx) => {
-                        let a = a.borrow();
-                        let cloned = a.values.eget(*idx)?.clone();
-                        drop(a);
-                        *target = cloned;
-                    }
-                    _ => (),
-                }
+            OpCode::Set => {
+                let target_collection = &vm.get(inst.arg0);
+                let value = vm.get(inst.arg1);
+                let index = vm.set_register;
+                target_collection.array_assign(index, value.clone())?;
+            }
+            OpCode::SetReg => {
+                vm.set_register = coerce_i64(vm.get(inst.arg0 as usize))? as usize;
             }
             OpCode::Lt => {
                 let result = compare_op(

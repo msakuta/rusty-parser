@@ -36,6 +36,13 @@ impl ArrayInt {
     pub fn values(&self) -> &[Value] {
         &self.values
     }
+
+    pub fn get(&self, idx: usize) -> EvalResult<Value> {
+        self.values
+            .get(idx)
+            .ok_or_else(|| EvalError::ArrayOutOfBounds(self.values.len(), idx))
+            .cloned()
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -46,8 +53,6 @@ pub enum Value {
     I32(i32),
     Str(String),
     Array(Rc<RefCell<ArrayInt>>),
-    Ref(Rc<RefCell<Value>>),
-    ArrayRef(Rc<RefCell<ArrayInt>>, usize),
     Tuple(Rc<RefCell<TupleInt>>),
 }
 
@@ -68,14 +73,6 @@ impl std::fmt::Display for Value {
             Self::Array(v) => {
                 let v = v.borrow();
                 array_recurse(f, &v.values, &v.shape, 0, true)
-            }
-            Self::Ref(v) => write!(f, "&{}", v.borrow()),
-            Self::ArrayRef(v, idx) => {
-                if let Some(v) = (*v.borrow()).values.get(*idx) {
-                    v.fmt(f)
-                } else {
-                    write!(f, "Array index out of range")
-                }
             }
             Self::Tuple(v) => write!(
                 f,
@@ -173,23 +170,6 @@ impl Value {
                 }
                 Ok(())
             }
-            Self::Ref(val) => {
-                writer.write_all(&REF_TAG.to_le_bytes())?;
-                val.borrow().serialize(writer)?;
-                Ok(())
-            }
-            Self::ArrayRef(val, idx) => {
-                if let Some(v) = (*val.borrow()).values.get(*idx) {
-                    writer.write_all(&REF_TAG.to_le_bytes())?;
-                    v.serialize(writer)?;
-                    Ok(())
-                } else {
-                    Err(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        "ArrayRef out of range".to_string(),
-                    ))
-                }
-            }
             Self::Tuple(rc) => {
                 let values = rc.borrow();
                 writer.write_all(&TUPLE_TAG.to_le_bytes())?;
@@ -251,53 +231,28 @@ impl Value {
         })
     }
 
-    /// We don't really need assignment operation for an array (yet), because
-    /// array index will return a reference.
-    fn _array_assign(&mut self, idx: usize, value: Value) -> EvalResult<()> {
-        if let Value::Array(array) = self {
-            array.borrow_mut().values[idx] = value.deref()?;
-        } else {
-            return Err(EvalError::IndexNonArray);
+    pub fn array_assign(&self, idx: usize, value: Value) -> EvalResult<()> {
+        match self {
+            Value::Array(array) => {
+                array.borrow_mut().values[idx] = value;
+            }
+            _ => return Err(EvalError::IndexNonArray),
         }
         Ok(())
     }
 
-    fn _array_get(&self, idx: u64) -> EvalResult<Value> {
+    pub fn array_get(&self, idx: u64) -> EvalResult<Value> {
         match self {
-            Value::Ref(rc) => rc.borrow()._array_get(idx),
             Value::Array(array) => Ok(array.borrow_mut().values.eget(idx as usize)?.clone()),
             _ => Err(EvalError::IndexNonArray),
         }
     }
 
-    pub fn array_get_ref(&self, idx: u64) -> Result<Value, EvalError> {
-        Ok(match self {
-            Value::Ref(rc) => rc.borrow().array_get_ref(idx)?,
-            Value::Array(array) => {
-                let array_int = array.borrow();
-                if (idx as usize) < array_int.values.len() {
-                    Value::ArrayRef(array.clone(), idx as usize)
-                } else {
-                    return Err(EvalError::ArrayOutOfBounds(
-                        idx as usize,
-                        array_int.values.len(),
-                    ));
-                }
-            }
-            Value::ArrayRef(rc, idx2) => {
-                let array_int = rc.borrow();
-                array_int.values.eget(*idx2)?.array_get_ref(idx)?
-            }
-            _ => return Err(EvalError::IndexNonArray),
-        })
-    }
-
     pub fn array_push(&self, value: Value) -> Result<(), EvalError> {
         match self {
-            Value::Ref(r) => r.borrow_mut().array_push(value),
             Value::Array(array) => {
                 let mut array_int = array.borrow_mut();
-                array_int.values.push(value.deref()?);
+                array_int.values.push(value);
                 Ok(())
             }
             _ => Err("push() must be called for an array".to_string().into()),
@@ -307,7 +262,6 @@ impl Value {
     /// Returns the length of an array, dereferencing recursively if the value was a reference.
     pub fn array_len(&self) -> EvalResult<usize> {
         match self {
-            Value::Ref(rc) => rc.borrow().array_len(),
             Value::Array(array) => Ok(array.borrow().values.len()),
             _ => Err("len() must be called for an array".to_string().into()),
         }
@@ -315,7 +269,6 @@ impl Value {
 
     pub fn tuple_get(&self, idx: u64) -> Result<Value, EvalError> {
         Ok(match self {
-            Value::Ref(rc) => rc.borrow().tuple_get(idx)?,
             Value::Tuple(tuple) => {
                 let tuple_int = tuple.borrow();
                 tuple_int
@@ -325,15 +278,6 @@ impl Value {
                     .clone()
             }
             _ => return Err(EvalError::IndexNonArray),
-        })
-    }
-
-    /// Recursively peels off references
-    pub fn deref(self) -> EvalResult<Self> {
-        Ok(match self {
-            Value::Ref(r) => r.borrow().clone().deref()?,
-            Value::ArrayRef(r, idx) => (*r.borrow()).values.eget(idx)?.clone(),
-            _ => self,
         })
     }
 }

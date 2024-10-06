@@ -1,5 +1,5 @@
 use clap::Parser;
-use parser::*;
+use mascal::*;
 
 use ::colored::Colorize;
 use std::{
@@ -65,7 +65,7 @@ fn main() -> Result<(), String> {
 
         if args.compile || args.compile_and_run {
             let mut bytecode = compile(&result.1, HashMap::new())
-                .map_err(|e| format!("Error in compile(): {:?}", e))?;
+                .map_err(|e| format!("Error in compile(): {}", e))?;
             if args.signatures {
                 bytecode
                     .signatures(&mut std::io::stdout())

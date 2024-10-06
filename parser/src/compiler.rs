@@ -1,4 +1,8 @@
+mod lvalue;
+
 use std::{cell::RefCell, collections::HashMap, io::Write, rc::Rc};
+
+use self::lvalue::{emit_lvalue, LValue};
 
 use crate::{
     bytecode::{
@@ -12,6 +16,7 @@ use crate::{
 
 #[derive(Debug, Clone, Copy)]
 enum Target {
+    /// A temporary neither literal nor local
     None,
     /// Literal value with literal index.
     /// Right now whether the target is literal is not utilized, but we may use it for optimization.
@@ -117,6 +122,20 @@ impl<'a> Compiler<'a> {
         ));
         stk_target
     }
+
+    fn find_local(&self, name: &str) -> CompileResult<&LocalVar> {
+        self.locals
+            .iter()
+            .rev()
+            .fold(None, |acc, rhs| {
+                if acc.is_some() {
+                    acc
+                } else {
+                    rhs.iter().rev().find(|lo| lo.name == name)
+                }
+            })
+            .ok_or_else(|| CompileError::VarNotFound(name.to_string()))
+    }
 }
 
 type CompileResult<T> = Result<T, CompileError>;
@@ -131,6 +150,8 @@ pub enum CompileError {
     VarNotFound(String),
     FnNotFound(String),
     InsufficientNamedArgs,
+    AssignToLiteral(String),
+    NonLValue(String),
     FromUtf8Error(std::string::FromUtf8Error),
     IoError(std::io::Error),
 }
@@ -149,6 +170,12 @@ impl std::fmt::Display for CompileError {
             Self::InsufficientNamedArgs => {
                 write!(f, "Named arguments does not cover all required args")
             }
+            Self::AssignToLiteral(name) => write!(f, "Cannot assign to a literal: {}", name),
+            Self::NonLValue(ex) => write!(
+                f,
+                "Attempt assignment to expression {} which is not an lvalue.",
+                ex
+            ),
             Self::FromUtf8Error(e) => e.fmt(f),
             Self::IoError(e) => e.fmt(f),
         }
@@ -477,19 +504,8 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> CompileResult<usize>
             Ok(compiler.find_or_create_literal(&val))
         }
         ExprEnum::Variable(str) => {
-            let local = compiler.locals.iter().rev().fold(None, |acc, rhs| {
-                if acc.is_some() {
-                    acc
-                } else {
-                    rhs.iter().rev().find(|lo| lo.name == **str)
-                }
-            });
-
-            if let Some(local) = local {
-                return Ok(local.stack_idx);
-            } else {
-                return Err(CompileError::VarNotFound(str.to_string()));
-            }
+            let local = compiler.find_local(*str)?;
+            return Ok(local.stack_idx);
         }
         ExprEnum::Cast(ex, decl) => {
             let val = emit_expr(ex, compiler)?;
@@ -523,14 +539,36 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> CompileResult<usize>
         ExprEnum::Mult(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Mul, lhs, rhs)?),
         ExprEnum::Div(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Div, lhs, rhs)?),
         ExprEnum::VarAssign(lhs, rhs) => {
-            let lhs_result = emit_expr(lhs, compiler)?;
+            let lhs_result = emit_lvalue(lhs, compiler)?;
             let rhs_result = emit_expr(rhs, compiler)?;
-            compiler.bytecode.instructions.push(Instruction {
-                op: OpCode::Move,
-                arg0: rhs_result as u8,
-                arg1: lhs_result as u16,
-            });
-            Ok(lhs_result)
+            match lhs_result {
+                LValue::Variable(name) => {
+                    let local_idx = compiler.find_local(&name)?.stack_idx;
+                    compiler
+                        .bytecode
+                        .push_inst(OpCode::Move, rhs_result as u8, local_idx as u16);
+                    Ok(local_idx)
+                }
+                LValue::ArrayRef(arr, subidx) => {
+                    let value_copy = compiler.target_stack.len();
+                    compiler.target_stack.push(Target::None);
+
+                    // First, copy the value to be overwritten by Get instruction
+                    compiler
+                        .bytecode
+                        .push_inst(OpCode::Move, rhs_result as u8, value_copy as u16);
+
+                    // Second, assign the target index into the set register
+                    compiler.bytecode.push_inst(OpCode::SetReg, subidx as u8, 0);
+
+                    // Third, get the element from the array reference
+                    compiler
+                        .bytecode
+                        .push_inst(OpCode::Set, arr as u8, value_copy as u16);
+
+                    Ok(value_copy)
+                }
+            }
         }
         ExprEnum::FnInvoke(fname, argss) => {
             let default_args = {
@@ -554,13 +592,10 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> CompileResult<usize>
                 }
             };
 
-            // Function arguments have value semantics, even if it was an array element.
-            // Unless we emit `Deref` here, we might leave a reference in the stack that can be
-            // accidentally overwritten. I'm not sure this is the best way to avoid it.
             let mut unnamed_args = argss
                 .iter()
                 .filter(|v| v.name.is_none())
-                .map(|v| emit_rvalue(&v.expr, compiler))
+                .map(|v| emit_expr(&v.expr, compiler))
                 .collect::<Result<Vec<_>, _>>()?;
             unnamed_args.extend(
                 default_args
@@ -571,7 +606,7 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> CompileResult<usize>
                 .iter()
                 .filter_map(|v| {
                     if let Some(name) = v.name {
-                        match emit_rvalue(&v.expr, compiler) {
+                        match emit_expr(&v.expr, compiler) {
                             Ok(res) => Some(Ok((name, res))),
                             Err(e) => Some(Err(e)),
                         }
@@ -718,12 +753,6 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> CompileResult<usize>
             Ok(res)
         }
     }
-}
-
-fn emit_rvalue(ex: &Expression, compiler: &mut Compiler) -> CompileResult<usize> {
-    let ret = emit_expr(ex, compiler)?;
-    compiler.bytecode.push_inst(OpCode::Deref, ret as u8, 0);
-    Ok(ret)
 }
 
 fn emit_binary_op(

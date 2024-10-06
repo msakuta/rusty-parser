@@ -1,8 +1,10 @@
-# rusty-parser
+# Mascal
 
-A self-learning project for making a new language using Rust and nom.
+MASsive CALculator
 
-Try it now on your browser! https://msakuta.github.io/rusty-parser/
+An experimental language for large scale array manipulation, similar to numpy or Matlab, in Rust.
+
+Try it now on your browser! https://msakuta.github.io/mascal/
 
 ## Requirements
 
@@ -83,8 +85,8 @@ In ascending order of difficulty.
 * [x] Static type checking (instead of runtime coercion)
 * [x] Type cast operator `as`
 * [x] Line and block comments (`/*`, `*/`, `//`)
-* [x] [Named arguments in function calls](https://github.com/msakuta/rusty-parser/wiki/Function-signature#named-argument-in-function-call)
-* [x] [Default argument](https://github.com/msakuta/rusty-parser/wiki/Function-signature#default-argument)
+* [x] [Named arguments in function calls](https://github.com/msakuta/mascal/wiki/Function-signature#named-argument-in-function-call)
+* [x] [Default argument](https://github.com/msakuta/mascal/wiki/Function-signature#default-argument)
 * [x] Type casting in bytecode
 * [x] Proper error handling
 * [x] Tuple types

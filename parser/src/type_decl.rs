@@ -39,8 +39,6 @@ impl TypeDecl {
                 Box::new(a.borrow().type_decl.clone()),
                 ArraySize(vec![ArraySizeAxis::Any]),
             ),
-            Value::Ref(a) => Self::from_value(&*a.borrow()),
-            Value::ArrayRef(a, _) => a.borrow().type_decl.clone(),
             Value::Tuple(a) => Self::Tuple(
                 a.borrow()
                     .iter()

@@ -8,7 +8,7 @@ for i in 0 .. n {
 fn sieve(array: [i32], prime: i64) {
     var i = 2;
     /*print(prime, type(prime));*/
-    while prime * i < n {
+    while prime * i < len(array) {
         array[prime * i] = 0;
         i = i + 1;
     }

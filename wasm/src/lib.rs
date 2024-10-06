@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use parser::*;
+use mascal::*;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
@@ -50,12 +50,6 @@ fn s_puts(vals: &[Value]) -> Result<Value, EvalError> {
                         .map(|v| v.clone())
                         .collect::<Vec<_>>(),
                 ),
-                Value::Ref(r) => puts_inner(&[r.borrow().clone()]),
-                Value::ArrayRef(r, idx) => {
-                    if let Some(val) = r.borrow().values().get(*idx) {
-                        puts_inner(&[val.clone()]);
-                    }
-                }
                 Value::Tuple(val) => puts_inner(
                     &val.borrow()
                         .iter()
@@ -128,7 +122,7 @@ pub fn type_check(src: &str) -> Result<JsValue, JsValue> {
     wasm_functions(|name, f| ctx.set_fn(name, f));
     let parse_result =
         source(src).map_err(|e| JsValue::from_str(&format!("Parse error: {:?}", e)))?;
-    parser::type_check(&parse_result.1, &mut ctx)
+    mascal::type_check(&parse_result.1, &mut ctx)
         .map_err(|e| JsValue::from_str(&format!("Error on type check: {}", e)))?;
     Ok(JsValue::from_str("Ok"))
 }
@@ -165,7 +159,7 @@ pub fn compile(src: &str) -> Result<Vec<u8>, JsValue> {
     extra_functions(&mut |name, f| {
         functions.insert(name, f);
     });
-    let bytecode = parser::compile(&parse_result.1, functions)
+    let bytecode = mascal::compile(&parse_result.1, functions)
         .map_err(|e| JsValue::from_str(&format!("Error on execution: {:?}", e)))?;
     let mut bytes = vec![];
     bytecode
@@ -182,7 +176,7 @@ pub fn disasm(src: &str) -> Result<String, JsValue> {
     extra_functions(&mut |name, f| {
         functions.insert(name, f);
     });
-    let disasm_code = parser::disasm(&parse_result.1, functions)
+    let disasm_code = mascal::disasm(&parse_result.1, functions)
         .map_err(|e| JsValue::from_str(&format!("Error on execution: {:?}", e)))?;
     Ok(disasm_code)
 }
@@ -195,7 +189,7 @@ pub fn compile_and_run(src: &str) -> Result<(), JsValue> {
     extra_functions(&mut |name, f| {
         functions.insert(name, f);
     });
-    let mut bytecode = parser::compile(&parse_result.1, functions)
+    let mut bytecode = mascal::compile(&parse_result.1, functions)
         .map_err(|e| JsValue::from_str(&format!("Error on execution: {:?}", e)))?;
     bytecode.add_std_fn();
     extra_functions(&mut |name, f| {
