@@ -472,19 +472,8 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> CompileResult<usize>
             Ok(compiler.find_or_create_literal(&val))
         }
         ExprEnum::Variable(str) => {
-            let local = compiler.locals.iter().rev().fold(None, |acc, rhs| {
-                if acc.is_some() {
-                    acc
-                } else {
-                    rhs.iter().rev().find(|lo| lo.name == **str)
-                }
-            });
-
-            if let Some(local) = local {
-                return Ok(local.stack_idx);
-            } else {
-                return Err(CompileError::VarNotFound(str.to_string()));
-            }
+            let local = compiler.find_local(*str)?;
+            return Ok(local.stack_idx);
         }
         ExprEnum::Cast(ex, decl) => {
             let val = emit_expr(ex, compiler)?;

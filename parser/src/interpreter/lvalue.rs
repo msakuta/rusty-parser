@@ -1,5 +1,5 @@
 //! LValue-related types and functions.
-//! 
+//!
 //! LValue is a concept in C language family. It's one of 2 kinds of value classification and the other kind is RValue.
 
 use std::{cell::RefCell, rc::Rc};
