@@ -125,6 +125,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9385f66bf6105b241aa65a61cb923ef20efc665cb9f9bb50ac2f0c4b7f378d41"
 
 [[package]]
+name = "mascal"
+version = "0.1.0"
+dependencies = [
+ "nom",
+ "nom_locate",
+]
+
+[[package]]
+name = "mascal-cli"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "colored",
+ "mascal",
+]
+
+[[package]]
 name = "memchr"
 version = "2.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -168,23 +185,6 @@ name = "os_str_bytes"
 version = "6.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9ff7415e9ae3fff1225851df9e0d9e4e5479f947619774677a63572e55e80eff"
-
-[[package]]
-name = "parser"
-version = "0.1.0"
-dependencies = [
- "nom",
- "nom_locate",
-]
-
-[[package]]
-name = "parser-cli"
-version = "0.1.0"
-dependencies = [
- "clap",
- "colored",
- "parser",
-]
 
 [[package]]
 name = "proc-macro-error"

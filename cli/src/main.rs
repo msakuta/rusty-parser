@@ -1,5 +1,5 @@
 use clap::Parser;
-use parser::*;
+use mascal::*;
 
 use ::colored::Colorize;
 use std::{

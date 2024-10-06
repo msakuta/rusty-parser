@@ -24,7 +24,7 @@ console_error_panic_hook = { version = "0.1.6", optional = true }
 js-sys = "0.3.49"
 libm = "0.1.4"
 
-parser = { path = "../parser" }
+mascal = { path = "../parser" }
 wasm-bindgen-macro-support = "0.2.72"
 
 [dev-dependencies]
