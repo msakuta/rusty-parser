@@ -154,15 +154,8 @@ fn interpret_fn(
                         continue;
                     }
                 }
-                let val = match vm.get(inst.arg0) {
-                    Value::ArrayRef(aref, idx) => (*aref.borrow()).values[*idx].clone(),
-                    v => v.clone(),
-                };
-                let target = vm.get_mut(inst.arg1);
-                match target {
-                    Value::ArrayRef(vref, idx) => vref.borrow_mut().values[*idx] = val,
-                    _ => vm.set(inst.arg1, val),
-                }
+                let val = vm.get(inst.arg0).clone();
+                vm.set(inst.arg1, val);
             }
             OpCode::Incr => {
                 let val = vm.get_mut(inst.arg0);
@@ -260,7 +253,7 @@ fn interpret_fn(
                 let target_collection = &vm.get(inst.arg0);
                 let target_index = &vm.get(inst.arg1);
                 let index = coerce_i64(target_index)? as u64;
-                let new_val = target_collection.array_get_ref(index).or_else(|_| {
+                let new_val = target_collection.array_get(index).or_else(|_| {
                     target_collection.tuple_get(index)
                 }).map_err(|e| {
                     format!("Get instruction failed with {target_collection:?} and {target_index:?}: {e:?}")
@@ -268,14 +261,12 @@ fn interpret_fn(
                 vm.set(inst.arg1, new_val);
             }
             OpCode::Set => {
-                println!("set invoked with {}", vm.set_register);
                 let target_collection = &vm.get(inst.arg0);
                 let value = vm.get(inst.arg1);
                 let index = vm.set_register;
                 target_collection.array_assign(index, value.clone())?;
             }
             OpCode::SetReg => {
-                println!("setreg invoked: {} {}", inst.arg0, inst.arg1);
                 vm.set_register = coerce_i64(vm.get(inst.arg0 as usize))? as usize;
             }
             OpCode::Lt => {

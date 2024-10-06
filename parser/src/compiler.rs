@@ -568,9 +568,6 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> CompileResult<usize>
                 }
             };
 
-            // Function arguments have value semantics, even if it was an array element.
-            // Unless we emit `Deref` here, we might leave a reference in the stack that can be
-            // accidentally overwritten. I'm not sure this is the best way to avoid it.
             let mut unnamed_args = argss
                 .iter()
                 .filter(|v| v.name.is_none())

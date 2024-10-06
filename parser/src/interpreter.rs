@@ -152,11 +152,6 @@ impl<T> EGetExt<T> for Vec<T> {
 
 fn unwrap_deref(e: RunResult) -> EvalResult<RunResult> {
     match &e {
-        RunResult::Yield(Value::ArrayRef(a, idx)) => {
-            let a = a.borrow();
-            let value = a.values.eget(*idx)?;
-            return Ok(RunResult::Yield(value.clone()));
-        }
         RunResult::Break => return Ok(RunResult::Break),
         _ => (),
     }
@@ -180,12 +175,6 @@ pub(crate) fn binary_op_str(
     s: impl Fn(&str, &str) -> Result<String, EvalError>,
 ) -> EvalResult<Value> {
     Ok(match (lhs, rhs) {
-        (Value::ArrayRef(lhs, idx), ref rhs) => {
-            binary_op_str(lhs.borrow().values.eget(*idx)?, rhs, d, i, s)?
-        }
-        (ref lhs, Value::ArrayRef(rhs, idx)) => {
-            binary_op_str(lhs, rhs.borrow().values.eget(*idx)?, d, i, s)?
-        }
         (Value::F64(lhs), rhs) => Value::F64(d(*lhs, coerce_f64(&rhs)?)?),
         (lhs, Value::F64(rhs)) => Value::F64(d(coerce_f64(&lhs)?, *rhs)?),
         (Value::F32(lhs), rhs) => Value::F32(d(*lhs as f64, coerce_f64(&rhs)?)? as f32),
@@ -315,7 +304,6 @@ fn _coerce_var(value: &Value, target: &Value) -> Result<Value, EvalError> {
                 }
             }
         }
-        Value::ArrayRef(_, _) => value.clone(),
         Value::Tuple(tuple) => {
             let target_elems = tuple.borrow();
             if target_elems.len() == 0 {
@@ -362,7 +350,7 @@ pub fn coerce_type(value: &Value, target: &TypeDecl) -> Result<Value, EvalError>
         TypeDecl::I64 => Value::I64(coerce_i64(value)?),
         TypeDecl::I32 => Value::I32(coerce_i64(value)? as i32),
         TypeDecl::Str => Value::Str(coerce_str(value)?),
-        TypeDecl::Array(inner, len) => {
+        TypeDecl::Array(_, len) => {
             if let Value::Array(array) = value {
                 let array = array.borrow();
                 if let ArraySize::Fixed(len) = len {
@@ -370,16 +358,8 @@ pub fn coerce_type(value: &Value, target: &TypeDecl) -> Result<Value, EvalError>
                         return Err(EvalError::IncompatibleArrayLength(*len, array.values.len()));
                     }
                 }
-                Value::Array(ArrayInt::new(
-                    (**inner).clone(),
-                    array
-                        .values
-                        .iter()
-                        .map(|value_elem| -> Result<_, EvalError> {
-                            Ok(coerce_type(value_elem, inner)?)
-                        })
-                        .collect::<Result<Vec<_>, _>>()?,
-                ))
+                // Type coercion should not alter the referenced value, i.e. array elements
+                return Ok(value.clone());
             } else {
                 return Err(EvalError::CoerceError(
                     value.to_string(),
@@ -389,25 +369,13 @@ pub fn coerce_type(value: &Value, target: &TypeDecl) -> Result<Value, EvalError>
         }
         TypeDecl::Float => Value::F64(coerce_f64(value)?),
         TypeDecl::Integer => Value::I64(coerce_i64(value)?),
-        TypeDecl::Tuple(inner) => {
-            if let Value::Tuple(value) = value {
-                Value::Tuple(Rc::new(RefCell::new(
-                    value
-                        .borrow()
-                        .iter()
-                        .zip(inner.iter())
-                        .map(|(value_elem, inner_elem)| -> Result<_, EvalError> {
-                            Ok(TupleEntry {
-                                decl: inner_elem.clone(),
-                                value: coerce_type(&value_elem.value, inner_elem)?,
-                            })
-                        })
-                        .collect::<Result<Vec<_>, _>>()?,
-                )))
+        TypeDecl::Tuple(_) => {
+            if let Value::Tuple(_) = value {
+                return Ok(value.clone());
             } else {
                 return Err(EvalError::CoerceError(
                     value.to_string(),
-                    "array".to_string(),
+                    "tuple".to_string(),
                 ));
             }
         }
@@ -571,7 +539,7 @@ where
                 }
             };
             let result = unwrap_run!(eval(ex, ctx)?);
-            RunResult::Yield(result.array_get_ref(arg0)?)
+            RunResult::Yield(result.array_get(arg0)?)
         }
         ExprEnum::TupleIndex(ex, index) => {
             let result = unwrap_run!(eval(ex, ctx)?);
@@ -695,11 +663,6 @@ pub(crate) fn s_print(vals: &[Value]) -> EvalResult<Value> {
                 }
                 print!("]");
             }
-            Value::ArrayRef(r, idx) => {
-                print!("arrayref(");
-                print_inner((*r.borrow()).values.eget(*idx)?)?;
-                print!(")");
-            }
             Value::Tuple(val) => {
                 print!("(");
                 for (i, val) in val.borrow().iter().enumerate() {
@@ -732,11 +695,6 @@ fn s_puts(vals: &[Value]) -> Result<Value, EvalError> {
                 Value::I32(val) => print!("{}", val),
                 Value::Str(val) => print!("{}", val),
                 Value::Array(val) => puts_inner(&mut val.borrow().values.iter()),
-                Value::ArrayRef(r, idx) => {
-                    if let Some(r) = r.borrow().values.get(*idx) {
-                        puts_inner(&mut std::iter::once(r))
-                    }
-                }
                 Value::Tuple(val) => puts_inner(&mut val.borrow().iter().map(|v| &v.value)),
             }
         }
@@ -754,7 +712,6 @@ pub(crate) fn s_type(vals: &[Value]) -> Result<Value, EvalError> {
             Value::I32(_) => "i32".to_string(),
             Value::Str(_) => "str".to_string(),
             Value::Array(inner) => format!("[{}]", inner.borrow().type_decl),
-            Value::ArrayRef(r, _) => format!("aref[{}]", r.borrow().type_decl),
             Value::Tuple(inner) => format!(
                 "({})",
                 &inner.borrow().iter().fold(String::new(), |acc, cur| {
@@ -784,7 +741,7 @@ pub(crate) fn s_len(vals: &[Value]) -> Result<Value, EvalError> {
 
 pub(crate) fn s_push(vals: &[Value]) -> Result<Value, EvalError> {
     if let [arr, val, ..] = vals {
-        let val = val.clone().deref()?;
+        let val = val.clone();
         arr.array_push(val).map(|_| Value::I32(0))
     } else {
         Ok(Value::I32(0))

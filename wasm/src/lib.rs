@@ -50,11 +50,6 @@ fn s_puts(vals: &[Value]) -> Result<Value, EvalError> {
                         .map(|v| v.clone())
                         .collect::<Vec<_>>(),
                 ),
-                Value::ArrayRef(r, idx) => {
-                    if let Some(val) = r.borrow().values().get(*idx) {
-                        puts_inner(&[val.clone()]);
-                    }
-                }
                 Value::Tuple(val) => puts_inner(
                     &val.borrow()
                         .iter()

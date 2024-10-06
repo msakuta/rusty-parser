@@ -4,7 +4,7 @@
 
 use std::{cell::RefCell, rc::Rc};
 
-use super::{eval, EGetExt, EvalContext, EvalError, EvalResult, Expression, RunResult};
+use super::{eval, EvalContext, EvalError, EvalResult, Expression, RunResult};
 use crate::{value::ArrayInt, Value};
 
 /// An LValue is a description of a target memory to be written to.
@@ -28,10 +28,6 @@ impl Value {
                         array_int.values.len(),
                     ));
                 }
-            }
-            Value::ArrayRef(rc, idx2) => {
-                let array_int = rc.borrow();
-                array_int.values.eget(*idx2)?.array_get_lvalue(idx)?
             }
             _ => return Err(EvalError::IndexNonArray),
         })

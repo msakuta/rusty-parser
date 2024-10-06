@@ -639,12 +639,12 @@ fn array_literal_eval_test() {
         )))
     );
 
-    // Type coercion through variable declaration
+    // Type coercion won't happen through variable declaration, because it is discarded in compiled bytecode.
     assert_eq!(
         run0(&span_source("var v: [f64] = [1,3,5]; v").finish().unwrap().1),
         Ok(RunResult::Yield(Value::Array(ArrayInt::new(
-            TypeDecl::F64,
-            vec![f64(1.), f64(3.), f64(5.)]
+            TypeDecl::Any,
+            vec![i64(1), i64(3), i64(5)]
         ))))
     );
 }
@@ -716,7 +716,7 @@ fn array_index_eval_test() {
     // Very ugly idiom to extract a clone of a variant in a RefCell
     std::cell::Ref::map(a_ref.borrow(), |v| match v {
         Value::Array(a) => {
-            a_rc = Some(Value::ArrayRef(a.clone(), 1));
+            a_rc = Some(a.borrow().values[1].clone());
             &()
         }
         _ => panic!("a must be an array"),
