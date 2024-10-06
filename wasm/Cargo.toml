@@ -1,5 +1,5 @@
 [package]
-name = "rusty-parser-wasm"
+name = "mascal-wasm"
 version = "0.1.0"
 authors = ["msakuta <masahiro.sakuta@gmail.com>"]
 edition = "2018"

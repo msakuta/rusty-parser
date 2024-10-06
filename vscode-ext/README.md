@@ -1,10 +1,10 @@
-# rusty-parser README
+# mascal README
 
-A Visual Studio code extension for Rusty-parser language syntax highlighting.
+A Visual Studio code extension for mascal language syntax highlighting.
 
 ## Features
 
-A simple extension to highlight syntax of Rusty-parser language.
+A simple extension to highlight syntax of mascal language.
 
 ![screenshot](images/screenshot00.png)
 
@@ -17,12 +17,12 @@ First, install vsce, the VSCode extension manager.
 
     npm install -g @vscode/vsce
 
-Use it to create a package. A file named `rusty-parser-0.0.1.vsix` should appear.
+Use it to create a package. A file named `mascal-0.0.1.vsix` should appear.
 
     vsce package
 
 Install to your local environment with
 
-    code --install-extension rusty-parser-0.0.1.vsix
+    code --install-extension mascal-0.0.1.vsix
 
 See [the official guide](https://code.visualstudio.com/api/working-with-extensions/publishing-extension) for more information.

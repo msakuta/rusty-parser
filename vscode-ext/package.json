@@ -1,7 +1,7 @@
 {
-  "name": "rusty-parser",
-  "displayName": "rusty-parser",
-  "description": "rusty-parser language syntax coloring",
+  "name": "mascal",
+  "displayName": "mascal",
+  "description": "mascal language syntax coloring",
   "version": "0.0.1",
   "engines": {
     "vscode": "^1.74.0"
@@ -9,11 +9,11 @@
   "categories": [
     "Programming Languages"
   ],
-  "repository": "https://github.com/msakuta/rusty-parser",
+  "repository": "https://github.com/msakuta/mascal",
   "contributes": {
     "languages": [{
       "id": "rpar",
-      "aliases": ["rusty-parser", "rpar"],
+      "aliases": ["mascal", "rpar"],
       "extensions": [".dragon"],
       "configuration": "./language-configuration.json"
     }],
