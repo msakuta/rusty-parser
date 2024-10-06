@@ -36,7 +36,6 @@ impl TypeDecl {
             Value::I64(_) => Self::I64,
             Value::Str(_) => Self::Str,
             Value::Array(a) => Self::Array(Box::new(a.borrow().type_decl.clone()), ArraySize::Any),
-            Value::Ref(a) => Self::from_value(&*a.borrow()),
             Value::ArrayRef(a, _) => a.borrow().type_decl.clone(),
             Value::Tuple(a) => Self::Tuple(
                 a.borrow()

@@ -18,7 +18,6 @@ pub(super) enum LValue {
 impl Value {
     pub(super) fn array_get_lvalue(&self, idx: u64) -> Result<LValue, EvalError> {
         Ok(match self {
-            Value::Ref(rc) => rc.borrow().array_get_lvalue(idx)?,
             Value::Array(array) => {
                 let array_int = array.borrow();
                 if (idx as usize) < array_int.values.len() {

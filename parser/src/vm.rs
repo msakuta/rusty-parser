@@ -155,15 +155,11 @@ fn interpret_fn(
                     }
                 }
                 let val = match vm.get(inst.arg0) {
-                    Value::Ref(aref) => (*aref.borrow()).clone(),
                     Value::ArrayRef(aref, idx) => (*aref.borrow()).values[*idx].clone(),
                     v => v.clone(),
                 };
                 let target = vm.get_mut(inst.arg1);
                 match target {
-                    Value::Ref(vref) => {
-                        vref.replace(val);
-                    }
                     Value::ArrayRef(vref, idx) => vref.borrow_mut().values[*idx] = val,
                     _ => vm.set(inst.arg1, val),
                 }
@@ -176,7 +172,6 @@ fn interpret_fn(
                         Value::I32(i) => *i += 1,
                         Value::F64(i) => *i += 1.,
                         Value::F32(i) => *i += 1.,
-                        Value::Ref(r) => incr(&mut r.borrow_mut())?,
                         _ => {
                             return Err(format!(
                                 "Attempt to increment non-numerical value {:?}",
@@ -286,10 +281,6 @@ fn interpret_fn(
             OpCode::Deref => {
                 let target = vm.get_mut(inst.arg0);
                 match target {
-                    Value::Ref(v) => {
-                        let cloned = v.borrow().clone();
-                        *target = cloned;
-                    }
                     Value::ArrayRef(a, idx) => {
                         let a = a.borrow();
                         let cloned = a.values.eget(*idx)?.clone();

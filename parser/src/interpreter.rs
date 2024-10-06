@@ -152,10 +152,6 @@ impl<T> EGetExt<T> for Vec<T> {
 
 fn unwrap_deref(e: RunResult) -> EvalResult<RunResult> {
     match &e {
-        RunResult::Yield(Value::Ref(vref)) => {
-            let r = vref.borrow();
-            return Ok(RunResult::Yield(r.clone()));
-        }
         RunResult::Yield(Value::ArrayRef(a, idx)) => {
             let a = a.borrow();
             let value = a.values.eget(*idx)?;
@@ -184,9 +180,6 @@ pub(crate) fn binary_op_str(
     s: impl Fn(&str, &str) -> Result<String, EvalError>,
 ) -> EvalResult<Value> {
     Ok(match (lhs, rhs) {
-        // "Deref" the references before binary
-        (Value::Ref(lhs), ref rhs) => binary_op_str(&lhs.borrow(), rhs, d, i, s)?,
-        (ref lhs, Value::Ref(rhs)) => binary_op_str(lhs, &rhs.borrow(), d, i, s)?,
         (Value::ArrayRef(lhs, idx), ref rhs) => {
             binary_op_str(lhs.borrow().values.eget(*idx)?, rhs, d, i, s)?
         }
@@ -241,7 +234,6 @@ pub(crate) fn truthy(a: &Value) -> bool {
         Value::F32(v) => *v != 0.,
         Value::I64(v) => *v != 0,
         Value::I32(v) => *v != 0,
-        Value::Ref(r) => truthy(&r.borrow()),
         _ => false,
     }
 }
@@ -252,7 +244,6 @@ pub(crate) fn coerce_f64(a: &Value) -> EvalResult<f64> {
         Value::F32(v) => *v as f64,
         Value::I64(v) => *v as f64,
         Value::I32(v) => *v as f64,
-        Value::Ref(r) => coerce_f64(&r.borrow())?,
         _ => 0.,
     })
 }
@@ -263,7 +254,6 @@ pub(crate) fn coerce_i64(a: &Value) -> EvalResult<i64> {
         Value::F32(v) => *v as i64,
         Value::I64(v) => *v as i64,
         Value::I32(v) => *v as i64,
-        Value::Ref(r) => coerce_i64(&r.borrow())?,
         _ => 0,
     })
 }
@@ -325,8 +315,6 @@ fn _coerce_var(value: &Value, target: &Value) -> Result<Value, EvalError> {
                 }
             }
         }
-        // We usually don't care about coercion
-        Value::Ref(_) => value.clone(),
         Value::ArrayRef(_, _) => value.clone(),
         Value::Tuple(tuple) => {
             let target_elems = tuple.borrow();
@@ -684,13 +672,7 @@ where
         }
         ExprEnum::Brace(stmts) => {
             let mut subctx = EvalContext::push_stack(ctx);
-            let res = run(stmts, &mut subctx)?;
-            if let RunResult::Yield(Value::Ref(res)) = res {
-                // "Dereference" if the result was a reference
-                RunResult::Yield(std::mem::take(&mut res.borrow_mut()))
-            } else {
-                res
-            }
+            run(stmts, &mut subctx)?
         }
     })
 }
@@ -712,11 +694,6 @@ pub(crate) fn s_print(vals: &[Value]) -> EvalResult<Value> {
                     print_inner(val)?;
                 }
                 print!("]");
-            }
-            Value::Ref(r) => {
-                print!("ref(");
-                print_inner(&r.borrow())?;
-                print!(")");
             }
             Value::ArrayRef(r, idx) => {
                 print!("arrayref(");
@@ -755,10 +732,6 @@ fn s_puts(vals: &[Value]) -> Result<Value, EvalError> {
                 Value::I32(val) => print!("{}", val),
                 Value::Str(val) => print!("{}", val),
                 Value::Array(val) => puts_inner(&mut val.borrow().values.iter()),
-                Value::Ref(r) => {
-                    let v: &Value = &r.borrow();
-                    puts_inner(&mut std::iter::once(v))
-                }
                 Value::ArrayRef(r, idx) => {
                     if let Some(r) = r.borrow().values.get(*idx) {
                         puts_inner(&mut std::iter::once(r))
@@ -781,7 +754,6 @@ pub(crate) fn s_type(vals: &[Value]) -> Result<Value, EvalError> {
             Value::I32(_) => "i32".to_string(),
             Value::Str(_) => "str".to_string(),
             Value::Array(inner) => format!("[{}]", inner.borrow().type_decl),
-            Value::Ref(r) => format!("ref[{}]", type_str(&r.borrow())),
             Value::ArrayRef(r, _) => format!("aref[{}]", r.borrow().type_decl),
             Value::Tuple(inner) => format!(
                 "({})",
