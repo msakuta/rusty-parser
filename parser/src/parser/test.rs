@@ -329,7 +329,7 @@ fn fn_decl_test() {
     assert_eq!(
         func_decl(span).finish().unwrap().1,
         Statement::FnDecl {
-            name: "f",
+            name: span.subslice(3, 1),
             args: vec![ArgDecl::new("a", TypeDecl::Any)],
             ret_type: None,
             stmts: Rc::new(vec![
@@ -358,7 +358,7 @@ fn fn_decl_test() {
     assert_eq!(
         func_decl(span).finish().unwrap().1,
         Statement::FnDecl {
-            name: "f",
+            name: span.subslice(3, 1),
             args: vec![ArgDecl::new("a", TypeDecl::I32)],
             ret_type: None,
             stmts: Rc::new(vec![Statement::Expression(Expression::new(
@@ -377,7 +377,7 @@ fn fn_decl_test() {
     assert_eq!(
         func_decl(span).finish().unwrap().1,
         Statement::FnDecl {
-            name: "f",
+            name: span.subslice(3, 1),
             args: vec![ArgDecl::new("a", TypeDecl::I32)],
             ret_type: Some(TypeDecl::F64),
             stmts: Rc::new(vec![Statement::Expression(Expression::new(
@@ -787,7 +787,7 @@ fn test_tuple_decl() {
     assert_eq!(
         statement(span).finish().unwrap().1,
         Statement::VarDecl(
-            &*span.subslice(4, 1),
+            span.subslice(4, 1),
             TypeDecl::Tuple(vec![TypeDecl::I32, TypeDecl::Str, TypeDecl::F64]),
             Some(Expression::new(
                 TupleLiteral(vec![
@@ -807,7 +807,7 @@ fn test_array_decl() {
     assert_eq!(
         statement(span).finish().unwrap().1,
         Statement::VarDecl(
-            &*span.subslice(4, 1),
+            span.subslice(4, 1),
             TypeDecl::Array(Box::new(TypeDecl::I32), ArraySize::default()),
             Some(Expression::new(
                 ArrLiteral(vec![vec![
@@ -826,7 +826,7 @@ fn test_fixed_sz_array() {
     assert_eq!(
         statement(span).finish().unwrap().1,
         Statement::VarDecl(
-            &*span.subslice(4, 1),
+            span.subslice(4, 1),
             TypeDecl::Array(
                 Box::new(TypeDecl::I32),
                 ArraySize(vec![ArraySizeAxis::Fixed(3)])
@@ -849,7 +849,7 @@ fn test_range_sz_array() {
     assert_eq!(
         statement(span).finish().unwrap().1,
         Statement::VarDecl(
-            &*span.subslice(4, 1),
+            span.subslice(4, 1),
             TypeDecl::Array(
                 Box::new(TypeDecl::I32),
                 ArraySize(vec![ArraySizeAxis::Range(0..usize::MAX)])
@@ -862,7 +862,7 @@ fn test_range_sz_array() {
     assert_eq!(
         statement(span).finish().unwrap().1,
         Statement::VarDecl(
-            &*span.subslice(4, 1),
+            span.subslice(4, 1),
             TypeDecl::Array(
                 Box::new(TypeDecl::I32),
                 ArraySize(vec![ArraySizeAxis::Range(3..usize::MAX)])
@@ -875,7 +875,7 @@ fn test_range_sz_array() {
     assert_eq!(
         statement(span).finish().unwrap().1,
         Statement::VarDecl(
-            &*span.subslice(4, 1),
+            span.subslice(4, 1),
             TypeDecl::Array(
                 Box::new(TypeDecl::I32),
                 ArraySize(vec![ArraySizeAxis::Range(0..10)])
@@ -891,7 +891,7 @@ fn test_muldim_array() {
     assert_eq!(
         statement(span).finish().unwrap().1,
         Statement::VarDecl(
-            &*span.subslice(4, 1),
+            span.subslice(4, 1),
             TypeDecl::Array(
                 Box::new(TypeDecl::I32),
                 ArraySize(vec![ArraySizeAxis::Fixed(2), ArraySizeAxis::Fixed(3)])
@@ -907,7 +907,7 @@ fn test_multiline_array() {
     assert_eq!(
         statement(span).finish().unwrap().1,
         Statement::VarDecl(
-            &*span.subslice(4, 1),
+            span.subslice(4, 1),
             TypeDecl::Array(
                 Box::new(TypeDecl::Array(
                     Box::new(TypeDecl::I32),

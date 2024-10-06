@@ -634,6 +634,7 @@ fn array_literal_test() {
 
 #[test]
 fn array_literal_eval_test() {
+    #![allow(dead_code)]
     use Value::*;
     fn i64(i: i64) -> Value {
         I64(i)
@@ -723,7 +724,7 @@ fn fn_array_decl_test() {
     assert_eq!(
         func_decl(span).finish().unwrap().1,
         Statement::FnDecl {
-            name: "f",
+            name: span.subslice(3, 1),
             args: vec![ArgDecl::new(
                 "a",
                 TypeDecl::Array(Box::new(TypeDecl::I32), ArraySize::default())
@@ -875,7 +876,7 @@ fn var_decl_test() {
     assert_eq!(
         source(span).finish().unwrap().1,
         vec![
-            VarDecl("x", TypeDecl::Any, None),
+            VarDecl(span.subslice(5, 1), TypeDecl::Any, None),
             Statement::Expression(Expression::new(
                 VarAssign(
                     var_r(span.subslice(8, 1)),
@@ -889,7 +890,7 @@ fn var_decl_test() {
     assert_eq!(
         source(span).finish().unwrap().1,
         vec![VarDecl(
-            "x",
+            span.subslice(5, 1),
             TypeDecl::Any,
             Some(nl(Value::I64(0), span.subslice(9, 1)))
         )]
@@ -898,7 +899,7 @@ fn var_decl_test() {
     assert_eq!(
         source(span).finish().unwrap().1,
         vec![VarDecl(
-            "x",
+            span.subslice(5, 1),
             TypeDecl::F64,
             Some(nl(Value::I64(0), span.subslice(14, 1)))
         )]
@@ -907,7 +908,7 @@ fn var_decl_test() {
     assert_eq!(
         source(span).finish().unwrap().1,
         vec![VarDecl(
-            "x",
+            span.subslice(5, 1),
             TypeDecl::F32,
             Some(nl(Value::I64(0), span.subslice(14, 1)))
         )]
@@ -916,7 +917,7 @@ fn var_decl_test() {
     assert_eq!(
         source(span).finish().unwrap().1,
         vec![VarDecl(
-            "x",
+            span.subslice(5, 1),
             TypeDecl::I64,
             Some(nl(Value::I64(0), span.subslice(14, 1)))
         )]
@@ -925,7 +926,7 @@ fn var_decl_test() {
     assert_eq!(
         source(span).finish().unwrap().1,
         vec![VarDecl(
-            "x",
+            span.subslice(5, 1),
             TypeDecl::I32,
             Some(nl(Value::I64(0), span.subslice(14, 1)))
         )]
@@ -938,7 +939,7 @@ fn loop_test() {
     assert_eq!(
         source(span).finish().unwrap().1,
         vec![
-            Statement::VarDecl("i", TypeDecl::Any, None),
+            Statement::VarDecl(span.subslice(5, 1), TypeDecl::Any, None),
             Statement::Expression(Expression::new(
                 VarAssign(
                     var_r(span.subslice(8, 1)),
@@ -983,7 +984,7 @@ fn loop_test() {
     assert_eq!(
         source(span).finish().unwrap().1,
         vec![
-            Statement::VarDecl("i", TypeDecl::Any, None),
+            Statement::VarDecl(span.subslice(5, 1), TypeDecl::Any, None),
             Statement::Expression(Expression::new(
                 VarAssign(
                     var_r(span.subslice(8, 1)),
@@ -1030,7 +1031,7 @@ fn while_test() {
     assert_eq!(
         source(span).finish().unwrap().1,
         vec![
-            Statement::VarDecl("i", TypeDecl::I64, None),
+            Statement::VarDecl(span.subslice(5, 1), TypeDecl::I64, None),
             Statement::Expression(Expression::new(
                 VarAssign(
                     var_r(span.subslice(13, 1)),
@@ -1070,7 +1071,7 @@ fn for_test() {
     assert_eq!(
         source(span).finish().unwrap().1,
         vec![Statement::For(
-            "i",
+            span.subslice(5, 1),
             Expression::new(NumLiteral(Value::I64(0)), span.subslice(10, 1)),
             Expression::new(NumLiteral(Value::I64(10)), span.subslice(13, 2)),
             vec![Statement::Expression(Expression::new(

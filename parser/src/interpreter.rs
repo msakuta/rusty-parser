@@ -996,7 +996,7 @@ where
                 let init_val = coerce_type(&init_val, type_)?;
                 ctx.variables
                     .borrow_mut()
-                    .insert(*var, Rc::new(RefCell::new(init_val)));
+                    .insert(**var, Rc::new(RefCell::new(init_val)));
             }
             Statement::FnDecl {
                 name,

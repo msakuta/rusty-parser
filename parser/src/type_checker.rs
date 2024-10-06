@@ -544,7 +544,7 @@ where
                 } else {
                     type_.clone()
                 };
-                ctx.variables.insert(*var, init_type);
+                ctx.variables.insert(**var, init_type);
             }
             Statement::FnDecl {
                 name,

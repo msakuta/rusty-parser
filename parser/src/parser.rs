@@ -74,9 +74,9 @@ impl<'a> ArgDecl<'a> {
 #[derive(Debug, PartialEq, Clone)]
 pub enum Statement<'a> {
     Comment(&'a str),
-    VarDecl(&'a str, TypeDecl, Option<Expression<'a>>),
+    VarDecl(Span<'a>, TypeDecl, Option<Expression<'a>>),
     FnDecl {
-        name: &'a str,
+        name: Span<'a>,
         args: Vec<ArgDecl<'a>>,
         ret_type: Option<TypeDecl>,
         stmts: Rc<Vec<Statement<'a>>>,
@@ -84,7 +84,7 @@ pub enum Statement<'a> {
     Expression(Expression<'a>),
     Loop(Vec<Statement<'a>>),
     While(Expression<'a>, Vec<Statement<'a>>),
-    For(&'a str, Expression<'a>, Expression<'a>, Vec<Statement<'a>>),
+    For(Span<'a>, Expression<'a>, Expression<'a>, Vec<Statement<'a>>),
     Break,
 }
 
@@ -312,7 +312,7 @@ fn var_decl(input: Span) -> IResult<Span, Statement> {
     let (r, ts) = type_spec(r)?;
     let (r, initializer) = opt(preceded(ws(char('=')), full_expression))(r)?;
     let (r, _) = char(';')(ws_comment(r)?.0)?;
-    Ok((r, Statement::VarDecl(*ident, ts, initializer)))
+    Ok((r, Statement::VarDecl(ident, ts, initializer)))
 }
 
 fn decimal(input: Span) -> IResult<Span, Span> {
@@ -777,7 +777,7 @@ pub(crate) fn func_decl(input: Span) -> IResult<Span, Statement> {
     Ok((
         r,
         Statement::FnDecl {
-            name: *name,
+            name,
             args,
             ret_type,
             stmts: Rc::new(stmts),
@@ -806,7 +806,7 @@ fn for_stmt(input: Span) -> IResult<Span, Statement> {
     let (r, _) = ws(tag(".."))(r)?;
     let (r, to) = expr(r)?;
     let (r, stmts) = delimited(ws(char('{')), source, ws(char('}')))(r)?;
-    Ok((r, Statement::For(*iter, from, to, stmts)))
+    Ok((r, Statement::For(iter, from, to, stmts)))
 }
 
 fn break_stmt(input: Span) -> IResult<Span, Statement> {

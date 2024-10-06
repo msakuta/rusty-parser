@@ -201,10 +201,10 @@ pub(crate) enum FnProto {
 }
 
 impl FnProto {
-    pub fn args(&self) -> &[BytecodeArg] {
+    pub fn args(&self) -> Option<&[BytecodeArg]> {
         match self {
-            Self::Code(bytecode) => &bytecode.args,
-            _ => &[],
+            Self::Code(bytecode) => Some(&bytecode.args),
+            _ => None,
         }
     }
 }
