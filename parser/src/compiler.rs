@@ -167,7 +167,11 @@ impl std::fmt::Display for CompileError {
                 write!(f, "Named arguments does not cover all required args")
             }
             Self::AssignToLiteral(name) => write!(f, "Cannot assign to a literal: {}", name),
-            Self::NonLValue(ex) => write!(f, "Expression {} is not an lvalue.", ex),
+            Self::NonLValue(ex) => write!(
+                f,
+                "Attempt assignment to expression {} which is not an lvalue.",
+                ex
+            ),
             Self::FromUtf8Error(e) => e.fmt(f),
             Self::IoError(e) => e.fmt(f),
         }
@@ -770,22 +774,7 @@ fn emit_lvalue(ex: &Expression, compiler: &mut Compiler) -> CompileResult<LValue
                 }
             }
         }
-        ExprEnum::TupleIndex(expression, _) => todo!(),
-        ExprEnum::Not(expression) => todo!(),
-        ExprEnum::BitNot(expression) => todo!(),
-        ExprEnum::Add(expression, expression1) => todo!(),
-        ExprEnum::Sub(expression, expression1) => todo!(),
-        ExprEnum::Mult(expression, expression1) => todo!(),
-        ExprEnum::Div(expression, expression1) => todo!(),
-        ExprEnum::LT(expression, expression1) => todo!(),
-        ExprEnum::GT(expression, expression1) => todo!(),
-        ExprEnum::BitAnd(expression, expression1) => todo!(),
-        ExprEnum::BitXor(expression, expression1) => todo!(),
-        ExprEnum::BitOr(expression, expression1) => todo!(),
-        ExprEnum::And(expression, expression1) => todo!(),
-        ExprEnum::Or(expression, expression1) => todo!(),
-        ExprEnum::Conditional(expression, vec, vec1) => todo!(),
-        ExprEnum::Brace(vec) => todo!(),
+        _ => Err(CompileError::NonLValue(ex.span.to_string())),
     }
 }
 
