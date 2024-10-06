@@ -252,7 +252,11 @@ impl Value {
         match self {
             Value::Array(array) => {
                 let mut array_int = array.borrow_mut();
+                if array_int.shape.len() != 1 {
+                    return Err("push() must be called for 1-D array".to_string().into());
+                }
                 array_int.values.push(value);
+                array_int.shape[0] += 1;
                 Ok(())
             }
             _ => Err("push() must be called for an array".to_string().into()),
