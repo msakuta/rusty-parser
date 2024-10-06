@@ -48,8 +48,6 @@ pub enum OpCode {
     /// Set a value to the special register to use in later instructions.
     /// arg0 is the value, arg1 is the register id, which is currently only allowed 0.
     SetReg,
-    /// If a value specified with arg0 in the stack is a reference (pointer), dereference it.
-    Deref,
     /// Compare arg0 and arg1, sets result -1, 0 or 1 to arg0, meaning less, equal and more, respectively
     // Cmp,
     Lt,
@@ -104,7 +102,6 @@ impl_op_from!(
     BitNot,
     Get,
     Set,
-    Deref,
     Lt,
     Gt,
     Jmp,

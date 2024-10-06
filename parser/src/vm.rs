@@ -6,7 +6,7 @@ use crate::{
     bytecode::{Bytecode, FnBytecode, FnProto, OpCode},
     interpreter::{
         binary_op, binary_op_int, binary_op_str, coerce_f64, coerce_i64, coerce_type, truthy,
-        EGetExt, EvalError, EvalResult,
+        EvalError, EvalResult,
     },
     type_decl::TypeDecl,
     Value,
@@ -277,18 +277,6 @@ fn interpret_fn(
             OpCode::SetReg => {
                 println!("setreg invoked: {} {}", inst.arg0, inst.arg1);
                 vm.set_register = coerce_i64(vm.get(inst.arg0 as usize))? as usize;
-            }
-            OpCode::Deref => {
-                let target = vm.get_mut(inst.arg0);
-                match target {
-                    Value::ArrayRef(a, idx) => {
-                        let a = a.borrow();
-                        let cloned = a.values.eget(*idx)?.clone();
-                        drop(a);
-                        *target = cloned;
-                    }
-                    _ => (),
-                }
             }
             OpCode::Lt => {
                 let result = compare_op(

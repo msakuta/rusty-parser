@@ -574,7 +574,7 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> CompileResult<usize>
             let mut unnamed_args = argss
                 .iter()
                 .filter(|v| v.name.is_none())
-                .map(|v| emit_rvalue(&v.expr, compiler))
+                .map(|v| emit_expr(&v.expr, compiler))
                 .collect::<Result<Vec<_>, _>>()?;
             unnamed_args.extend(
                 default_args
@@ -585,7 +585,7 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> CompileResult<usize>
                 .iter()
                 .filter_map(|v| {
                     if let Some(name) = v.name {
-                        match emit_rvalue(&v.expr, compiler) {
+                        match emit_expr(&v.expr, compiler) {
                             Ok(res) => Some(Ok((name, res))),
                             Err(e) => Some(Err(e)),
                         }
@@ -732,12 +732,6 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> CompileResult<usize>
             Ok(res)
         }
     }
-}
-
-fn emit_rvalue(ex: &Expression, compiler: &mut Compiler) -> CompileResult<usize> {
-    let ret = emit_expr(ex, compiler)?;
-    compiler.bytecode.push_inst(OpCode::Deref, ret as u8, 0);
-    Ok(ret)
 }
 
 fn emit_binary_op(
