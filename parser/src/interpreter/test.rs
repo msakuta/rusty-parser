@@ -639,7 +639,7 @@ fn array_literal_eval_test() {
         )))
     );
 
-    // Type coarsion through variable declaration
+    // Type coercion through variable declaration
     assert_eq!(
         run0(&span_source("var v: [f64] = [1,3,5]; v").finish().unwrap().1),
         Ok(RunResult::Yield(Value::Array(ArrayInt::new(
