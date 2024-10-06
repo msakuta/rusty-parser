@@ -40,12 +40,27 @@ impl<'a> CallInfo<'a> {
     }
 }
 
+/// The virtual machine state run by the bytecode.
 struct Vm {
+    /// A stack for function call stack frames.
     stack: Vec<Value>,
+    /// The stack base address of the currently running function.
     stack_base: usize,
+    /// A special register to remember the target index in Set instruction, updated by SetReg instruction.
+    /// Similar to x64's RSI or RDI, it indicates the index of the array to set, because we need more arguments than
+    /// a fixed length arguments in an instruction for Set operation.
+    set_register: usize,
 }
 
 impl Vm {
+    fn new(stack_size: usize) -> Self {
+        Self {
+            stack: vec![Value::I64(0); stack_size],
+            stack_base: 0,
+            set_register: 0,
+        }
+    }
+
     fn get(&self, idx: impl Into<usize>) -> &Value {
         &self.stack[self.stack_base + idx.into()]
     }
@@ -110,10 +125,7 @@ fn interpret_fn(
     );
     dbg_println!("size callInfo: {}", std::mem::size_of::<CallInfo>());
     dbg_println!("literals: {:?}", bytecode.literals);
-    let mut vm = Vm {
-        stack: vec![Value::I64(0); bytecode.stack_size],
-        stack_base: 0,
-    };
+    let mut vm = Vm::new(bytecode.stack_size);
     let mut call_stack = vec![CallInfo {
         fun: &bytecode,
         ip: 0,
@@ -259,6 +271,17 @@ fn interpret_fn(
                     format!("Get instruction failed with {target_collection:?} and {target_index:?}: {e:?}")
                 })?;
                 vm.set(inst.arg1, new_val);
+            }
+            OpCode::Set => {
+                println!("set invoked with {}", vm.set_register);
+                let target_collection = &vm.get(inst.arg0);
+                let value = vm.get(inst.arg1);
+                let index = vm.set_register;
+                target_collection.array_assign(index, value.clone())?;
+            }
+            OpCode::SetReg => {
+                println!("setreg invoked: {} {}", inst.arg0, inst.arg1);
+                vm.set_register = coerce_i64(vm.get(inst.arg0 as usize))? as usize;
             }
             OpCode::Deref => {
                 let target = vm.get_mut(inst.arg0);

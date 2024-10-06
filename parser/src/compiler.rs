@@ -12,6 +12,7 @@ use crate::{
 
 #[derive(Debug, Clone, Copy)]
 enum Target {
+    /// A temporary neither literal nor local
     None,
     /// Literal value with literal index.
     /// Right now whether the target is literal is not utilized, but we may use it for optimization.
@@ -117,6 +118,20 @@ impl<'a> Compiler<'a> {
         ));
         stk_target
     }
+
+    fn find_local(&self, name: &str) -> CompileResult<&LocalVar> {
+        self.locals
+            .iter()
+            .rev()
+            .fold(None, |acc, rhs| {
+                if acc.is_some() {
+                    acc
+                } else {
+                    rhs.iter().rev().find(|lo| lo.name == name)
+                }
+            })
+            .ok_or_else(|| CompileError::VarNotFound(name.to_string()))
+    }
 }
 
 type CompileResult<T> = Result<T, CompileError>;
@@ -131,6 +146,8 @@ pub enum CompileError {
     VarNotFound(String),
     FnNotFound(String),
     InsufficientNamedArgs,
+    AssignToLiteral(String),
+    NonLValue(String),
     FromUtf8Error(std::string::FromUtf8Error),
     IoError(std::io::Error),
 }
@@ -149,6 +166,8 @@ impl std::fmt::Display for CompileError {
             Self::InsufficientNamedArgs => {
                 write!(f, "Named arguments does not cover all required args")
             }
+            Self::AssignToLiteral(name) => write!(f, "Cannot assign to a literal: {}", name),
+            Self::NonLValue(ex) => write!(f, "Expression {} is not an lvalue.", ex),
             Self::FromUtf8Error(e) => e.fmt(f),
             Self::IoError(e) => e.fmt(f),
         }
@@ -499,14 +518,36 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> CompileResult<usize>
         ExprEnum::Mult(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Mul, lhs, rhs)?),
         ExprEnum::Div(lhs, rhs) => Ok(emit_binary_op(compiler, OpCode::Div, lhs, rhs)?),
         ExprEnum::VarAssign(lhs, rhs) => {
-            let lhs_result = emit_expr(lhs, compiler)?;
+            let lhs_result = emit_lvalue(lhs, compiler)?;
             let rhs_result = emit_expr(rhs, compiler)?;
-            compiler.bytecode.instructions.push(Instruction {
-                op: OpCode::Move,
-                arg0: rhs_result as u8,
-                arg1: lhs_result as u16,
-            });
-            Ok(lhs_result)
+            match lhs_result {
+                LValue::Variable(name) => {
+                    let local_idx = compiler.find_local(&name)?.stack_idx;
+                    compiler
+                        .bytecode
+                        .push_inst(OpCode::Move, rhs_result as u8, local_idx as u16);
+                    Ok(local_idx)
+                }
+                LValue::ArrayRef(arr, subidx) => {
+                    let value_copy = compiler.target_stack.len();
+                    compiler.target_stack.push(Target::None);
+
+                    // First, copy the value to be overwritten by Get instruction
+                    compiler
+                        .bytecode
+                        .push_inst(OpCode::Move, rhs_result as u8, value_copy as u16);
+
+                    // Second, assign the target index into the set register
+                    compiler.bytecode.push_inst(OpCode::SetReg, subidx as u8, 0);
+
+                    // Third, get the element from the array reference
+                    compiler
+                        .bytecode
+                        .push_inst(OpCode::Set, arr as u8, value_copy as u16);
+
+                    Ok(value_copy)
+                }
+            }
         }
         ExprEnum::FnInvoke(fname, argss) => {
             let default_args = {
@@ -693,6 +734,69 @@ fn emit_expr(expr: &Expression, compiler: &mut Compiler) -> CompileResult<usize>
             compiler.locals.pop();
             Ok(res)
         }
+    }
+}
+
+/// Internal to the compiler
+enum LValue {
+    /// A variable identified by a name
+    Variable(String),
+    /// Reference to an array element of a variable in local stack, e.g. an array element.
+    ArrayRef(usize, usize),
+}
+
+fn emit_lvalue(ex: &Expression, compiler: &mut Compiler) -> CompileResult<LValue> {
+    match &ex.expr {
+        ExprEnum::NumLiteral(_)
+        | ExprEnum::StrLiteral(_)
+        | ExprEnum::ArrLiteral(_)
+        | ExprEnum::TupleLiteral(_) => Err(CompileError::AssignToLiteral(ex.span.to_string())),
+        ExprEnum::Variable(name) => Ok(LValue::Variable(name.to_string())),
+        ExprEnum::Cast(_, _) | ExprEnum::FnInvoke(_, _) => {
+            Err(CompileError::NonLValue(ex.span.to_string()))
+        }
+        ExprEnum::VarAssign(ex, _) => emit_lvalue(ex, compiler),
+        ExprEnum::ArrIndex(ex, idx) => {
+            let idx = emit_expr(&idx[0], compiler)?;
+            let arr = emit_lvalue(ex, compiler)?;
+            match arr {
+                LValue::Variable(name) => {
+                    Ok(LValue::ArrayRef(compiler.find_local(&name)?.stack_idx, idx))
+                }
+                LValue::ArrayRef(arr, subidx) => {
+                    let subidx_copy = compiler.target_stack.len();
+                    compiler.target_stack.push(Target::None);
+
+                    // First, copy the index to be overwritten by Get instruction
+                    compiler
+                        .bytecode
+                        .push_inst(OpCode::Move, subidx as u8, subidx_copy as u16);
+
+                    // Second, get the element from the array reference
+                    compiler
+                        .bytecode
+                        .push_inst(OpCode::Get, arr as u8, subidx_copy as u16);
+
+                    Ok(LValue::ArrayRef(subidx_copy, idx))
+                }
+            }
+        }
+        ExprEnum::TupleIndex(expression, _) => todo!(),
+        ExprEnum::Not(expression) => todo!(),
+        ExprEnum::BitNot(expression) => todo!(),
+        ExprEnum::Add(expression, expression1) => todo!(),
+        ExprEnum::Sub(expression, expression1) => todo!(),
+        ExprEnum::Mult(expression, expression1) => todo!(),
+        ExprEnum::Div(expression, expression1) => todo!(),
+        ExprEnum::LT(expression, expression1) => todo!(),
+        ExprEnum::GT(expression, expression1) => todo!(),
+        ExprEnum::BitAnd(expression, expression1) => todo!(),
+        ExprEnum::BitXor(expression, expression1) => todo!(),
+        ExprEnum::BitOr(expression, expression1) => todo!(),
+        ExprEnum::And(expression, expression1) => todo!(),
+        ExprEnum::Or(expression, expression1) => todo!(),
+        ExprEnum::Conditional(expression, vec, vec1) => todo!(),
+        ExprEnum::Brace(vec) => todo!(),
     }
 }
 

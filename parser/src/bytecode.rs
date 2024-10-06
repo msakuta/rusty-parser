@@ -44,6 +44,10 @@ pub enum OpCode {
     /// Get an element of an array (or a table in the future) at arg0 with the key at arg1, and make a copy at arg1.
     /// Array elements are always Rc wrapped, so the user can assign into it.
     Get,
+    Set,
+    /// Set a value to the special register to use in later instructions.
+    /// arg0 is the value, arg1 is the register id, which is currently only allowed 0.
+    SetReg,
     /// If a value specified with arg0 in the stack is a reference (pointer), dereference it.
     Deref,
     /// Compare arg0 and arg1, sets result -1, 0 or 1 to arg0, meaning less, equal and more, respectively
@@ -99,6 +103,7 @@ impl_op_from!(
     Not,
     BitNot,
     Get,
+    Set,
     Deref,
     Lt,
     Gt,

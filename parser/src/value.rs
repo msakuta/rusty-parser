@@ -208,11 +208,16 @@ impl Value {
 
     /// We don't really need assignment operation for an array (yet), because
     /// array index will return a reference.
-    pub fn array_assign(&mut self, idx: usize, value: Value) -> EvalResult<()> {
-        if let Value::Array(array) = self {
-            array.borrow_mut().values[idx] = value.deref()?;
-        } else {
-            return Err(EvalError::IndexNonArray);
+    pub fn array_assign(&self, idx: usize, value: Value) -> EvalResult<()> {
+        match self {
+            Value::Array(array) => {
+                array.borrow_mut().values[idx] = value.deref()?;
+            }
+            Value::Ref(this) => this.borrow().array_assign(idx, value)?,
+            Value::ArrayRef(this, subidx) => {
+                this.borrow().values[*subidx].array_assign(idx, value)?;
+            }
+            _ => return Err(EvalError::IndexNonArray),
         }
         Ok(())
     }
