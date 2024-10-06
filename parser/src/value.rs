@@ -252,28 +252,6 @@ impl Value {
         })
     }
 
-    pub fn array_get_lvalue(&self, idx: u64) -> Result<LValue, EvalError> {
-        Ok(match self {
-            Value::Ref(rc) => rc.borrow().array_get_lvalue(idx)?,
-            Value::Array(array) => {
-                let array_int = array.borrow();
-                if (idx as usize) < array_int.values.len() {
-                    LValue::ArrayRef(array.clone(), idx as usize)
-                } else {
-                    return Err(EvalError::ArrayOutOfBounds(
-                        idx as usize,
-                        array_int.values.len(),
-                    ));
-                }
-            }
-            Value::ArrayRef(rc, idx2) => {
-                let array_int = rc.borrow();
-                array_int.values.eget(*idx2)?.array_get_lvalue(idx)?
-            }
-            _ => return Err(EvalError::IndexNonArray),
-        })
-    }
-
     pub fn array_push(&self, value: Value) -> Result<(), EvalError> {
         match self {
             Value::Ref(r) => r.borrow_mut().array_push(value),
@@ -332,11 +310,4 @@ impl TupleEntry {
     pub fn value(&self) -> &Value {
         &self.value
     }
-}
-
-pub enum LValue {
-    /// A variable identified by a name
-    Variable(String),
-    /// Reference to a refcounted variable, e.g. an array element.
-    ArrayRef(Rc<RefCell<ArrayInt>>, usize),
 }

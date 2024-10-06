@@ -1,7 +1,11 @@
+mod lvalue;
+
+use self::lvalue::{eval_lvalue, LValue};
+
 use crate::{
     parser::*,
     type_decl::ArraySize,
-    value::{ArrayInt, LValue, TupleEntry},
+    value::{ArrayInt, TupleEntry},
     TypeDecl, Value,
 };
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
@@ -689,45 +693,6 @@ where
             }
         }
     })
-}
-
-fn eval_lvalue<'src, 'native, 'ctx>(
-    expr: &Expression<'src>,
-    ctx: &'ctx mut EvalContext<'src, 'native, '_>,
-) -> EvalResult<LValue>
-where
-    'native: 'src,
-{
-    use ExprEnum::*;
-    match &expr.expr {
-        NumLiteral(_) | StrLiteral(_) | ArrLiteral(_) => {
-            Err(EvalError::AssignToLiteral(expr.span.to_string()))
-        }
-        Variable(name) => Ok(LValue::Variable(name.to_string())),
-        ArrIndex(ex, idx) => {
-            let idx = match eval(&idx[0], ctx)? {
-                RunResult::Yield(Value::I32(val)) => val as u64,
-                RunResult::Yield(Value::I64(val)) => val as u64,
-                RunResult::Yield(_) => return Err(EvalError::IndexNonNum),
-                RunResult::Break => return Err(EvalError::BreakInFnArg),
-            };
-            let arr = eval_lvalue(ex, ctx)?;
-            Ok(match arr {
-                LValue::Variable(name) => ctx
-                    .variables
-                    .borrow_mut()
-                    .get(name.as_str())
-                    .ok_or_else(|| EvalError::VarNotFound(name))?
-                    .borrow_mut()
-                    .array_get_lvalue(idx)?,
-                LValue::ArrayRef(value, subidx) => {
-                    let elem = RefCell::borrow(&value).get(subidx)?;
-                    elem.array_get_lvalue(idx)?
-                }
-            })
-        }
-        _ => Err(EvalError::NonLValue(expr.span.to_string())),
-    }
 }
 
 pub(crate) fn s_print(vals: &[Value]) -> EvalResult<Value> {
