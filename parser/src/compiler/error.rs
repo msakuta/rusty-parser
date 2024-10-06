@@ -10,6 +10,7 @@ pub enum CompileErrorKind {
     VarNotFound(String),
     FnNotFound(String),
     InsufficientNamedArgs,
+    UnknownNamedArg,
     AssignToLiteral(String),
     NonLValue(String),
     FromUtf8Error(std::string::FromUtf8Error),
@@ -45,6 +46,7 @@ impl std::fmt::Display for CompileErrorKind {
             Self::InsufficientNamedArgs => {
                 write!(f, "Named arguments does not cover all required args")
             }
+            Self::UnknownNamedArg => write!(f, "An unknown named argument"),
             Self::AssignToLiteral(name) => write!(f, "Cannot assign to a literal: {}", name),
             Self::NonLValue(ex) => write!(
                 f,

@@ -499,108 +499,85 @@ fn emit_expr<'src>(expr: &Expression<'src>, compiler: &mut Compiler) -> CompileR
                 }
             }
         }
-        ExprEnum::FnInvoke(fname, argss) => {
-            let default_args = {
+        ExprEnum::FnInvoke(fname, args) => {
+            let params = {
                 let fun = compiler.env.functions.get(*fname).ok_or_else(|| {
                     CompileError::new(expr.span, CEK::FnNotFound(fname.to_string()))
                 })?;
 
-                let fn_args = fun.args();
-
-                if argss.len() <= fn_args.len() {
-                    let fn_args = fn_args[argss.len()..].to_vec();
-
-                    fn_args
-                        .into_iter()
-                        .filter_map(|arg| arg.init.as_ref().map(|init| init.clone()))
-                        .collect()
-                } else {
-                    vec![]
-                }
+                fun.args().map(|args| args.to_vec())
             };
 
-            let mut unnamed_args = argss
-                .iter()
-                .filter(|v| v.name.is_none())
-                .map(|v| emit_expr(&v.expr, compiler))
-                .collect::<Result<Vec<_>, _>>()?;
-            unnamed_args.extend(
-                default_args
-                    .into_iter()
-                    .map(|v| compiler.find_or_create_literal(&v)),
-            );
-            let named_args = argss
-                .iter()
-                .filter_map(|v| {
-                    if let Some(name) = v.name {
-                        match emit_expr(&v.expr, compiler) {
-                            Ok(res) => Some(Ok((name, res))),
-                            Err(e) => Some(Err(e)),
-                        }
-                    } else {
-                        None
+            // Prepare a buffer for actual arguments. It could be a mix of unnamed and named arguments.
+            // Unnamed arguments are indexed from 0, while named arguments can appear at any index.
+            let mut arg_values =
+                vec![None; params.as_ref().map_or(args.len(), |params| params.len())];
+
+            // First, fill the buffer with unnamed arguments. Technically it could be more optimized by
+            // allocating and initializing at the same time, but we do not pursue performance that much yet.
+            for (arg_value, arg) in arg_values.iter_mut().zip(args.iter()) {
+                if arg.name.is_some() {
+                    continue;
+                }
+                *arg_value = Some(emit_expr(&arg.expr, compiler)?);
+            }
+
+            // Second, fill the buffer with named arguments.
+            for named_arg in args.iter() {
+                if let Some(name) = named_arg.name.as_ref() {
+                    let Some(params) = params.as_ref() else {
+                        return Err(CompileError::new(expr.span, CEK::UnknownNamedArg));
+                    };
+                    if let Some((param_idx, _)) =
+                        params.iter().enumerate().find(|(_, p)| p.name == **name)
+                    {
+                        arg_values[param_idx] = Some(emit_expr(&named_arg.expr, compiler)?);
                     }
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            let num_args = unnamed_args.len() + named_args.len();
+                }
+            }
+
+            if let Some(params) = params.as_ref() {
+                for (param, arg_value) in params.iter().zip(arg_values.iter_mut()) {
+                    if arg_value.is_some() {
+                        continue;
+                    }
+                    if let Some(default_val) = param.init.as_ref() {
+                        let default_val = compiler.find_or_create_literal(default_val);
+                        *arg_value = Some(default_val);
+                    }
+                }
+            }
 
             let stk_fname = compiler.find_or_create_literal(&Value::Str(fname.to_string()));
 
-            let Some(fun) = compiler.env.functions.get(*fname) else {
+            let Some(_fun) = compiler.env.functions.get(*fname) else {
                 return Err(CompileError::new(
                     expr.span,
                     CEK::FnNotFound(fname.to_string()),
                 ));
             };
 
-            let fn_args = fun.args();
-            dbg_println!("FnProto found for: {fname}, args: {:?}", fn_args);
-
-            // Prepare a buffer for actual arguments. It could be a mix of unnamed and named arguments.
-            // Unnamed arguments are indexed from 0, while named arguments can appear at any index.
-            let mut args = vec![None; fn_args.len().max(num_args)];
-
-            // First, fill the buffer with unnamed arguments. Technically it could be more optimized by
-            // allocating and initializing at the same time, but we do not pursue performance that much yet.
-            for (arg, un_arg) in args.iter_mut().zip(unnamed_args.iter()) {
-                *arg = Some(*un_arg);
-            }
-
-            // Second, fill the buffer with named arguments.
-            for (_, arg) in named_args.iter().enumerate() {
-                if let Some((f_idx, _)) = fn_args
-                    .iter()
-                    .enumerate()
-                    .find(|(_, fn_arg)| fn_arg.name == *arg.0)
-                {
-                    args[f_idx] = Some(arg.1);
-                }
-            }
+            dbg_println!("FnProto found for: {fname}, args: {:?}", _fun.args());
 
             // If a named argument is duplicate, you would have a hole in actual args.
             // Until we have the default parameter value, it would be a compile error.
-            let args = args
+            let arg_values = arg_values
                 .into_iter()
                 .collect::<Option<Vec<_>>>()
                 .ok_or_else(|| CompileError::new(expr.span, CEK::InsufficientNamedArgs))?;
 
             // Align arguments to the stack to prepare a call.
-            for arg in args {
+            for arg in &arg_values {
                 let arg_target = compiler.target_stack.len();
                 compiler.target_stack.push(Target::None);
                 compiler
                     .bytecode
-                    .push_inst(OpCode::Move, arg as u8, arg_target as u16);
+                    .push_inst(OpCode::Move, *arg as u8, arg_target as u16);
             }
-
-            // let func = compiler
-            //     .functions
-            //     .get(*str)
-            //     .ok_or_else(|| format!("function {} is not defined.", str))?;
 
             compiler
                 .bytecode
-                .push_inst(OpCode::Call, num_args as u8, stk_fname as u16);
+                .push_inst(OpCode::Call, arg_values.len() as u8, stk_fname as u16);
             compiler.target_stack.push(Target::None);
             Ok(stk_fname)
         }
