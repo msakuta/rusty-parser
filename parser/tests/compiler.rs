@@ -1,5 +1,5 @@
-use nom::Finish;
 use mascal::*;
+use nom::Finish;
 use std::{cell::RefCell, collections::HashMap, io::Write, rc::Rc};
 
 #[test]

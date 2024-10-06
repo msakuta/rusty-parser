@@ -5,7 +5,9 @@ use crate::{
     OpCode,
 };
 
-use super::{emit_expr, CompileError, CompileResult, Compiler, Target};
+use super::{
+    emit_expr, error::CompileErrorKind as CEK, CompileError, CompileResult, Compiler, Target,
+};
 
 /// Internal to the compiler
 pub(super) enum LValue {
@@ -15,24 +17,32 @@ pub(super) enum LValue {
     ArrayRef(usize, usize),
 }
 
-pub(super) fn emit_lvalue(ex: &Expression, compiler: &mut Compiler) -> CompileResult<LValue> {
+pub(super) fn emit_lvalue<'src, 'env, 'c>(
+    ex: &Expression<'src>,
+    compiler: &'c mut Compiler<'env>,
+) -> CompileResult<'src, LValue> {
     match &ex.expr {
         ExprEnum::NumLiteral(_)
         | ExprEnum::StrLiteral(_)
         | ExprEnum::ArrLiteral(_)
-        | ExprEnum::TupleLiteral(_) => Err(CompileError::AssignToLiteral(ex.span.to_string())),
+        | ExprEnum::TupleLiteral(_) => Err(CompileError::new(
+            ex.span,
+            CEK::AssignToLiteral(ex.span.to_string()),
+        )),
         ExprEnum::Variable(name) => Ok(LValue::Variable(name.to_string())),
-        ExprEnum::Cast(_, _) | ExprEnum::FnInvoke(_, _) => {
-            Err(CompileError::NonLValue(ex.span.to_string()))
-        }
+        ExprEnum::Cast(_, _) | ExprEnum::FnInvoke(_, _) => Err(CompileError::new(
+            ex.span,
+            CEK::NonLValue(ex.span.to_string()),
+        )),
         ExprEnum::VarAssign(ex, _) => emit_lvalue(ex, compiler),
         ExprEnum::ArrIndex(ex, idx) => {
             let idx = emit_expr(&idx[0], compiler)?;
             let arr = emit_lvalue(ex, compiler)?;
             match arr {
-                LValue::Variable(name) => {
-                    Ok(LValue::ArrayRef(compiler.find_local(&name)?.stack_idx, idx))
-                }
+                LValue::Variable(name) => Ok(LValue::ArrayRef(
+                    compiler.find_local(&name, ex.span)?.stack_idx,
+                    idx,
+                )),
                 LValue::ArrayRef(arr, subidx) => {
                     let subidx_copy = compiler.target_stack.len();
                     compiler.target_stack.push(Target::None);
@@ -51,6 +61,9 @@ pub(super) fn emit_lvalue(ex: &Expression, compiler: &mut Compiler) -> CompileRe
                 }
             }
         }
-        _ => Err(CompileError::NonLValue(ex.span.to_string())),
+        _ => Err(CompileError::new(
+            ex.span,
+            CEK::NonLValue(ex.span.to_string()),
+        )),
     }
 }

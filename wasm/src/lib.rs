@@ -160,7 +160,7 @@ pub fn compile(src: &str) -> Result<Vec<u8>, JsValue> {
         functions.insert(name, f);
     });
     let bytecode = mascal::compile(&parse_result.1, functions)
-        .map_err(|e| JsValue::from_str(&format!("Error on execution: {:?}", e)))?;
+        .map_err(|e| JsValue::from_str(&format!("Error: {}", e)))?;
     let mut bytes = vec![];
     bytecode
         .write(&mut bytes)
@@ -177,7 +177,7 @@ pub fn disasm(src: &str) -> Result<String, JsValue> {
         functions.insert(name, f);
     });
     let disasm_code = mascal::disasm(&parse_result.1, functions)
-        .map_err(|e| JsValue::from_str(&format!("Error on execution: {:?}", e)))?;
+        .map_err(|e| JsValue::from_str(&format!("Error: {}", e)))?;
     Ok(disasm_code)
 }
 
@@ -190,7 +190,7 @@ pub fn compile_and_run(src: &str) -> Result<(), JsValue> {
         functions.insert(name, f);
     });
     let mut bytecode = mascal::compile(&parse_result.1, functions)
-        .map_err(|e| JsValue::from_str(&format!("Error on execution: {:?}", e)))?;
+        .map_err(|e| JsValue::from_str(&format!("Error: {}", e)))?;
     bytecode.add_std_fn();
     extra_functions(&mut |name, f| {
         bytecode.add_ext_fn(name, f);
