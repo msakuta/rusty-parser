@@ -1,5 +1,9 @@
 import { type_check, run_script, parse_ast, compile, disasm, compile_and_run } from "../pkg/index.js";
 
+import { Parser } from "./parser";
+import { StreamLanguage } from "@codemirror/language"
+import { EditorState } from "@codemirror/state"
+import { EditorView, basicSetup } from "codemirror"
 
 async function runCommon(process) {
     // Clear output
@@ -9,7 +13,7 @@ async function runCommon(process) {
     const canvasRect = canvas.getBoundingClientRect();
     canvas.getContext("2d").clearRect(0, 0, canvasRect.width, canvasRect.height);
 
-    const source = document.getElementById("input").value;
+    const source = view.state.doc.toString();
     const start = performance.now();
     try{
         process(source);
@@ -47,7 +51,7 @@ document.getElementById("clearCanvas").addEventListener("click", () => {
     canvas.getContext("2d").clearRect(0, 0, canvasRect.width, canvasRect.height);
 });
 
-document.getElementById("input").value = `
+const initalSrc = `
 fn fact(n) {
     if n < 1 {
         1
@@ -71,12 +75,26 @@ const samples = document.getElementById("samples");
     .forEach(fileName => {
     const link = document.createElement("a");
     link.href = "#";
-    link.addEventListener("click", () => {
-        fetch("scripts/" + fileName)
-            .then(file => file.text())
-            .then(text => document.getElementById("input").value = text);
+    link.addEventListener("click", async () => {
+        const file = await fetch("scripts/" + fileName);
+        const text = await file.text();
+        let size = view.state.doc.length;
+        const trans = view.state.update(
+            {changes: {from: 0, to: size}, sequential: true},
+            {changes: {from: 0, insert: text}, sequential: true});
+        view.dispatch(trans);
     });
     link.innerHTML = fileName;
     samples.appendChild(link);
     samples.append(" ");
+})
+
+let initState = EditorState.create({
+    extensions: [basicSetup, StreamLanguage.define(Parser)],
+    doc: initalSrc,
+});
+
+let view = new EditorView({
+    state: initState,
+    parent: document.getElementById("highlighting"),
 })
