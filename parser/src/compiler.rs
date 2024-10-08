@@ -351,7 +351,7 @@ fn emit_stmts<'src>(
                 //         stk_to is the end value
                 //     and stk_check is the value to store the result of comparison
 
-                let inst_loop_start = compiler.bytecode.instructions.len();
+                compiler.bytecode.instructions.len();
                 compiler
                     .locals
                     .last_mut()
@@ -362,20 +362,21 @@ fn emit_stmts<'src>(
                     });
                 compiler.target_stack[stk_from] = Target::Local(local_iter);
                 compiler.target_stack.push(Target::None);
+                // Form a double block to jump either forward or backward
+                compiler.bytecode.push_inst(OpCode::Loop, 0, 0);
+                compiler.bytecode.push_inst(OpCode::Block, 0, 0);
                 compiler
                     .bytecode
                     .push_inst(OpCode::Move, stk_from as u8, stk_check as u16);
                 compiler
                     .bytecode
                     .push_inst(OpCode::Lt, stk_check as u8, stk_to as u16);
-                let inst_break = compiler.bytecode.push_inst(OpCode::Jf, stk_check as u8, 0);
+                compiler.bytecode.push_inst(OpCode::Jf, stk_check as u8, 1);
                 last_target = emit_stmts(stmts, compiler)?;
                 compiler.bytecode.push_inst(OpCode::Incr, stk_from as u8, 0);
-                compiler
-                    .bytecode
-                    .push_inst(OpCode::Jmp, 0, inst_loop_start as u16);
-                compiler.bytecode.instructions[inst_break].arg1 =
-                    compiler.bytecode.instructions.len() as u16;
+                compiler.bytecode.push_inst(OpCode::Jmp, 0, 2);
+                compiler.bytecode.push_inst(OpCode::End, 0, 0); // End Block
+                compiler.bytecode.push_inst(OpCode::End, 0, 0); // End Loop
                 compiler.fixup_breaks();
             }
             Statement::Break => {

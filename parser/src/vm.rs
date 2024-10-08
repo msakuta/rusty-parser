@@ -9,7 +9,7 @@ use crate::{
         EvalError, EvalResult,
     },
     type_decl::TypeDecl,
-    Value,
+    Instruction, Value,
 };
 
 macro_rules! dbg_println {
@@ -50,6 +50,9 @@ struct Vm {
     /// Similar to x64's RSI or RDI, it indicates the index of the array to set, because we need more arguments than
     /// a fixed length arguments in an instruction for Set operation.
     set_register: usize,
+    /// The stack for control blocks, pushed each time by Block or Loop instruction and popped by End.
+    /// Jump instructions jump forward in Block and back in Loop.
+    block_stack: Vec<(OpCode, usize)>,
 }
 
 impl Vm {
@@ -58,6 +61,7 @@ impl Vm {
             stack: vec![Value::I64(0); stack_size],
             stack_base: 0,
             set_register: 0,
+            block_stack: vec![],
         }
     }
 
@@ -288,21 +292,18 @@ fn interpret_fn(
                 vm.set(inst.arg0, Value::I64(result as i64));
             }
             OpCode::Jmp => {
-                dbg_println!("[{ip}] Jumping by Jmp to {}", inst.arg1);
-                call_stack.clast_mut()?.ip = inst.arg1 as usize;
+                jump_inst("Jmp", &inst, ip, &mut call_stack, &mut vm)?;
                 continue;
             }
             OpCode::Jt => {
                 if truthy(&vm.get(inst.arg0)) {
-                    dbg_println!("[{ip}] Jumping by Jt to {}", inst.arg1);
-                    call_stack.clast_mut()?.ip = inst.arg1 as usize;
+                    jump_inst("Jt", &inst, ip, &mut call_stack, &mut vm)?;
                     continue;
                 }
             }
             OpCode::Jf => {
                 if !truthy(&vm.get(inst.arg0)) {
-                    dbg_println!("[{ip}] Jumping by Jf to {}", inst.arg1);
-                    call_stack.clast_mut()?.ip = inst.arg1 as usize;
+                    jump_inst("Jf", &inst, ip, &mut call_stack, &mut vm)?;
                     continue;
                 }
             }
@@ -370,6 +371,22 @@ fn interpret_fn(
                 let new_val = coerce_type(target_var, &tt)?;
                 vm.set(inst.arg0, new_val);
             }
+            OpCode::Block | OpCode::Loop => {
+                vm.block_stack.push((inst.op, ip));
+                dbg_println!(
+                    "block[{}] pushed: {:?}",
+                    vm.block_stack.len(),
+                    vm.block_stack
+                );
+            }
+            OpCode::End => {
+                vm.block_stack.pop();
+                dbg_println!(
+                    "block[{}] popped: {:?}",
+                    vm.block_stack.len(),
+                    vm.block_stack
+                );
+            }
         }
 
         vm.dump_stack();
@@ -379,6 +396,48 @@ fn interpret_fn(
 
     dbg_println!("Final stack: {:?}", vm.stack);
     Ok(Value::I64(0))
+}
+
+/// Execute one of jump instructions, Jmp, Jt or Jf, by updating the instruction pointer in the call info.
+/// The destination address is calculated from block stack (structural control flow), so that there is
+/// no absolute instruction address in the bytecode to fixup.
+fn jump_inst(
+    name: &str,
+    inst: &Instruction,
+    ip: usize,
+    call_stack: &mut Vec<CallInfo>,
+    vm: &mut Vm,
+) -> EvalResult<()> {
+    dbg_println!("[{ip}] Jumping by {name} to block: {}", inst.arg1);
+    let block_offset = inst.arg1 as usize;
+    if vm.block_stack.len() < block_offset {
+        return Err(EvalError::Other("Block stack underflow".to_string()));
+    }
+    let block = &vm.block_stack[vm.block_stack.len() - block_offset];
+    if matches!(block.0, OpCode::Loop) {
+        dbg_println!("{name} is a backward jump ip: {}", block.1);
+        call_stack.clast_mut()?.ip = block.1;
+        return Ok(());
+    }
+    let ci = call_stack.clast()?;
+    // TODO: precache forward jump map in the function since it will repeat many times in a loop.
+    let jump_ip = 'jump: {
+        let mut blk_count = inst.arg1;
+        for ip2 in ip..ci.fun.instructions.len() {
+            if matches!(ci.fun.instructions[ip2].op, OpCode::End) {
+                blk_count -= 1;
+                if blk_count == 0 {
+                    break 'jump Some(ip2);
+                }
+            }
+        }
+        None
+    };
+    if let Some(ip2) = jump_ip {
+        dbg_println!("{name} found a forward jump ip: {ip2}");
+        call_stack.clast_mut()?.ip = ip2;
+    }
+    Ok(())
 }
 
 fn compare_op(

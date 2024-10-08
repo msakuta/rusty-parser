@@ -65,6 +65,12 @@ pub enum OpCode {
     /// Casts a value at arg0 to a type indicated by arg1. I'm feeling this should be a standard library function
     /// rather than a opcode, but let's finish implementation compatible with AST interpreter first.
     Cast,
+    /// Marks the beginning of a block, in which jump instructions will jump to the end.
+    Block,
+    /// Marks the beginning of a loop, which is the destination instruction when a jump instruction is called.
+    Loop,
+    /// Marks the end of a control block.
+    End,
 }
 
 macro_rules! impl_op_from {
@@ -109,7 +115,10 @@ impl_op_from!(
     Jf,
     Call,
     Ret,
-    Cast
+    Cast,
+    Block,
+    Loop,
+    End
 );
 
 /// A single instruction in a bytecode. OpCodes can have 0 to 2 arguments.
