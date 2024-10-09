@@ -1,9 +1,10 @@
 use std::{collections::HashMap, fmt::Display};
 
 use crate::{
-    interpreter::{std_functions, FuncCode},
+    interpreter::FuncCode,
     parser::{ExprEnum, Expression, Statement},
-    type_decl::{ArraySize, TypeDecl},
+    std_fns::std_functions,
+    type_decl::{ArraySize, ArraySizeAxis, TypeDecl},
     FuncDef, Span, Value,
 };
 
@@ -28,9 +29,9 @@ impl<'src> Display for TypeCheckError<'src> {
 }
 
 impl<'src> TypeCheckError<'src> {
-    fn new(msg: String, span: Span<'src>, source_file: Option<&'src str>) -> Self {
+    fn new(msg: impl Into<String>, span: Span<'src>, source_file: Option<&'src str>) -> Self {
         Self {
-            msg,
+            msg: msg.into(),
             span,
             source_file,
         }
@@ -139,6 +140,51 @@ impl<'src, 'native, 'ctx> TypeCheckContext<'src, 'native, 'ctx> {
     }
 }
 
+fn tc_array_literal<'src, 'native>(
+    val: &[Vec<Expression<'src>>],
+    span: Span<'src>,
+    ctx: &mut TypeCheckContext<'src, 'native, '_>,
+) -> Result<TypeDecl, TypeCheckError<'src>>
+where
+    'native: 'src,
+{
+    let Some((first, cols)) = val.first().and_then(|row| Some((row.first()?, row.len()))) else {
+        // An empty array has 1 dimension by convention
+        return Ok(TypeDecl::Array(
+            Box::new(TypeDecl::Any),
+            ArraySize(vec![ArraySizeAxis::Fixed(0)]),
+        ));
+    };
+
+    let first = tc_expr(first, ctx)?;
+
+    // Validate array shape
+    for row in val {
+        if row.len() != cols {
+            return Err(TypeCheckError::new(
+                "Array doesn't have a rectangular array",
+                span,
+                ctx.source_file,
+            ));
+        }
+    }
+
+    for row in val.iter() {
+        for cell in row.iter() {
+            let value = tc_expr(cell, ctx)?;
+            tc_coerce_type(&value, &first, span, ctx)?;
+        }
+    }
+
+    let shape = if val.len() == 1 {
+        vec![ArraySizeAxis::Fixed(cols)]
+    } else {
+        vec![ArraySizeAxis::Fixed(val.len()), ArraySizeAxis::Fixed(cols)]
+    };
+
+    Ok(TypeDecl::Array(Box::new(first), ArraySize(shape)))
+}
+
 fn tc_expr<'src, 'b, 'native>(
     e: &'b Expression<'src>,
     ctx: &mut TypeCheckContext<'src, 'native, '_>,
@@ -159,26 +205,7 @@ where
             }
         },
         ExprEnum::StrLiteral(_val) => TypeDecl::Str,
-        ExprEnum::ArrLiteral(val) => {
-            if !val.is_empty() {
-                for (ex1, ex2) in val[..val.len() - 1].iter().zip(val[1..].iter()) {
-                    let el1 = tc_expr(ex1, ctx)?;
-                    let el2 = tc_expr(ex2, ctx)?;
-                    if el1 != el2 {
-                        return Err(TypeCheckError::new(
-                            format!("Types in an array is not homogeneous: {el1:?} and {el2:?}"),
-                            e.span,
-                            ctx.source_file,
-                        ));
-                    }
-                }
-            }
-            let ty = val
-                .first()
-                .map(|e| tc_expr(e, ctx))
-                .unwrap_or(Ok(TypeDecl::Any))?;
-            TypeDecl::Array(Box::new(ty), ArraySize::Fixed(val.len()))
-        }
+        ExprEnum::ArrLiteral(val) => tc_array_literal(val, e.span, ctx)?,
         ExprEnum::TupleLiteral(val) => {
             let ty = val
                 .iter()
@@ -344,16 +371,23 @@ where
 }
 
 fn tc_array_size(value: &ArraySize, target: &ArraySize) -> Result<(), String> {
+    for (v_axis, t_axis) in value.0.iter().zip(target.0.iter()) {
+        tc_array_size_axis(v_axis, t_axis)?;
+    }
+    Ok(())
+}
+
+fn tc_array_size_axis(value: &ArraySizeAxis, target: &ArraySizeAxis) -> Result<(), String> {
     match (value, target) {
-        (_, ArraySize::Any) => {}
-        (ArraySize::Fixed(v_len), ArraySize::Fixed(t_len)) => {
+        (_, ArraySizeAxis::Any) => {}
+        (ArraySizeAxis::Fixed(v_len), ArraySizeAxis::Fixed(t_len)) => {
             if v_len != t_len {
                 return Err(format!(
                     "Array size is not compatible: {v_len} cannot assign to {t_len}"
                 ));
             }
         }
-        (ArraySize::Range(v_range), ArraySize::Range(t_range)) => {
+        (ArraySizeAxis::Range(v_range), ArraySizeAxis::Range(t_range)) => {
             array_range_verify(v_range)?;
             array_range_verify(t_range)?;
             if t_range.end < v_range.end || v_range.start < t_range.start {
@@ -362,7 +396,7 @@ fn tc_array_size(value: &ArraySize, target: &ArraySize) -> Result<(), String> {
                 ));
             }
         }
-        (ArraySize::Fixed(v_len), ArraySize::Range(t_range)) => {
+        (ArraySizeAxis::Fixed(v_len), ArraySizeAxis::Range(t_range)) => {
             array_range_verify(t_range)?;
             if *v_len < t_range.start || t_range.end < *v_len {
                 return Err(format!(
@@ -370,7 +404,7 @@ fn tc_array_size(value: &ArraySize, target: &ArraySize) -> Result<(), String> {
                 ));
             }
         }
-        (ArraySize::Any, ArraySize::Range(t_range)) => {
+        (ArraySizeAxis::Any, ArraySizeAxis::Range(t_range)) => {
             array_range_verify(t_range)?;
         }
         _ => {
@@ -461,13 +495,15 @@ fn tc_cast_type<'src>(
         (I32 | I64 | F32 | F64 | Integer | Float, I32) => I32,
         (Str, Str) => Str,
         (Array(v_inner, v_len), Array(t_inner, t_len)) => {
-            if let Some((v_len, t_len)) = v_len.zip(t_len) {
-                if v_len < t_len {
-                    return Err(TypeCheckError::new(
-                        "Assignee array is smaller than assigner".to_string(),
-                        span,
-                        ctx.source_file,
-                    ));
+            for (v_axis, t_axis) in v_len.0.iter().zip(t_len.0.iter()) {
+                if let Some((v_len, t_len)) = v_axis.zip(t_axis) {
+                    if v_len < t_len {
+                        return Err(TypeCheckError::new(
+                            "Assignee array is smaller than assigner".to_string(),
+                            span,
+                            ctx.source_file,
+                        ));
+                    }
                 }
             }
             // Array doesn't recursively type cast for performance reasons.
@@ -643,18 +679,20 @@ fn binary_op_type<'src>(
         (Array(lhs, lhs_len), Array(rhs, rhs_len)) => {
             tc_array_size(rhs_len, lhs_len)
                 .map_err(|e| TypeCheckError::new(e, span, ctx.source_file))?;
-            if let Some((lhs_len, rhs_len)) = lhs_len.zip(rhs_len) {
-                if lhs_len < rhs_len {
-                    return Err(TypeCheckError::new(
-                        "Binary operation between an array with different length".to_string(),
-                        span,
-                        ctx.source_file,
-                    ));
+            for (lhs_axis, rhs_axis) in lhs_len.0.iter().zip(rhs_len.0.iter()) {
+                if let Some((lhs_len, rhs_len)) = lhs_axis.zip(rhs_axis) {
+                    if lhs_len < rhs_len {
+                        return Err(TypeCheckError::new(
+                            "Binary operation between an array with different length".to_string(),
+                            span,
+                            ctx.source_file,
+                        ));
+                    }
                 }
             }
             return Ok(Array(
                 Box::new(binary_op_type(lhs, rhs, span, ctx)?),
-                lhs_len.or(rhs_len),
+                lhs_len.clone(),
             ));
         }
         _ => {

@@ -68,7 +68,9 @@ const samples = document.getElementById("samples");
 [
     "expr.dragon", "factorial.dragon", "fibonacci.dragon", "recurse.dragon", "mandel.dragon",
     "mandel_canvas.dragon", "str.dragon", "type.dragon", "sieve.dragon",
-    "if.dragon", "for.dragon", "fn.dragon", "array.dragon", "array_reverse.dragon", "array_range_sized.dragon",
+    "if.dragon", "for.dragon", "fn.dragon",
+    "array.dragon", "array_reverse.dragon", "array_range_sized.dragon", "array_muldim.dragon",
+    "array_transpose.dragon", "array_reshape.dragon",
     "canvas.dragon",
     "typecheck.dragon", "cast.dragon", "cast_error.dragon",
 ]

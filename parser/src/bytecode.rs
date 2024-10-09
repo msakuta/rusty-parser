@@ -6,11 +6,7 @@ use std::{
     io::{Read, Write},
 };
 
-use crate::{
-    interpreter::{s_hex_string, s_len, s_print, s_push, s_type, EvalError},
-    parser::ReadError,
-    value::Value,
-};
+use crate::{interpreter::EvalError, parser::ReadError, std_fns::std_functions_gen, value::Value};
 
 /// Operational codes for an instruction. Supposed to fit in an u8.
 #[derive(Debug, Clone, Copy)]
@@ -314,27 +310,9 @@ impl Bytecode {
 pub fn std_functions(
     f: &mut impl FnMut(String, Box<dyn Fn(&[Value]) -> Result<Value, EvalError>>),
 ) {
-    f("print".to_string(), Box::new(s_print));
-    f(
-        "puts".to_string(),
-        Box::new(|values: &[Value]| -> Result<Value, EvalError> {
-            print!(
-                "{}",
-                values.iter().fold("".to_string(), |acc, cur: &Value| {
-                    if acc.is_empty() {
-                        cur.to_string()
-                    } else {
-                        acc + &cur.to_string()
-                    }
-                })
-            );
-            Ok(Value::I64(0))
-        }),
-    );
-    f("type".to_string(), Box::new(&s_type));
-    f("len".to_string(), Box::new(s_len));
-    f("push".to_string(), Box::new(s_push));
-    f("hex_string".to_string(), Box::new(s_hex_string));
+    std_functions_gen(&mut |name, code, _, _| {
+        f(name.to_string(), Box::new(code));
+    });
 }
 
 #[derive(Debug, Clone)]

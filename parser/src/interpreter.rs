@@ -4,7 +4,8 @@ use self::lvalue::{eval_lvalue, LValue};
 
 use crate::{
     parser::*,
-    type_decl::ArraySize,
+    std_fns::std_functions,
+    type_decl::ArraySizeAxis,
     value::{ArrayInt, TupleEntry},
     TypeDecl, Value,
 };
@@ -38,6 +39,7 @@ pub enum EvalError {
     VarNotFound(String),
     FnNotFound(String),
     ArrayOutOfBounds(usize, usize),
+    NonRectangularArray,
     TupleOutOfBounds(usize, usize),
     IndexNonArray,
     NeedRef(String),
@@ -54,6 +56,8 @@ pub enum EvalError {
     AssignToLiteral(String),
     IndexNonNum,
     NonLValue(String),
+    /// Some other error that happened in a library code.
+    RuntimeError(String),
 }
 
 impl std::error::Error for EvalError {}
@@ -85,6 +89,9 @@ impl std::fmt::Display for EvalError {
                 f,
                 "ArrayRef index out of range: {idx} is larger than array length {len}"
             ),
+            Self::NonRectangularArray => {
+                write!(f, "The array has different number of columns among rows")
+            }
             Self::TupleOutOfBounds(idx, len) => write!(
                 f,
                 "Tuple index out of range: {idx} is larger than tuple length {len}"
@@ -118,6 +125,7 @@ impl std::fmt::Display for EvalError {
             Self::AssignToLiteral(name) => write!(f, "Cannot assign to a literal: {}", name),
             Self::IndexNonNum => write!(f, "Indexed an array with a non-number"),
             Self::NonLValue(ex) => write!(f, "Expression {} is not an lvalue.", ex),
+            Self::RuntimeError(e) => write!(f, "Runtime error: {e}"),
         }
     }
 }
@@ -273,6 +281,7 @@ fn _coerce_var(value: &Value, target: &Value) -> Result<Value, EvalError> {
         Value::Array(array) => {
             let ArrayInt {
                 type_decl: inner_type,
+                shape,
                 values: inner,
             } = &array.borrow() as &ArrayInt;
             if inner.len() == 0 {
@@ -289,6 +298,7 @@ fn _coerce_var(value: &Value, target: &Value) -> Result<Value, EvalError> {
                 if let Value::Array(array) = value {
                     Value::Array(ArrayInt::new(
                         inner_type.clone(),
+                        shape.clone(),
                         array
                             .borrow()
                             .values
@@ -353,9 +363,28 @@ pub fn coerce_type(value: &Value, target: &TypeDecl) -> Result<Value, EvalError>
         TypeDecl::Array(_, len) => {
             if let Value::Array(array) = value {
                 let array = array.borrow();
-                if let ArraySize::Fixed(len) = len {
-                    if *len != array.values.len() {
-                        return Err(EvalError::IncompatibleArrayLength(*len, array.values.len()));
+                for (v_axis, t_axis) in array.shape.iter().zip(len.0.iter()) {
+                    match t_axis {
+                        ArraySizeAxis::Fixed(len) => {
+                            if *len != *v_axis {
+                                return Err(EvalError::IncompatibleArrayLength(
+                                    *len,
+                                    array.values.len(),
+                                ));
+                            }
+                        }
+                        ArraySizeAxis::Range(range) => {
+                            if *v_axis < range.start {
+                                return Err(EvalError::IncompatibleArrayLength(
+                                    range.start,
+                                    *v_axis,
+                                ));
+                            }
+                            if range.end < *v_axis {
+                                return Err(EvalError::IncompatibleArrayLength(range.end, *v_axis));
+                            }
+                        }
+                        _ => {}
                     }
                 }
                 // Type coercion should not alter the referenced value, i.e. array elements
@@ -382,6 +411,52 @@ pub fn coerce_type(value: &Value, target: &TypeDecl) -> Result<Value, EvalError>
     })
 }
 
+fn eval_array_literal<'src, 'native>(
+    val: &[Vec<Expression<'src>>],
+    ctx: &mut EvalContext<'src, 'native, '_>,
+) -> EvalResult<RunResult>
+where
+    'native: 'src,
+{
+    let Some(cols) = val.first().map(|row| row.len()) else {
+        // An empty array has 1 dimension by convention
+        let int = ArrayInt::new(TypeDecl::Any, vec![0], vec![]);
+        return Ok(RunResult::Yield(Value::Array(int)));
+    };
+
+    let total_size = val.len() * cols;
+
+    // Validate array shape
+    for row in val {
+        if row.len() != cols {
+            return Err(EvalError::NonRectangularArray);
+        }
+    }
+
+    let mut rows = Vec::with_capacity(total_size);
+    for row in val.iter() {
+        for cell in row.iter() {
+            if let RunResult::Yield(y) = eval(cell, ctx)? {
+                rows.push(y);
+            } else {
+                return Err(EvalError::DisallowedBreak);
+            }
+        }
+    }
+
+    let shape = if val.len() == 1 {
+        vec![cols]
+    } else {
+        vec![val.len(), cols]
+    };
+
+    Ok(RunResult::Yield(Value::Array(ArrayInt::new(
+        rows.first().map_or(TypeDecl::Any, TypeDecl::from_value),
+        shape,
+        rows,
+    ))))
+}
+
 pub(crate) fn eval<'src, 'native>(
     e: &Expression<'src>,
     ctx: &mut EvalContext<'src, 'native, '_>,
@@ -392,18 +467,7 @@ where
     Ok(match &e.expr {
         ExprEnum::NumLiteral(val) => RunResult::Yield(val.clone()),
         ExprEnum::StrLiteral(val) => RunResult::Yield(Value::Str(val.clone())),
-        ExprEnum::ArrLiteral(val) => RunResult::Yield(Value::Array(ArrayInt::new(
-            TypeDecl::Any,
-            val.iter()
-                .map(|v| {
-                    if let RunResult::Yield(y) = eval(v, ctx)? {
-                        Ok(y)
-                    } else {
-                        Err(EvalError::DisallowedBreak)
-                    }
-                })
-                .collect::<Result<Vec<_>, _>>()?,
-        ))),
+        ExprEnum::ArrLiteral(val) => eval_array_literal(val, ctx)?,
         ExprEnum::TupleLiteral(val) => RunResult::Yield(Value::Tuple(Rc::new(RefCell::new(
             val.iter()
                 .map(|v| {
@@ -645,122 +709,6 @@ where
     })
 }
 
-pub(crate) fn s_print(vals: &[Value]) -> EvalResult<Value> {
-    fn print_inner(val: &Value) -> EvalResult<()> {
-        match val {
-            Value::F64(val) => print!("{}", val),
-            Value::F32(val) => print!("{}", val),
-            Value::I64(val) => print!("{}", val),
-            Value::I32(val) => print!("{}", val),
-            Value::Str(val) => print!("{}", val),
-            Value::Array(val) => {
-                print!("[");
-                for (i, val) in val.borrow().values.iter().enumerate() {
-                    if i != 0 {
-                        print!(", ");
-                    }
-                    print_inner(val)?;
-                }
-                print!("]");
-            }
-            Value::Tuple(val) => {
-                print!("(");
-                for (i, val) in val.borrow().iter().enumerate() {
-                    if i != 0 {
-                        print!(", ");
-                    }
-                    print_inner(&val.value)?;
-                }
-                print!(")");
-            }
-        }
-        Ok(())
-    }
-    for val in vals {
-        print_inner(val)?;
-        // Put a space between tokens
-        print!(" ");
-    }
-    print!("\n");
-    Ok(Value::I32(0))
-}
-
-fn s_puts(vals: &[Value]) -> Result<Value, EvalError> {
-    fn puts_inner<'a>(vals: &mut dyn Iterator<Item = &'a Value>) {
-        for val in vals {
-            match val {
-                Value::F64(val) => print!("{}", val),
-                Value::F32(val) => print!("{}", val),
-                Value::I64(val) => print!("{}", val),
-                Value::I32(val) => print!("{}", val),
-                Value::Str(val) => print!("{}", val),
-                Value::Array(val) => puts_inner(&mut val.borrow().values.iter()),
-                Value::Tuple(val) => puts_inner(&mut val.borrow().iter().map(|v| &v.value)),
-            }
-        }
-    }
-    puts_inner(&mut vals.iter());
-    Ok(Value::I32(0))
-}
-
-pub(crate) fn s_type(vals: &[Value]) -> Result<Value, EvalError> {
-    fn type_str(val: &Value) -> String {
-        match val {
-            Value::F64(_) => "f64".to_string(),
-            Value::F32(_) => "f32".to_string(),
-            Value::I64(_) => "i64".to_string(),
-            Value::I32(_) => "i32".to_string(),
-            Value::Str(_) => "str".to_string(),
-            Value::Array(inner) => format!("[{}]", inner.borrow().type_decl),
-            Value::Tuple(inner) => format!(
-                "({})",
-                &inner.borrow().iter().fold(String::new(), |acc, cur| {
-                    if acc.is_empty() {
-                        cur.decl.to_string()
-                    } else {
-                        acc + ", " + &cur.decl.to_string()
-                    }
-                })
-            ),
-        }
-    }
-    if let [val, ..] = vals {
-        Ok(Value::Str(type_str(val)))
-    } else {
-        Ok(Value::I32(0))
-    }
-}
-
-pub(crate) fn s_len(vals: &[Value]) -> Result<Value, EvalError> {
-    if let [val, ..] = vals {
-        Ok(Value::I64(val.array_len()? as i64))
-    } else {
-        Ok(Value::I32(0))
-    }
-}
-
-pub(crate) fn s_push(vals: &[Value]) -> Result<Value, EvalError> {
-    if let [arr, val, ..] = vals {
-        let val = val.clone();
-        arr.array_push(val).map(|_| Value::I32(0))
-    } else {
-        Ok(Value::I32(0))
-    }
-}
-
-pub(crate) fn s_hex_string(vals: &[Value]) -> Result<Value, EvalError> {
-    if let [val, ..] = vals {
-        match coerce_type(val, &TypeDecl::I64)? {
-            Value::I64(i) => Ok(Value::Str(format!("{:02x}", i))),
-            _ => Err(EvalError::Other(
-                "hex_string() could not convert argument to i64".to_string(),
-            )),
-        }
-    } else {
-        Ok(Value::Str("".to_string()))
-    }
-}
-
 #[derive(Clone)]
 pub struct FuncCode<'src> {
     args: Vec<ArgDecl<'src>>,
@@ -902,60 +850,6 @@ impl<'src, 'ast, 'native, 'ctx> EvalContext<'src, 'native, 'ctx> {
             None
         }
     }
-}
-
-pub(crate) fn std_functions<'src, 'native>() -> HashMap<String, FuncDef<'src, 'native>> {
-    let mut functions = HashMap::new();
-    functions.insert(
-        "print".to_string(),
-        FuncDef::new_native(&s_print, vec![], None),
-    );
-    functions.insert(
-        "puts".to_string(),
-        FuncDef::new_native(&s_puts, vec![ArgDecl::new("val", TypeDecl::Any)], None),
-    );
-    functions.insert(
-        "type".to_string(),
-        FuncDef::new_native(
-            &s_type,
-            vec![ArgDecl::new("value", TypeDecl::Any)],
-            Some(TypeDecl::Str),
-        ),
-    );
-    functions.insert(
-        "len".to_string(),
-        FuncDef::new_native(
-            &s_len,
-            vec![ArgDecl::new(
-                "array",
-                TypeDecl::Array(Box::new(TypeDecl::Any), ArraySize::Any),
-            )],
-            Some(TypeDecl::I64),
-        ),
-    );
-    functions.insert(
-        "push".to_string(),
-        FuncDef::new_native(
-            &s_push,
-            vec![
-                ArgDecl::new(
-                    "array",
-                    TypeDecl::Array(Box::new(TypeDecl::Any), ArraySize::Range(0..usize::MAX)),
-                ),
-                ArgDecl::new("value", TypeDecl::Any),
-            ],
-            None,
-        ),
-    );
-    functions.insert(
-        "hex_string".to_string(),
-        FuncDef::new_native(
-            &s_hex_string,
-            vec![ArgDecl::new("value", TypeDecl::I64)],
-            Some(TypeDecl::Str),
-        ),
-    );
-    functions
 }
 
 macro_rules! unwrap_break {
