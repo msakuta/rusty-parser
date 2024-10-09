@@ -52,6 +52,35 @@ struct Vm {
     set_register: usize,
     /// The stack for control blocks, pushed each time by Block or Loop instruction and popped by End.
     /// Jump instructions jump forward in Block and back in Loop.
+    //
+    /// We follow the WebAssembly VM model, where loops and branches are implemented as blocks (structured control flow).
+    /// The block can be one of the following:
+    ///
+    /// * Block (jump forward)
+    ///
+    ///     Block
+    ///         ...
+    ///     End
+    ///
+    /// * Loop (jump backward)
+    ///
+    ///     Loop
+    ///         ...
+    ///     End
+    ///
+    /// * If (skip forward conditionally)
+    ///
+    ///     If
+    ///         ...
+    ///     End
+    ///
+    /// * If/Else (skip to else clause conditionally)
+    ///
+    ///     If
+    ///         ...
+    ///     Else
+    ///         ...
+    ///     End
     block_stack: Vec<(OpCode, usize)>,
 }
 
@@ -371,6 +400,29 @@ fn interpret_fn(
                 let new_val = coerce_type(target_var, &tt)?;
                 vm.set(inst.arg0, new_val);
             }
+            OpCode::If => {
+                vm.block_stack.push((inst.op, ip));
+                if !truthy(&vm.get(inst.arg0)) {
+                    let jump_ip = find_end(1, ip, ci).ok_or_else(|| EvalError::MissingEnd)?;
+                    let op = ci.fun.instructions[jump_ip].op;
+                    dbg_println!("If forward jump ip: {jump_ip}: {op:?}");
+                    call_stack.clast_mut()?.ip = jump_ip + 1;
+                    if !matches!(op, OpCode::Else) {
+                        vm.block_stack.pop();
+                    }
+                    continue;
+                }
+            }
+            OpCode::Else => {
+                let last = vm
+                    .block_stack
+                    .last_mut()
+                    .ok_or_else(|| EvalError::MissingEnd)?;
+                if !matches!(last.0, OpCode::If) {
+                    return Err(EvalError::ElseWithoutIf);
+                }
+                *last = (OpCode::Else, ip);
+            }
             OpCode::Block | OpCode::Loop => {
                 vm.block_stack.push((inst.op, ip));
                 dbg_println!(
@@ -423,24 +475,7 @@ fn jump_inst(
     }
     let ci = call_stack.clast()?;
     // TODO: precache forward jump map in the function since it will repeat many times in a loop.
-    let jump_ip = 'jump: {
-        let mut blk_count = inst.arg1;
-        for ip2 in ip..ci.fun.instructions.len() {
-            match ci.fun.instructions[ip2].op {
-                OpCode::End => {
-                    blk_count -= 1;
-                    if blk_count == 0 {
-                        break 'jump Some(ip2);
-                    }
-                }
-                OpCode::Loop | OpCode::Block => {
-                    blk_count += 1;
-                }
-                _ => {}
-            }
-        }
-        None
-    };
+    let jump_ip = find_end(inst.arg1 as usize, ip, ci);
     if let Some(ip2) = jump_ip {
         dbg_println!("{name} found a forward jump ip: {ip2}");
         call_stack.clast_mut()?.ip = ip2 + 1;
@@ -448,6 +483,25 @@ fn jump_inst(
             .resize(vm.block_stack.len() - block_offset, (OpCode::End, 0));
     }
     Ok(())
+}
+
+fn find_end(mut blk_count: usize, ip: usize, ci: &CallInfo) -> Option<usize> {
+    for ip2 in ip..ci.fun.instructions.len() {
+        match ci.fun.instructions[ip2].op {
+            OpCode::End => {
+                blk_count -= 1;
+                if blk_count == 0 {
+                    return Some(ip2);
+                }
+            }
+            OpCode::Else => return Some(ip2),
+            OpCode::Loop | OpCode::Block => {
+                blk_count += 1;
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 fn compare_op(

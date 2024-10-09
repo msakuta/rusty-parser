@@ -65,6 +65,7 @@ struct Compiler<'a> {
     target_stack: Vec<Target>,
     locals: Vec<Vec<LocalVar>>,
     break_ips: Vec<usize>,
+    block_stack: Vec<OpCode>,
 }
 
 impl<'a> Compiler<'a> {
@@ -88,6 +89,7 @@ impl<'a> Compiler<'a> {
                 .collect(),
             locals: vec![args],
             break_ips: vec![],
+            block_stack: vec![],
         }
     }
 
@@ -99,6 +101,36 @@ impl<'a> Compiler<'a> {
             self.bytecode.instructions[*ip].arg1 = break_jmp_addr as u16;
         }
         self.break_ips.clear();
+    }
+
+    fn push_loop(&mut self) -> usize {
+        self.block_stack.push(OpCode::Loop);
+        self.bytecode.push_inst(OpCode::Loop, 0, 0)
+    }
+
+    fn push_block(&mut self) -> usize {
+        self.block_stack.push(OpCode::Block);
+        self.bytecode.push_inst(OpCode::Block, 0, 0)
+    }
+
+    fn push_if(&mut self, cond: usize) -> usize {
+        self.block_stack.push(OpCode::If);
+        self.bytecode.push_inst(OpCode::If, cond as u8, 0)
+    }
+
+    fn pop_loop(&mut self) -> usize {
+        assert!(matches!(self.block_stack.pop(), Some(OpCode::Loop)));
+        self.bytecode.push_inst(OpCode::End, 0, 0)
+    }
+
+    fn pop_block(&mut self) -> usize {
+        assert!(matches!(self.block_stack.pop(), Some(OpCode::Block)));
+        self.bytecode.push_inst(OpCode::End, 0, 0)
+    }
+
+    fn pop_if(&mut self) -> usize {
+        assert!(matches!(self.block_stack.pop(), Some(OpCode::If)));
+        self.bytecode.push_inst(OpCode::End, 0, 0)
     }
 
     /// Returns a stack index, removing potential duplicate values
@@ -317,12 +349,13 @@ fn emit_stmts<'src>(
                 last_target = Some(emit_expr(ex, compiler)?);
             }
             Statement::Loop(stmts) => {
-                let inst_loop_start = compiler.bytecode.instructions.len();
+                // Form a double block to jump either forward or backward
+                compiler.push_loop();
+                compiler.push_block();
                 last_target = emit_stmts(stmts, compiler)?;
-                compiler
-                    .bytecode
-                    .push_inst(OpCode::Jmp, 0, inst_loop_start as u16);
-                compiler.fixup_breaks();
+                compiler.bytecode.push_inst(OpCode::Jmp, 0, 2);
+                compiler.pop_block();
+                compiler.pop_loop();
             }
             Statement::While(cond, stmts) => {
                 // Form a double block to jump either forward or backward
@@ -378,9 +411,21 @@ fn emit_stmts<'src>(
                 compiler.bytecode.push_inst(OpCode::End, 0, 0); // End Loop
             }
             Statement::Break => {
-                let break_ip = compiler.bytecode.instructions.len();
-                compiler.bytecode.push_inst(OpCode::Jmp, 0, 1);
-                compiler.break_ips.push(break_ip);
+                dbg!(&compiler.block_stack);
+                if let Some((nest_level, _)) = compiler
+                    .block_stack
+                    .iter()
+                    .rev()
+                    .enumerate()
+                    .find(|(_, s)| matches!(s, OpCode::Block))
+                {
+                    compiler
+                        .bytecode
+                        .push_inst(OpCode::Jmp, 0, (nest_level + 1) as u16);
+                    compiler.break_ips.push(nest_level);
+                } else {
+                    return Err(CompileError::new_nospan(CEK::DisallowedBreak));
+                }
             }
             Statement::Comment(_) => (),
         }
@@ -628,11 +673,10 @@ fn emit_expr<'src>(expr: &Expression<'src>, compiler: &mut Compiler) -> CompileR
         ExprEnum::Conditional(cond, true_branch, false_branch) => {
             let cond = emit_expr(cond, compiler)?;
             let cond_inst_idx = compiler.bytecode.instructions.len();
-            compiler.bytecode.push_inst(OpCode::Jf, cond as u8, 0);
+            compiler.push_if(cond);
             let true_branch = emit_stmts(true_branch, compiler)?;
             if let Some(false_branch) = false_branch {
-                let true_inst_idx = compiler.bytecode.instructions.len();
-                compiler.bytecode.push_inst(OpCode::Jmp, 0, 0);
+                compiler.bytecode.push_inst(OpCode::Else, 0, 0);
                 compiler.bytecode.instructions[cond_inst_idx].arg1 =
                     compiler.bytecode.instructions.len() as u16;
                 if let Some((false_branch, true_branch)) =
@@ -644,12 +688,8 @@ fn emit_expr<'src>(expr: &Expression<'src>, compiler: &mut Compiler) -> CompileR
                         true_branch as u16,
                     );
                 }
-                compiler.bytecode.instructions[true_inst_idx].arg1 =
-                    compiler.bytecode.instructions.len() as u16;
-            } else {
-                compiler.bytecode.instructions[cond_inst_idx].arg1 =
-                    compiler.bytecode.instructions.len() as u16;
             }
+            compiler.pop_if();
             Ok(true_branch.unwrap_or(0))
         }
         ExprEnum::Brace(stmts) => {

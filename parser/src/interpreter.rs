@@ -54,6 +54,8 @@ pub enum EvalError {
     AssignToLiteral(String),
     IndexNonNum,
     NonLValue(String),
+    ElseWithoutIf,
+    MissingEnd,
 }
 
 impl std::error::Error for EvalError {}
@@ -118,6 +120,8 @@ impl std::fmt::Display for EvalError {
             Self::AssignToLiteral(name) => write!(f, "Cannot assign to a literal: {}", name),
             Self::IndexNonNum => write!(f, "Indexed an array with a non-number"),
             Self::NonLValue(ex) => write!(f, "Expression {} is not an lvalue.", ex),
+            Self::ElseWithoutIf => write!(f, "Else instruction showed up without corresponding if"),
+            Self::MissingEnd => write!(f, "Missing expected End instruction"),
         }
     }
 }

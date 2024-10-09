@@ -65,6 +65,10 @@ pub enum OpCode {
     /// Casts a value at arg0 to a type indicated by arg1. I'm feeling this should be a standard library function
     /// rather than a opcode, but let's finish implementation compatible with AST interpreter first.
     Cast,
+    /// Marks the beginning of a conditional block, should be followed by Else or End control flow instruction.
+    If,
+    /// Marks the beginning of an else block of a conditional block, should be followed by an End control flow instruction.
+    Else,
     /// Marks the beginning of a block, in which jump instructions will jump to the end.
     Block,
     /// Marks the beginning of a loop, which is the destination instruction when a jump instruction is called.
