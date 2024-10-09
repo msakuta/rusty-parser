@@ -421,7 +421,10 @@ fn interpret_fn(
                 if !matches!(last.0, OpCode::If) {
                     return Err(EvalError::ElseWithoutIf);
                 }
-                *last = (OpCode::Else, ip);
+                let jump_ip = find_end(1, ip + 1, ci).ok_or_else(|| EvalError::MissingEnd)?;
+                dbg_println!("Else forward jump ip: {jump_ip}");
+                call_stack.clast_mut()?.ip = jump_ip + 1;
+                continue;
             }
             OpCode::Block | OpCode::Loop => {
                 vm.block_stack.push((inst.op, ip));

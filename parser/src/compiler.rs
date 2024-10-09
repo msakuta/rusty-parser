@@ -64,7 +64,6 @@ struct Compiler<'a> {
     bytecode: FnBytecode,
     target_stack: Vec<Target>,
     locals: Vec<Vec<LocalVar>>,
-    break_ips: Vec<usize>,
     block_stack: Vec<OpCode>,
 }
 
@@ -88,19 +87,8 @@ impl<'a> Compiler<'a> {
                 })
                 .collect(),
             locals: vec![args],
-            break_ips: vec![],
             block_stack: vec![],
         }
-    }
-
-    /// Fixup the jump address for the break statements in the previous loop to current instruction pointer.
-    /// Call it just after leaving loop body.
-    fn fixup_breaks(&mut self) {
-        let break_jmp_addr = self.bytecode.instructions.len();
-        for ip in &self.break_ips {
-            self.bytecode.instructions[*ip].arg1 = break_jmp_addr as u16;
-        }
-        self.break_ips.clear();
     }
 
     fn push_loop(&mut self) -> usize {
@@ -422,7 +410,6 @@ fn emit_stmts<'src>(
                     compiler
                         .bytecode
                         .push_inst(OpCode::Jmp, 0, (nest_level + 1) as u16);
-                    compiler.break_ips.push(nest_level);
                 } else {
                     return Err(CompileError::new_nospan(CEK::DisallowedBreak));
                 }
