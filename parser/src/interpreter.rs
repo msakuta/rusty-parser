@@ -1037,7 +1037,7 @@ where
                     res = RunResult::Yield(unwrap_break!(run(e, ctx)?));
                 }
             }
-            Statement::Break => {
+            Statement::Break(_) => {
                 return Ok(RunResult::Break);
             }
             _ => {}

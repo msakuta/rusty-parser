@@ -82,7 +82,7 @@ pub enum Statement<'a> {
     Loop(Vec<Statement<'a>>),
     While(Expression<'a>, Vec<Statement<'a>>),
     For(Span<'a>, Expression<'a>, Expression<'a>, Vec<Statement<'a>>),
-    Break,
+    Break(Span<'a>),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -782,7 +782,7 @@ fn for_stmt(input: Span) -> IResult<Span, Statement> {
 
 fn break_stmt(input: Span) -> IResult<Span, Statement> {
     let (r, _) = ws(tag("break"))(input)?;
-    Ok((r, Statement::Break))
+    Ok((r, Statement::Break(calc_offset(input, r))))
 }
 
 fn general_statement<'a>(last: bool) -> impl Fn(Span<'a>) -> IResult<Span<'a>, Statement> {

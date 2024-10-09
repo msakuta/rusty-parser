@@ -398,7 +398,7 @@ fn emit_stmts<'src>(
                 compiler.bytecode.push_inst(OpCode::End, 0, 0); // End Block
                 compiler.bytecode.push_inst(OpCode::End, 0, 0); // End Loop
             }
-            Statement::Break => {
+            Statement::Break(span) => {
                 dbg!(&compiler.block_stack);
                 if let Some((nest_level, _)) = compiler
                     .block_stack
@@ -411,7 +411,7 @@ fn emit_stmts<'src>(
                         .bytecode
                         .push_inst(OpCode::Jmp, 0, (nest_level + 1) as u16);
                 } else {
-                    return Err(CompileError::new_nospan(CEK::DisallowedBreak));
+                    return Err(CompileError::new(*span, CEK::DisallowedBreak));
                 }
             }
             Statement::Comment(_) => (),
