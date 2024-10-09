@@ -381,7 +381,7 @@ fn emit_stmts<'src>(
             }
             Statement::Break => {
                 let break_ip = compiler.bytecode.instructions.len();
-                compiler.bytecode.push_inst(OpCode::Jmp, 0, 0);
+                compiler.bytecode.push_inst(OpCode::Jmp, 0, 1);
                 compiler.break_ips.push(break_ip);
             }
             Statement::Comment(_) => (),

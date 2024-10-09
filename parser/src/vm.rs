@@ -417,6 +417,8 @@ fn jump_inst(
     if matches!(block.0, OpCode::Loop) {
         dbg_println!("{name} is a backward jump ip: {}", block.1);
         call_stack.clast_mut()?.ip = block.1;
+        vm.block_stack
+            .resize(vm.block_stack.len() - block_offset, (OpCode::End, 0));
         return Ok(());
     }
     let ci = call_stack.clast()?;
@@ -424,18 +426,26 @@ fn jump_inst(
     let jump_ip = 'jump: {
         let mut blk_count = inst.arg1;
         for ip2 in ip..ci.fun.instructions.len() {
-            if matches!(ci.fun.instructions[ip2].op, OpCode::End) {
-                blk_count -= 1;
-                if blk_count == 0 {
-                    break 'jump Some(ip2);
+            match ci.fun.instructions[ip2].op {
+                OpCode::End => {
+                    blk_count -= 1;
+                    if blk_count == 0 {
+                        break 'jump Some(ip2);
+                    }
                 }
+                OpCode::Loop | OpCode::Block => {
+                    blk_count += 1;
+                }
+                _ => {}
             }
         }
         None
     };
     if let Some(ip2) = jump_ip {
         dbg_println!("{name} found a forward jump ip: {ip2}");
-        call_stack.clast_mut()?.ip = ip2;
+        call_stack.clast_mut()?.ip = ip2 + 1;
+        vm.block_stack
+            .resize(vm.block_stack.len() - block_offset, (OpCode::End, 0));
     }
     Ok(())
 }
