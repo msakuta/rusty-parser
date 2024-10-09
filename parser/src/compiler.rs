@@ -325,16 +325,15 @@ fn emit_stmts<'src>(
                 compiler.fixup_breaks();
             }
             Statement::While(cond, stmts) => {
-                let inst_loop_start = compiler.bytecode.instructions.len();
+                // Form a double block to jump either forward or backward
+                compiler.bytecode.push_inst(OpCode::Loop, 0, 0);
+                compiler.bytecode.push_inst(OpCode::Block, 0, 0);
                 let stk_cond = emit_expr(cond, compiler)?;
-                let inst_break = compiler.bytecode.push_inst(OpCode::Jf, stk_cond as u8, 0);
+                compiler.bytecode.push_inst(OpCode::Jf, stk_cond as u8, 1);
                 last_target = emit_stmts(stmts, compiler)?;
-                compiler
-                    .bytecode
-                    .push_inst(OpCode::Jmp, 0, inst_loop_start as u16);
-                compiler.bytecode.instructions[inst_break].arg1 =
-                    compiler.bytecode.instructions.len() as u16;
-                compiler.fixup_breaks();
+                compiler.bytecode.push_inst(OpCode::Jmp, 0, 2);
+                compiler.bytecode.push_inst(OpCode::End, 0, 0); // End Block
+                compiler.bytecode.push_inst(OpCode::End, 0, 0); // End Loop
             }
             Statement::For(iter, from, to, stmts) => {
                 let stk_from = emit_expr(from, compiler)?;
@@ -377,7 +376,6 @@ fn emit_stmts<'src>(
                 compiler.bytecode.push_inst(OpCode::Jmp, 0, 2);
                 compiler.bytecode.push_inst(OpCode::End, 0, 0); // End Block
                 compiler.bytecode.push_inst(OpCode::End, 0, 0); // End Loop
-                compiler.fixup_breaks();
             }
             Statement::Break => {
                 let break_ip = compiler.bytecode.instructions.len();
