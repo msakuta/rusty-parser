@@ -415,7 +415,7 @@ fn interpret_fn(
             OpCode::If => {
                 vm.block_stack.push((inst.op, ip));
                 if !truthy(&vm.get(inst.arg0)) {
-                    let jump_ip = find_end(1, ip, ci).ok_or_else(|| EvalError::MissingEnd)?;
+                    let jump_ip = find_end(1, ip + 1, ci).ok_or_else(|| EvalError::MissingEnd)?;
                     let op = ci.fun.instructions[jump_ip].op;
                     dbg_println!("If forward jump ip: {jump_ip}: {op:?}");
                     call_stack.clast_mut()?.ip = jump_ip + 1;
@@ -509,8 +509,12 @@ fn find_end(mut blk_count: usize, ip: usize, ci: &CallInfo) -> Option<usize> {
                     return Some(ip2);
                 }
             }
-            OpCode::Else => return Some(ip2),
-            OpCode::Loop | OpCode::Block => {
+            OpCode::Else => {
+                if blk_count <= 1 {
+                    return Some(ip2);
+                }
+            }
+            OpCode::Loop | OpCode::Block | OpCode::If => {
                 blk_count += 1;
             }
             _ => {}
