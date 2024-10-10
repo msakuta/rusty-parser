@@ -347,14 +347,15 @@ fn emit_stmts<'src>(
             }
             Statement::While(cond, stmts) => {
                 // Form a double block to jump either forward or backward
-                compiler.bytecode.push_inst(OpCode::Loop, 0, 0);
+                compiler.push_loop();
+                compiler.push_block();
                 compiler.bytecode.push_inst(OpCode::Block, 0, 0);
                 let stk_cond = emit_expr(cond, compiler)?;
                 compiler.bytecode.push_inst(OpCode::Jf, stk_cond as u8, 1);
                 last_target = emit_stmts(stmts, compiler)?;
                 compiler.bytecode.push_inst(OpCode::Jmp, 0, 2);
-                compiler.bytecode.push_inst(OpCode::End, 0, 0); // End Block
-                compiler.bytecode.push_inst(OpCode::End, 0, 0); // End Loop
+                compiler.pop_block();
+                compiler.pop_loop();
             }
             Statement::For(iter, from, to, stmts) => {
                 let stk_from = emit_expr(from, compiler)?;
