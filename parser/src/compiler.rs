@@ -383,8 +383,8 @@ fn emit_stmts<'src>(
                 compiler.target_stack[stk_from] = Target::Local(local_iter);
                 compiler.target_stack.push(Target::None);
                 // Form a double block to jump either forward or backward
-                compiler.bytecode.push_inst(OpCode::Loop, 0, 0);
-                compiler.bytecode.push_inst(OpCode::Block, 0, 0);
+                compiler.push_loop();
+                compiler.push_block();
                 compiler
                     .bytecode
                     .push_inst(OpCode::Move, stk_from as u8, stk_check as u16);
@@ -395,8 +395,8 @@ fn emit_stmts<'src>(
                 last_target = emit_stmts(stmts, compiler)?;
                 compiler.bytecode.push_inst(OpCode::Incr, stk_from as u8, 0);
                 compiler.bytecode.push_inst(OpCode::Jmp, 0, 2);
-                compiler.bytecode.push_inst(OpCode::End, 0, 0); // End Block
-                compiler.bytecode.push_inst(OpCode::End, 0, 0); // End Loop
+                compiler.pop_block();
+                compiler.pop_loop();
             }
             Statement::Break(span) => {
                 dbg!(&compiler.block_stack);
