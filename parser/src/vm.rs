@@ -32,6 +32,7 @@ struct CallInfo<'a> {
     ip: usize,
     stack_size: usize,
     stack_base: usize,
+    block_stack_base: usize,
 }
 
 impl<'a> CallInfo<'a> {
@@ -164,6 +165,7 @@ fn interpret_fn(
         ip: 0,
         stack_size: vm.stack.len(),
         stack_base: vm.stack_base,
+        block_stack_base: 0,
     }];
 
     while call_stack.clast()?.has_next_inst() {
@@ -359,7 +361,15 @@ fn interpret_fn(
                                 ip: 0,
                                 stack_size: vm.stack.len(),
                                 stack_base: vm.stack_base,
+                                block_stack_base: vm.block_stack.len(),
                             });
+                            dbg_println!(
+                                "block_stack: {:?}",
+                                call_stack
+                                    .iter()
+                                    .map(|ci| ci.block_stack_base)
+                                    .collect::<Vec<_>>()
+                            );
                             continue;
                         }
                         FnProto::Native(nat) => {
@@ -384,6 +394,8 @@ fn interpret_fn(
                         vm.stack_base = ci.stack_base;
                         vm.stack[prev_ci.stack_base] = vm.stack[retval].clone();
                         vm.stack.resize(ci.stack_size, Value::default());
+                        vm.block_stack
+                            .resize(prev_ci.block_stack_base, Default::default());
                         vm.dump_stack();
                     }
                 } else {

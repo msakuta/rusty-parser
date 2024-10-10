@@ -13,7 +13,7 @@ use crate::{
 };
 
 /// Operational codes for an instruction. Supposed to fit in an u8.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 #[repr(u8)]
 pub enum OpCode {
     LoadLiteral,
@@ -74,6 +74,7 @@ pub enum OpCode {
     /// Marks the beginning of a loop, which is the destination instruction when a jump instruction is called.
     Loop,
     /// Marks the end of a control block.
+    #[default]
     End,
 }
 
